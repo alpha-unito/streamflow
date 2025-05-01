@@ -1,12 +1,11 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/persistence/sqlite.json",
   "type": "object",
   "properties": {
     "connection": {
       "type": "string",
-      "description": "The path where the sqlite file resides",
-      "default": "${HOME}/.streamflow/$(streamflow version)/sqlite.db"
+      "description": "The path where the sqlite file resides"
     },
     "timeout": {
       "type": "integer",

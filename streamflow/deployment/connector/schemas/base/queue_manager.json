@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/base/queue_manager.json",
   "$$target": "base/queue_manager.json",
   "type": "object",
@@ -64,7 +64,7 @@
     "transferBufferSize": {
       "type": "integer",
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Buffer size allocated for local and remote data transfers",
-      "default": "64kiB"
+      "default": 65536
     },
     "tunnel": {
       "type": "object",

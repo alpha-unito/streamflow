@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/singularity.json",
   "type": "object",
   "properties": {
@@ -123,8 +123,7 @@
     },
     "home": {
       "type": "string",
-      "description": "A home directory specification, in the format src[:dest]",
-      "default": "$HOME"
+      "description": "A home directory specification, in the format src[:dest]"
     },
     "hostname": {
       "type": "string",
@@ -265,7 +264,7 @@
     "transferBufferSize": {
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",
-      "default": "64kiB"
+      "default": 65536
     },
     "userns": {
       "type": "boolean",

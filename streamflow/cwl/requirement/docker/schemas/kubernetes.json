@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/cwl/requirement/docker/kubernetes.json",
   "type": "object",
   "properties": {
@@ -32,8 +32,7 @@
     },
     "namespace": {
       "type": "string",
-      "description": "Namespace to install the release into",
-      "default": "Current kube config namespace"
+      "description": "Namespace to install the release into"
     },
     "locationsCacheSize": {
       "type": "integer",
@@ -48,12 +47,12 @@
     "timeout": {
       "type": "integer",
       "description": "Time (in seconds) to wait for any individual Kubernetes operation",
-      "default": "60000"
+      "default": 60000
     },
     "transferBufferSize": {
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",
-      "default": "32MiB - 1B",
+      "default": 33554431,
       "$comment": "Kubernetes Python client talks with its server counterpart, written in Golang, via Websocket protocol. The standard websocket package in Golang defines DefaultMaxPayloadBytes equal to 32 MB. Nevertheless, since kubernetes-client prepends channel number to the actual payload (which is always 0 for STDIN), we must reserve 1 byte for this purpose"
     },
     "wait": {
