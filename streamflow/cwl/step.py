@@ -462,15 +462,12 @@ class CWLExecuteStep(ExecuteStep):
             job_token = get_job_token(
                 job.name, self.get_input_port("__job__").token_list
             )
-            output_port.put(
-                await self._persist_token(
-                    token=token.update(
-                        token.value, recoverable=self._is_recoverable(job)
-                    ),
-                    port=output_port,
-                    input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
-                )
+            token = await self._persist_token(
+                token=token.update(token.value, recoverable=self._is_recoverable(job)),
+                port=output_port,
+                input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
             )
+            output_port.put(token)
             await self.workflow.context.failure_manager.notify(
                 output_port.name,
                 token,
