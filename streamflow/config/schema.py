@@ -22,7 +22,7 @@ class SfSchema(Schema):
         )
         for version in self.configs.keys():
             self.add_schema(
-                files(__package__)
+                schema=files(__package__)
                 .joinpath("schemas")
                 .joinpath(version)
                 .joinpath("config_schema.json")
@@ -39,5 +39,5 @@ class SfSchema(Schema):
         self.inject_ext(policy_classes, "policy")
         self.inject_ext(scheduler_classes, "scheduler")
         for schema in ext_schemas:
-            self.add_schema(schema.read_text("utf-8"))
+            self.add_schema(schema.read_text("utf-8"), embed=True)
         self._registry = self.registry.crawl()

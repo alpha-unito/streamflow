@@ -80,9 +80,14 @@ class Schema:
         self.configs: MutableMapping[str, str] = configs
         self.registry: Registry = Registry()
 
-    def add_schema(self, schema: str) -> Resource:
+    def add_schema(self, schema: str, embed: bool = False) -> Resource:
         resource = Resource.from_contents(json.loads(schema))
         self.registry = resource @ self.registry
+        entity_schema = resource.contents
+        if embed:
+            for config_id in self.configs.values():
+                config = self.registry.contents(config_id)
+                config["$defs"][entity_schema["$id"]] = entity_schema
         return resource
 
     def dump(self, version: str, pretty: bool = False) -> str:
@@ -107,14 +112,13 @@ class Schema:
     ):
         for name, entity in classes.items():
             if entity_schema := entity.get_schema():
-                entity_schema = self.add_schema(entity_schema).contents
+                entity_schema = self.add_schema(entity_schema, embed=True).contents
                 for config_id in self.configs.values():
                     config = self.registry.contents(config_id)
                     definition = config["$defs"]
                     for el in definition_name.split(posixpath.sep):
                         definition = definition[el]
                     definition["properties"]["type"].setdefault("enum", []).append(name)
-                    definition["$defs"][name] = entity_schema
                     definition.setdefault("allOf", []).append(
                         {
                             "if": {"properties": {"type": {"const": name}}},
@@ -122,7 +126,8 @@ class Schema:
                                 "properties": {
                                     "config": {
                                         "type": "object",
-                                        "$ref": f"#/$defs/{definition_name}/$defs/{name}",
+                                        "title": "Configuration",
+                                        "$ref": entity_schema["$id"],
                                     }
                                 }
                             },

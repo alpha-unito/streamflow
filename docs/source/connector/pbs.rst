@@ -2,7 +2,7 @@
 PBSConnector
 =====================
 
-The `PBS <https://www.openpbs.org/>`_ connector allows offloading execution to High-Performance Computing (HPC) facilities orchestrated by the PBS queue manager. It extends the :ref:`QueueManagerConnector <QueueManagerConnector>`, which inherits from the :ref:`ConnectorWrapper <ConnectorWrapper>` interface, allowing users to offload jobs to local or remote PBS controllers using the :ref:`stacked locations <Stacked locations>` mechanism. The HPC facility is supposed to be constantly active, reducing the deployment phase to deploy the inner connector (e.g., to create an :ref:`SSHConnection <SSHConnection>` pointing to an HPC login node).
+The `PBS <https://www.openpbs.org/>`_ connector allows offloading execution to High-Performance Computing (HPC) facilities orchestrated by the PBS queue manager. It extends the :ref:`QueueManagerConnector <QueueManagerConnector>`, which inherits from the :ref:`ConnectorWrapper <ConnectorWrapper>` interface, allowing users to offload jobs to local or remote PBS controllers using the :ref:`stacked locations <Stacked locations>` mechanism. The HPC facility is supposed to be constantly active, reducing the deployment phase to deploy the inner connector (e.g., to create an :ref:`SSH Connection <SSH Connection>` pointing to an HPC login node).
 
 .. warning::
 
@@ -57,7 +57,7 @@ Being passed directly to the ``qsub`` command line, the YAML options have higher
 
 The unit of binding is the entire HPC facility. In contrast, the scheduling unit is a single job placement in the PBS queue. Users can limit the maximum number of concurrently placed jobs by setting the ``maxConcurrentJobs`` parameter.
 
-.. jsonschema:: ../../../streamflow/deployment/connector/schemas/pbs.json
+.. jsonschema:: https://streamflow.di.unito.it/schemas/deployment/connector/pbs.json
     :lift_description: true
     :lift_definitions: true
     :auto_reference: true

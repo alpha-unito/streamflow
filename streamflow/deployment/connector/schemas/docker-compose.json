@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/docker-compose.json",
   "type": "object",
   "properties": {
@@ -13,8 +13,7 @@
     },
     "projectName": {
       "type": "string",
-      "description": "Specify an alternate project name",
-      "default": "The name of the project directory"
+      "description": "Specify an alternate project name"
     },
     "verbose": {
       "type": "boolean",
@@ -45,8 +44,7 @@
     },
     "projectDirectory": {
       "type": "string",
-      "description": "Specify an alternate working directory",
-      "default": "The path of the Compose file"
+      "description": "Specify an alternate working directory"
     },
     "compatibility": {
       "type": "boolean",
@@ -120,7 +118,7 @@
     "transferBufferSize": {
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",
-      "default": "64kiB"
+      "default": 65536
     },
     "wait": {
       "type": "boolean",

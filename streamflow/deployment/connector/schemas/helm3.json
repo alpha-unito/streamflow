@@ -60,8 +60,7 @@
     },
     "keyring": {
       "type": "string",
-      "description": "Location of public keys used for verification",
-      "default": "${HOME}/.gnupg/pubring.gpg"
+      "description": "Location of public keys used for verification"
     },
     "kubeContext": {
       "type": "string",
@@ -78,8 +77,7 @@
     },
     "namespace": {
       "type": "string",
-      "description": "Namespace to install the release into",
-      "default": "Current kube config namespace"
+      "description": "Namespace to install the release into"
     },
     "nameTemplate": {
       "type": "string",
@@ -95,18 +93,15 @@
     },
     "registryConfig": {
       "type": "string",
-      "description": "Path to the registry config file",
-      "default": "${HOME}/.config/helm/registry.json"
+      "description": "Path to the registry config file"
     },
     "repositoryCache": {
       "type": "string",
-      "description": "Path to the file containing cached repository indexes",
-      "default": "${HOME}/.cache/helm/repository"
+      "description": "Path to the file containing cached repository indexes"
     },
     "repositoryConfig": {
       "type": "string",
-      "description": "Path to the file containing repository names and URLs",
-      "default": "${HOME}/.config/helm/repositories.yaml"
+      "description": "Path to the file containing repository names and URLs"
     },
     "releaseName": {
       "type": "string",
@@ -147,7 +142,7 @@
     "transferBufferSize": {
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",
-      "default": "32MiB - 1B",
+      "default": 33554431,
       "$comment": "Kubernetes Python client talks with its server counterpart, written in Golang, via Websocket protocol. The standard websocket package in Golang defines DefaultMaxPayloadBytes equal to 32 MB. Nevertheless, since kubernetes-client prepends channel number to the actual payload (which is always 0 for STDIN), we must reserve 1 byte for this purpose"
     },
     "username": {
