@@ -256,13 +256,14 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 ):
                     # A port without steps. todo: delete it from the workflow
                     continue
-                elif (
-                    len(port.token_list) < 2
-                    or not isinstance(port.token_list[-1], TerminationToken)
-                ) and port.name not in mapper.sync_ports:
-                    raise FailureHandlingException(
+                elif (len(port.token_list) < 2) and port.name not in mapper.sync_ports:
+                    logger.debug(
                         f"Empty input port: {port.name}. "
                         f"in_tokens: {len(port.token_list)}. in_steps: {in_steps}. out_steps: {out_steps}"
+                    )
+                if not isinstance(port.token_list[-1], TerminationToken):
+                    raise FailureHandlingException(
+                        f"Missing termination token: {port.name}"
                     )
         return new_workflow
 

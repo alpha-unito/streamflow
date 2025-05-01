@@ -388,10 +388,10 @@ class ProvenanceGraph:
 
     async def build_graph(self, inputs: Iterable[Token]):
         """
-        The provenance graph represent the execution, and is always a DAG.
+        The provenance graph represents the execution, and is always a DAG.
         Visit the provenance graph with a breadth-first search and is done
         backward starting from the input tokens. At the end of the search,
-        we have a tree where at root there are token which data are available
+        we have a tree where at root there are tokens which data are available
         in some location and leaves will be the input tokens.
         """
         token_frontier = deque(inputs)

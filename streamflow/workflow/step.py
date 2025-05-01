@@ -141,12 +141,15 @@ class BaseStep(Step, ABC):
             for t in input_token_ids:
                 for d, p in self.get_input_ports().items():
                     reconstruct.setdefault(d, None)
-                    if t1:= next((t1 for t1 in p.token_list if t == t1.persistent_id), None):
-                        reconstruct[d] = (t,t1.tag, p.name)
+                    if t1 := next(
+                        (t2 for t2 in p.token_list if t == t2.persistent_id), None
+                    ):
+                        reconstruct[d] = (t, t1.tag, p.name)
+                        break
             if any(t is None for t in input_token_ids):
                 raise FailureHandlingException(
                     f"Step {self.name} on port {port.name} generated the token {token.persistent_id} {token.tag}, "
-                    f"but a input token has not the persistent id: {json.dumps(reconstruct, indent=2)}"
+                    f"but a input token {input_token_ids} has not the persistent id: {json.dumps(reconstruct, indent=2)}"
                 )
             await self.workflow.context.database.add_provenance(
                 inputs=input_token_ids, token=token.persistent_id
