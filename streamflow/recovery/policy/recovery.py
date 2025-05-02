@@ -261,7 +261,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         f"Empty input port: {port.name}. "
                         f"in_tokens: {len(port.token_list)}. in_steps: {in_steps}. out_steps: {out_steps}"
                     )
-                if not isinstance(port.token_list[-1], TerminationToken):
+                if port.token_list and not isinstance(
+                    port.token_list[-1], TerminationToken
+                ):
                     raise FailureHandlingException(
                         f"Missing termination token: {port.name}"
                     )
@@ -314,26 +316,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                             retry_request.waiting_ports.setdefault(
                                 port_name, []
                             ).append((missing_tag, new_port))
-
-                        # if not isinstance(
-                        #     port := retry_request.workflow.ports[port_name],
-                        #     InterWorkflowPort,
-                        # ):
-                        #     for t in port.token_list:
-                        #         if t.tag == missing_tag:
-                        #             workflow.ports[port_name].put(t)
-                        #             break
-                        # else:
-                        #     if logger.isEnabledFor(logging.DEBUG):
-                        #         logger.debug(
-                        #             f"job {job_name} is running. Waiting on the port {port_name}"
-                        #         )
-                        #     cast(InterWorkflowPort, port).add_inter_port(
-                        #         workflow.create_port(
-                        #             cls=InterWorkflowPort, name=port_name
-                        #         ),
-                        #         border_tag=missing_tag,
-                        #     )
                         mapper.sync_ports.append(port_name)
                 steps = [
                     (type(s), s.name)
@@ -378,7 +360,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 for port_name in await mapper.get_output_ports(job_token):
                     if port_name in retry_request.output_tokens.keys():
                         new_token = retry_request.output_tokens[port_name]
-                        await mapper.replace_token(
+                        mapper.replace_token(
                             port_name,
                             new_token,
                             True,
