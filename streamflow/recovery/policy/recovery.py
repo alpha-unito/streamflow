@@ -349,7 +349,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     logger.debug(
                         f"Job {job_name} is running. Removing token {token_id}"
                     )
-                    mapper.remove_token(token_id, preserve_token=True)
+                    mapper.remove_token(token_id) #, preserve_token=True)
             elif is_available == TokenAvailability.Available:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
