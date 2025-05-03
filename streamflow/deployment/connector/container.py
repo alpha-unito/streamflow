@@ -83,7 +83,9 @@ async def _get_storage_from_binds(
 async def _resolve_bind(
     container_connector: ContainerConnector, binds: MutableSequence[str] | None
 ) -> MutableSequence[str] | None:
-    src_paths, dst_paths = zip(*(v.split(":") for v in binds or []))
+    if binds is None:
+        return None
+    src_paths, dst_paths = zip(*(v.split(":") for v in binds))
     return (
         [
             f"{src}:{dst}"
