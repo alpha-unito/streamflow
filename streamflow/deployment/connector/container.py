@@ -80,21 +80,55 @@ async def _get_storage_from_binds(
         )
 
 
-def _parse_mount(mount: str) -> tuple[str, str]:
-    source = next(
-        part[4:]
-        for part in mount.split(",")
-        if part.startswith("src=") or part.startswith("source=")
+async def _resolve_bind(
+    container_connector: ContainerConnector, binds: MutableSequence[str] | None
+) -> MutableSequence[str] | None:
+    src_paths, dst_paths = zip(*(v.split(":") for v in binds or []))
+    return (
+        [
+            f"{src}:{dst}"
+            for src, dst in zip(
+                await container_connector._resolve_paths(src_paths),
+                dst_paths,
+            )
+        ]
+        if binds is not None
+        else None
     )
-    destination = next(
-        part[4:]
-        for part in mount.split(",")
-        if part.startswith("dst=")
-        or part.startswith("dest=")
-        or part.startswith("destination=")
-        or part.startswith("target=")
-    )
-    return source, destination
+
+
+async def _resolve_mount(
+    container_connector: ContainerConnector, mounts: MutableSequence[str] | None
+) -> MutableSequence[str] | None:
+    if mounts is not None:
+        src = []
+        dst = []
+        flag = []
+        for mount in mounts:
+            flag.append([])
+            for part in mount.split(","):
+                if part.startswith("src="):
+                    src.append(part[4:])
+                elif part.startswith("source="):
+                    src.append(part[7:])
+                elif part.startswith("dst="):
+                    dst.append(part[4:])
+                elif part.startswith("dest="):
+                    dst.append(part[5:])
+                elif part.startswith("destination="):
+                    dst.append(part[12:])
+                elif part.startswith("target="):
+                    dst.append(part[7:])
+                else:
+                    flag[-1].append(part)
+        resolved_src = await container_connector._resolve_paths(src)
+        if resolved_src != src and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Resolved source path {src} to {resolved_src}")
+        return [
+            f"src={s},dst={d},{','.join(f)}" for s, d, f in zip(resolved_src, dst, flag)
+        ]
+    else:
+        return None
 
 
 class ContainerInstance:
@@ -535,6 +569,18 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 location=self._inner_location.location,
                 command=["mkdir", "-p"] + sources,
             )
+
+    async def _resolve_paths(self, paths: MutableSequence[str]) -> MutableSequence[str]:
+        if self._wraps_local():
+            return [os.path.realpath(p) for p in paths]
+        else:
+            return (
+                await self.connector.run(
+                    location=self._inner_location.location,
+                    command=["readlink", "-f", *paths],
+                    capture_output=True,
+                )
+            )[0].split("\n")
 
     def _wraps_local(self) -> bool:
         return self._inner_location.local
@@ -1055,6 +1101,9 @@ class DockerConnector(DockerBaseConnector):
         await self._check_docker_installed()
         # If the deployment is not external, deploy the container
         if not external:
+            self.volume = await _resolve_bind(self, self.volume)
+            self.mount = await _resolve_mount(self, self.mount)
+
             await self._prepare_volumes(self.volume, self.mount)
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Using Docker {await self._get_docker_version()}.")
@@ -1732,19 +1781,20 @@ class SingularityConnector(ContainerConnector):
                 f"in deployment {self.deployment_name}: [{returncode}]: {stdout}"
             )
         # Get inner location mount points
-        if self._wraps_local():
+        if False and self._wraps_local():
             fs_mounts = {
                 disk.device: disk.mountpoint
                 for disk in psutil.disk_partitions(all=True)
                 if disk.fstype not in FS_TYPES_TO_SKIP
                 and os.access(disk.mountpoint, os.R_OK)
             }
+            fs_host_mounts = {}  # todo
         else:
             stdout, returncode = await self.connector.run(
                 location=self._inner_location.location,
                 command=[
                     "cat",
-                    "/proc/1/mountinfo",
+                    "/proc/self/mountinfo",
                 ],
                 capture_output=True,
             )
@@ -1754,13 +1804,17 @@ class SingularityConnector(ContainerConnector):
                     for line in stdout.splitlines()
                     if line.split(" - ")[1].split()[0] not in FS_TYPES_TO_SKIP
                 }
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Host mount points: {fs_mounts}")
+                fs_host_mounts = {
+                    line.split()[4]: line.split()[3] for line in stdout.splitlines()
+                }
             else:
                 raise WorkflowExecutionException(
-                    f"FAILED retrieving volume mounts from `/proc/1/mountinfo` "
+                    f"FAILED retrieving volume mounts from `/proc/self/mountinfo` "
                     f"in deployment {self.connector.deployment_name}: [{returncode}]: {stdout}"
                 )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Host mount points: {fs_mounts}")
+
         # Get the list of bind mounts for the container instance
         stdout, returncode = await self.run(
             location=location,
@@ -1770,6 +1824,9 @@ class SingularityConnector(ContainerConnector):
             ],
             capture_output=True,
         )
+        logger.info(f"fs_mounts: {fs_mounts}")
+        logger.info(f"fs_host_mounts: {fs_host_mounts}")
+        logger.info(f"container mountinfo: {stdout}")
         if returncode == 0:
             binds = {}
             for line in stdout.splitlines():
@@ -1794,7 +1851,24 @@ class SingularityConnector(ContainerConnector):
                             else None
                         )
                     if host_mount is not None:
-                        binds[dst] = host_mount
+                        # Return `mnt_point` if a `root` is equal to `host_mount` else return `host_mount`
+                        binds[dst] = next(
+                            (
+                                os.path.join(
+                                    mnt_point, os.path.relpath(host_mount, root)
+                                )
+                                for mnt_point, root in sorted(
+                                    fs_host_mounts.items(),
+                                    key=lambda x: len(x[1].split(os.sep)),
+                                    reverse=True,
+                                )
+                                if host_mount.startswith(root)
+                            ),
+                            host_mount,
+                        )
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(f"Host mount of {host_mount} is {binds[dst]}")
+
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
         else:
@@ -1827,6 +1901,10 @@ class SingularityConnector(ContainerConnector):
         if not external:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Using {await self._get_singularity_version()}.")
+
+            self.bind = await _resolve_bind(self, self.bind)
+            self.mount = await _resolve_mount(self, self.mount)
+
             await self._prepare_volumes(self.bind, self.mount)
             instance_name = random_name()
             deploy_command = [
