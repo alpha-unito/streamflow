@@ -42,6 +42,7 @@ from streamflow.cwl.step import (
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
+    CloneTransformer,
     CWLTokenTransformer,
     DefaultRetagTransformer,
     DefaultTransformer,
@@ -110,6 +111,21 @@ def _create_cwl_token_processor(name: str, workflow: CWLWorkflow) -> CWLTokenPro
         secondary_files=[SecondaryFile("file1", True)],
         load_listing=LoadListing.no_listing,
     )
+
+
+@pytest.mark.asyncio
+async def test_clone_transformer(context: StreamFlowContext):
+    """Test saving and loading CloneTransformer from database"""
+    workflow, (in_port, replica_port, out_port) = await create_workflow(
+        context=context, num_port=3
+    )
+    name = utils.random_name()
+    transformer = workflow.create_step(
+        cls=CloneTransformer, name=name + "-transformer", replicas_port=replica_port
+    )
+    transformer.add_input_port(name, in_port)
+    transformer.add_output_port(name, out_port)
+    await save_load_and_test(transformer, context)
 
 
 @pytest.mark.asyncio

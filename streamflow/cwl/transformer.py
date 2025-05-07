@@ -60,6 +60,29 @@ class CloneTransformer(ManyToOneTransformer):
         super().__init__(name, workflow)
         self.add_input_port("__replicas__", replicas_port)
 
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        return cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            replicas_port=await loading_context.load_port(
+                context, json.loads(row["params"])["replicas_port"]
+            ),
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return {"replicas_port": self.get_replicas_port().persistent_id}
+
     def get_input_port_name(self) -> str:
         return next(n for n in self.input_ports if n != "__replicas__")
 
