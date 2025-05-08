@@ -31,7 +31,7 @@ from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.provenance import prov_classes
+from streamflow.provenance import provenance_manager_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
 
@@ -126,20 +126,20 @@ async def _async_prov(args: argparse.Namespace):
                 f"Workflow {args.workflow} is associated to the following types: {','.join(wf_type)}"
             )
         wf_type = list(wf_type)[0]
-        if args.type not in prov_classes:
+        if args.type not in provenance_manager_classes:
             raise WorkflowProvenanceException(
                 f"{args.type} provenance format is not supported."
             )
-        elif wf_type not in prov_classes[args.type]:
+        elif wf_type not in provenance_manager_classes[args.type]:
             raise WorkflowProvenanceException(
                 "{} provenance format is not supported for workflows of type {}.".format(
                     args.type, wf_type
                 )
             )
         else:
-            provenance_manager: ProvenanceManager = prov_classes[args.type][wf_type](
-                context, db_context, workflows
-            )
+            provenance_manager: ProvenanceManager = provenance_manager_classes[
+                args.type
+            ][wf_type](context, db_context, workflows)
             await provenance_manager.create_archive(
                 outdir=args.outdir,
                 filename=args.name,
