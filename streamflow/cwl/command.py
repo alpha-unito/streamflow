@@ -82,33 +82,76 @@ def _adjust_cwl_output(
         return value
 
 
+def _adjust_input(
+    input_: Any,
+    path_processor: ModuleType,
+    src_path: str,
+    dst_path: str,
+) -> bool:
+    """
+    Adjusts the input if it contains a file with the specified `src_path`.
+
+    :param input_: The input to process. It can be of any type, including
+                   lists, file objects, or objects (e.g., records in CWL).
+    :param path_processor: A module used to process and manipulate paths (e.g., posixpath).
+    :param src_path: The source path to search for within the input values.
+    :param dst_path: The destination path that will replace `src_path` in the input values.
+    :return: True if the adjustment is successful; False if `src_path` is not found.
+    """
+    if isinstance(input_, MutableMapping):
+        # Process the input if it is a file or an object
+        if (token_class := utils.get_token_class(input_)) in ("File", "Directory"):
+            if (path := utils.get_path_from_token(input_)) == src_path:
+                input_["path"] = dst_path
+                dirname, basename = path_processor.split(dst_path)
+                input_["dirname"] = dirname
+                input_["basename"] = basename
+                input_["location"] = f"file://{dst_path}"
+                if token_class == "File":  # nosec
+                    nameroot, nameext = path_processor.splitext(basename)
+                    input_["nameroot"] = nameroot
+                    input_["nameext"] = nameext
+                return True
+            elif (
+                token_class == "Directory"  # nosec
+                and src_path.startswith(path)
+                and "listing" in input_
+            ):
+                input_["listing"] = _adjust_inputs(
+                    input_["listing"], path_processor, src_path, dst_path
+                )
+                return True
+        else:
+            for i in input_.values():
+                if _adjust_input(i, path_processor, src_path, dst_path):
+                    return True
+    elif isinstance(input_, MutableSequence):
+        for i in input_:
+            if _adjust_input(i, path_processor, src_path, dst_path):
+                return True
+    return False
+
+
 def _adjust_inputs(
     inputs: MutableSequence[MutableMapping[str, Any]],
     path_processor: ModuleType,
     src_path: str,
     dst_path: str,
 ) -> MutableSequence[MutableMapping[str, Any]]:
+    """
+    Searches for `src_path` within the values of the `inputs` parameter and replaces it with `dst_path`.
+    The update is performed in-place on the `inputs` parameter.
+
+    :param inputs: A dictionary mapping input names to values. Values can be of any type,
+                   including lists, file objects, or objects (e.g., records in CWL).
+    :param path_processor: A module used to process and manipulate paths (e.g. posixpath).
+    :param src_path: The path to search for within the input values.
+    :param dst_path: The path that will replace `src_path` in the input values.
+    :return: The modified `inputs` dictionary with updates made in-place.
+    """
     for inp in inputs:
-        if (token_class := utils.get_token_class(inp)) in ("File", "Directory"):
-            path = utils.get_path_from_token(inp)
-            if path == src_path:
-                inp["path"] = dst_path
-                dirname, basename = path_processor.split(dst_path)
-                inp["dirname"] = dirname
-                inp["basename"] = basename
-                inp["location"] = f"file://{dst_path}"
-                if token_class == "File":  # nosec
-                    nameroot, nameext = path_processor.splitext(basename)
-                    inp["nameroot"] = nameroot
-                    inp["nameext"] = nameext
-            elif (
-                token_class == "Directory"  # nosec
-                and src_path.startswith(path)
-                and "listing" in inp
-            ):
-                inp["listing"] = _adjust_inputs(
-                    inp["listing"], path_processor, src_path, dst_path
-                )
+        if _adjust_input(inp, path_processor, src_path, dst_path):
+            break
     return inputs
 
 
