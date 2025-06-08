@@ -1,24 +1,32 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/config/v1.0/config_schema.json",
   "type": "object",
   "$defs": {
     "binding": {
+      "title": "Binding",
       "oneOf": [
         {
           "type": "object",
+          "title": "Step binding",
+          "description": "Step-deployment association that specifies where the execution of a specific step should be offloaded",
           "properties": {
             "step": {
-              "type": "string"
+              "type": "string",
+              "title": "Step",
+              "description": "Posix-like path that uniquely identified the target step"
             },
             "target": {
+              "title": "Target",
               "oneOf": [
                 {
                   "type": "object",
+                  "title": "Single",
                   "$ref": "#/$defs/target"
                 },
                 {
                   "type": "array",
+                  "title": "Multiple",
                   "items": {
                     "type": "object",
                     "$ref": "#/$defs/target"
@@ -28,10 +36,11 @@
             },
             "filters": {
               "type": "array",
+              "title": "Filters",
+              "description": "The filters used to manipulate the targets associated with this binding",
               "items": {
                 "type": "string"
-              },
-              "description": "The filters used to manipulate the targets associated with this binding."
+              }
             }
           },
           "required": [
@@ -42,12 +51,17 @@
         },
         {
           "type": "object",
+          "title": "Port target",
+          "description": "Port-deployment association that specifies where the data tokens of a specific port reside",
           "properties": {
             "port": {
-              "type": "string"
+              "type": "string",
+              "title": "Port",
+              "description": "Posix-like path that uniquely identified the target port"
             },
             "target": {
               "type": "object",
+              "title": "Target",
               "$ref": "#/$defs/target"
             }
           },
@@ -64,10 +78,10 @@
       "$defs": {},
       "properties": {
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type"
         }
       },
-      "$comment": "The `config` property is injected by each BindingFilter extension",
       "required": [
         "type",
         "config"
@@ -79,14 +93,15 @@
       "properties": {
         "enabled": {
           "type": "boolean",
+          "title": "Enabled",
           "description": "Enable checkpointing service",
           "default": false
         },
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type"
         }
       },
-      "$comment": "The `config` property is injected by each CheckpointManager extension",
       "if": {
         "properties": {
           "enabled": {
@@ -108,7 +123,8 @@
         "$defs": {},
         "properties": {
           "type": {
-            "type": "string"
+            "type": "string",
+            "title": "Type"
           },
           "wrapper": {
             "type": "boolean",
@@ -116,7 +132,6 @@
             "default": true
           }
         },
-        "$comment": "The `config` property is injected by each CWLDockerTranslator extension",
         "required": [
           "type",
           "config"
@@ -128,10 +143,11 @@
       "$defs": {},
       "properties": {
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type",
+          "default": "default"
         }
       },
-      "$comment": "The `config` property is injected by each Database extension",
       "required": [
         "type",
         "config"
@@ -142,10 +158,11 @@
       "$defs": {},
       "properties": {
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type",
+          "default": "default"
         }
       },
-      "$comment": "The `config` property is injected by each DataManager extension",
       "required": [
         "type",
         "config"
@@ -157,40 +174,48 @@
       "properties": {
         "external": {
           "type": "boolean",
+          "title": "External",
           "description": "If set, StreamFlow does not manage the lifecycle of the execution environment. This means that all required services must be up and running when the workflow starts",
           "default": false
         },
         "lazy": {
           "type": "boolean",
+          "title": "Lazy",
           "description": "If true, a model is deployed only when it becomes necessary for transfers or executions. If false, a DeployStep will deploy its related model as soon as it becomes fireable",
           "default": true
         },
         "scheduling_policy": {
           "type": "string",
+          "title": "Scheduling policy",
           "description": "The scheduling policy to be used with this deployment.",
           "default": "data_locality"
         },
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type"
         },
         "workdir": {
           "type": "string",
-          "description": "Path to the working directory.",
-          "default": "${TMPDIR}/streamflow"
+          "title": "Working directory",
+          "description": "Path to the working directory."
         },
         "wraps": {
           "oneOf": [
             {
-              "type": "string"
+              "type": "string",
+              "title": "External"
             },
             {
               "type": "object",
+              "title": "Inline",
               "properties": {
                 "deployment": {
-                  "type": "string"
+                  "type": "string",
+                  "title": "Deployment"
                 },
                 "service": {
-                  "type": "string"
+                  "type": "string",
+                  "title": "Service"
                 }
               },
               "required": [
@@ -198,10 +223,10 @@
               ]
             }
           ],
+          "title": "Wrapped deployment",
           "description": "The name of the deployment wrapped by this configuration."
         }
       },
-      "$comment": "The `config` property is injected by each Connector extension",
       "required": [
         "type",
         "config"
@@ -212,10 +237,11 @@
       "$defs": {},
       "properties": {
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type",
+          "default": "default"
         }
       },
-      "$comment": "The `config` property is injected by each DeploymentManager extension",
       "required": [
         "type",
         "config"
@@ -227,14 +253,15 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Enable checkpointing service",
+          "title": "Enabled",
+          "description": "Enable fault tolerance service",
           "default": false
         },
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type"
         }
       },
-      "$comment": "The `config` property is injected by each FailureManager extension",
       "if": {
         "properties": {
           "enabled": {
@@ -251,13 +278,14 @@
     },
     "policy": {
       "type": "object",
+      "title": "Scheduling policy",
       "$defs": {},
       "properties": {
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type"
         }
       },
-      "$comment": "The `config` property is injected by each Policy extension",
       "required": [
         "type",
         "config"
@@ -265,13 +293,16 @@
     },
     "scheduler": {
       "type": "object",
+      "title": "Scheduler",
+      "description": "Implements all the StreamFlow scheduling infrastructure, including data structures to store the global current allocation status.",
       "$defs": {},
       "properties": {
         "type": {
-          "type": "string"
+          "type": "string",
+          "title": "Type",
+          "default": "default"
         }
       },
-      "$comment": "The `config` property is injected by each Scheduler extension",
       "required": [
         "type",
         "config"
@@ -279,30 +310,40 @@
     },
     "target": {
       "type": "object",
+      "title": "Target",
+      "description": "The target execution environment",
       "properties": {
         "deployment": {
-          "type": "string"
+          "type": "string",
+          "title": "Deployment"
         },
         "model": {
-          "type": "string"
+          "deprecated": true,
+          "type": "string",
+          "description": "(**Deprecated.** Use deployment.)",
+          "title": "Model"
         },
         "resources": {
           "type": "integer",
+          "title": "Resources",
+          "deprecated": true,
           "description": "(**Deprecated.** Use locations.) If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
           "default": 1
         },
         "locations": {
           "type": "integer",
+          "title": "Locations",
           "description": "If greater than one, the STREAMFLOW_HOSTS variable contains the comma-separated list of nodes allocated for the task",
           "default": 1
         },
         "service": {
-          "type": "string"
+          "type": "string",
+          "title": "Service"
         },
         "workdir": {
           "type": "string",
-          "description": "Path to the working directory. It overrides the deployment-level setting.",
-          "default": "${TMPDIR}/streamflow"
+          "title": "Working directory",
+          "description": "Path to the working directory. It overrides the deployment-level setting."
         }
       },
       "oneOf": [
@@ -321,18 +362,27 @@
     },
     "workflow": {
       "type": "object",
+      "title": "Workflow",
       "$defs": {
         "cwl": {
           "type": "object",
+          "title": "CWL",
+          "description": "Common Workflow Language",
           "properties": {
             "file": {
-              "type": "string"
+              "type": "string",
+              "title": "Process file",
+              "description": "The CommandLineTool, ExpressionTool, or Workflow description to run."
             },
             "settings": {
-              "type": "string"
+              "type": "string",
+              "title": "Job file",
+              "description": "The input job document."
             },
             "docker": {
               "type": "array",
+              "title": "Docker Requirement",
+              "description": "How CWL Docker Requirement definitions should be mapped onto container-based connectors.",
               "items": {
                 "type": "object",
                 "properties": {
@@ -341,6 +391,7 @@
                   },
                   "deployment": {
                     "type": "object",
+                    "title": "Deployment",
                     "$ref": "#/$defs/cwl/docker"
                   }
                 },
@@ -361,12 +412,14 @@
       "properties": {
         "type": {
           "type": "string",
+          "title": "Type",
           "enum": [
             "cwl"
           ]
         },
         "bindings": {
           "type": "array",
+          "title": "Bindings",
           "items": {
             "type": "object",
             "$ref": "#/$defs/binding"
@@ -402,6 +455,7 @@
   "properties": {
     "bindingFilters": {
       "type": "object",
+      "title": "Binding filters",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
           "$ref": "#/$defs/bindingFilter"
@@ -410,18 +464,25 @@
     },
     "checkpointManager": {
       "type": "object",
+      "title": "Checkpoint manager",
       "$ref": "#/$defs/checkpointManager"
     },
     "database": {
       "type": "object",
+      "title": "Database",
+      "description": "Stores all the metadata regarding a workflow execution, which are used for fault tolerance, provenance collection, and reporting",
       "$ref": "#/$defs/database"
     },
     "dataManager": {
       "type": "object",
+      "description": "Performs data transfers to and from remote execution locations and, for each file, keeps track of its replicas across the distributed environment",
+      "title": "Data manager",
       "$ref": "#/$defs/dataManager"
     },
     "deployments": {
       "type": "object",
+      "title": "Deployments",
+      "description": "A dictionary of uniquely named execution environments",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
           "$ref": "#/$defs/deployment"
@@ -431,21 +492,29 @@
     },
     "deploymentManager": {
       "type": "object",
+      "title": "Deployment manager",
+      "description": "Instantiates and manages Connector instances for each Deployment object",
       "$ref": "#/$defs/deploymentManager"
     },
     "failureManager": {
       "type": "object",
+      "title": "Failure manager",
       "$ref": "#/$defs/failureManager"
     },
     "scheduling": {
       "type": "object",
+      "title": "Scheduling",
+      "description": "StreamFlow scheduling infrastructure",
       "properties": {
         "scheduler": {
           "type": "object",
+          "title": "Scheduler",
           "$ref": "#/$defs/scheduler"
         },
         "policies": {
           "type": "object",
+          "title": "Scheduling policies",
+          "description": "Implement specific placement strategies to map jobs onto available locations",
           "patternProperties": {
             "^[a-z][a-zA-Z0-9._-]*$": {
               "$ref": "#/$defs/policy"
@@ -456,6 +525,9 @@
     },
     "models": {
       "type": "object",
+      "title": "Models",
+      "description": "(**Deprecated.** Use deployments.) A dictionary of uniquely named execution environments",
+      "deprecated": true,
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
           "$ref": "#/$defs/deployment"
@@ -468,6 +540,8 @@
     },
     "workflows": {
       "type": "object",
+      "title": "Workflows",
+      "description": "A dictionary of uniquely named workflows to be executed",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
           "$ref": "#/$defs/workflow"

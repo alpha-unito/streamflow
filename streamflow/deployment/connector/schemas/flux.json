@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/flux.json",
   "type": "object",
   "$defs": {
@@ -10,6 +10,7 @@
       "properties": {
         "beginTime": {
           "type": "string",
+          "title": "Begin time",
           "description": "Convenience option for setting a begin-time dependency for a job. The job is guaranteed to start after the specified date and time"
         },
         "brokerOpts": {
@@ -17,18 +18,22 @@
           "items": {
             "type": "string"
           },
+          "title": "Broker options",
           "description": "For batch jobs, pass specified options to the Flux brokers of the new instance"
         },
         "cores": {
           "type": "integer",
+          "title": "Cores",
           "description": "Set the total number of cores"
         },
         "coresPerSlot": {
           "type": "integer",
+          "title": "Cores per slot",
           "description": "Set the number of cores to assign to each slot"
         },
         "coresPerTask": {
           "type": "integer",
+          "title": "Cores per task",
           "description": "Set the number of cores to assign to each task"
         },
         "env": {
@@ -36,6 +41,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Export environment variables",
           "description": "Control how environment variables are exported"
         },
         "envFile": {
@@ -43,6 +49,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Environment file",
           "description": "Read a set of environment rules from a file"
         },
         "envRemove": {
@@ -50,58 +57,72 @@
           "items": {
             "type": "string"
           },
+          "title": "Remove environment variables",
           "description": "Remove all environment variables matching the pattern from the current generated environment"
         },
         "exclusive": {
           "type": "boolean",
+          "title": "Exclusive",
           "description": "Indicate to the scheduler that nodes should be exclusively allocated to this job"
         },
         "file": {
           "type": "string",
+          "title": "File",
           "description": "Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
         },
         "flags": {
           "type": "string",
+          "title": "Flags",
           "description": "Set comma separated list of job submission flags"
         },
         "gpusPerNode": {
-          "type": "integer",
+          "type": "string",
+          "title": "GPUs per node",
           "description": "Request a specific number of GPUs per node"
         },
         "gpusPerSlot": {
           "type": "integer",
+          "title": "GPUs per slot",
           "description": "Set the number of GPU devices to assign to each slot"
         },
         "gpusPerTask": {
-          "type": "integer",
+          "type": "string",
+          "title": "GPUs per task",
           "description": "Set the number of GPU devices to assign to each task"
         },
         "jobName": {
           "type": "string",
+          "title": "Job name",
           "description": "Set an alternate job name for the job"
         },
         "labelIO": {
           "type": "boolean",
+          "title": "Label I/O",
           "description": "Add task rank prefixes to each line of output"
         },
         "nodes": {
-          "type": "integer",
+          "type": "string",
+          "title": "Nodes",
           "description": "Set the number of nodes to assign to the job"
         },
         "nslots": {
           "type": "integer",
+          "title": "Slots",
           "description": "Set the number of slots requested"
         },
         "ntasks": {
           "type": "integer",
+          "title": "Tasks",
           "description": "Set the number of tasks to launch"
         },
         "queue": {
           "type": "string",
+          "title": "Queue",
           "description": "Submit a job to a specific named queue"
         },
         "requires": {
           "type": "string",
+          "title": "Requires",
           "description": "Specify a set of allowable properties and other attributes to consider when matching resources for a job"
         },
         "rlimit": {
@@ -109,51 +130,59 @@
           "items": {
             "type": "string"
           },
+          "title": "Resource limit",
           "description": "Control how process resource limits are propagated"
         },
         "setattr": {
           "type": "object",
-          "description": "Set jobspec attribute. Keys may include periods to denote hierarchy"
+          "title": "Set attribute",
+          "description": "Set jobspec attribute. Keys may include periods to denote hierarchy",
+          "additionalProperties": true
         },
         "setopt": {
           "type": "object",
-          "description": "Set shell option. Keys may include periods to denote hierarchy"
+          "title": "Set option",
+          "description": "Set shell option. Keys may include periods to denote hierarchy",
+          "additionalProperties": true
         },
         "taskmap": {
           "type": "string",
+          "title": "Task map",
           "description": "Choose an alternate method for mapping job task IDs to nodes of the job"
         },
         "tasksPerCore": {
           "type": "integer",
+          "title": "Tasks per core",
           "description": "Force a number of tasks per core"
         },
         "tasksPerNode": {
           "type": "integer",
+          "title": "Tasks per node",
           "description": "Set the number of tasks per node to run"
         },
         "timeLimit": {
           "type": "string",
+          "title": "Time limit",
           "description": "Time limit in minutes when no units provided, otherwise in Flux standard duration (e.g., 30s, 2d, 1.5h). If a `timeout` value is defined directly in the workflow specification, it will override this value"
         },
         "unbuffered": {
           "type": "boolean",
+          "title": "Unbuffered",
           "description": "Disable buffering of standard input and output as much as practical"
         },
         "urgency": {
           "type": "integer",
+          "title": "Urgency",
           "description": "Specify job urgency, which affects queue order. Numerically higher urgency jobs are considered by the scheduler first"
         }
       }
     }
   },
-  "allOf": [
-    {
-      "$ref": "base/queue_manager.json"
-    }
-  ],
+  "$ref": "base/queue_manager.json",
   "properties": {
     "services": {
       "type": "object",
+      "title": "Services",
       "description": "Map containing named configurations of Flux submissions. Parameters can be either specified as #flux directives in a file or directly in YAML format.",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {

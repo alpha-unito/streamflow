@@ -2,7 +2,7 @@
 FluxConnector
 =============
 
-The `Flux Framework <https://flux-framework.org/>`_ connector allows running jobs on a cluster with Flux Framework in a High Performance Computing Context. Although Flux can work in a local testing container or a cloud environment and has a Python SDK, to match the design here, we follow suit and inherit from the :ref:`QueueManagerConnector <QueueManagerConnector>`. In this way, users can offload jobs to local or remote PBS controllers using the :ref:`stacked locations <Stacked locations>` mechanism. The HPC facility is supposed to be constantly active, reducing the deployment phase to deploy the inner connector (e.g., to create an :ref:`SSHConnection <SSHConnection>` pointing to an HPC login node).
+The `Flux Framework <https://flux-framework.org/>`_ connector allows running jobs on a cluster with Flux Framework in a High Performance Computing Context. Although Flux can work in a local testing container or a cloud environment and has a Python SDK, to match the design here, we follow suit and inherit from the :ref:`QueueManagerConnector <QueueManagerConnector>`. In this way, users can offload jobs to local or remote PBS controllers using the :ref:`stacked locations <Stacked locations>` mechanism. The HPC facility is supposed to be constantly active, reducing the deployment phase to deploy the inner connector (e.g., to create an :ref:`SSH Connection <SSH Connection>` pointing to an HPC login node).
 
 .. warning::
 
@@ -54,7 +54,7 @@ Being passed directly to the ``flux batch`` command line, the YAML options have 
 
 For a quick demo or tutorial, see our `example workflow <https://github.com/alpha-unito/streamflow/tree/master/examples/flux>`_.
 
-.. jsonschema:: ../../../streamflow/deployment/connector/schemas/flux.json
+.. jsonschema:: https://streamflow.di.unito.it/schemas/deployment/connector/flux.json
     :lift_description: true
     :lift_definitions: true
     :auto_reference: true

@@ -5,153 +5,183 @@
   "properties": {
     "atomic": {
       "type": "boolean",
+      "title": "Atomic",
       "description": "If set, installation process purges chart on fail (also sets wait flag)"
     },
     "caFile": {
       "type": "string",
+      "title": "CA file",
       "description": "Verify certificates of HTTPS-enabled servers using this CA bundle"
     },
     "certFile": {
       "type": "string",
+      "title": "Certificate file",
       "description": "Identify HTTPS client using this SSL certificate file"
     },
     "chart": {
       "type": "string",
+      "title": "Chart",
       "description": "A chart archive. This can be a chart reference, a path to a packaged chart, a path to an unpacked chart directory or a URL"
     },
     "chartVersion": {
       "type": "string",
+      "title": "Chart version",
       "description": "Specify the exact chart version to install",
       "default": "latest"
     },
     "commandLineValues": {
       "type": "string",
+      "title": "Command line values",
       "description": "Set values on the command line. Can separate values with commas: key1=val1,key2=val2"
     },
     "debug": {
       "type": "boolean",
+      "title": "Debug",
       "description": "Enable verbose output"
     },
     "depUp": {
       "type": "boolean",
+      "title": "Dependencies update",
       "description": "Run helm dependency update before installing the chart"
     },
     "devel": {
       "type": "boolean",
+      "title": "Development versions",
       "description": "Use development versions, too (equivalent to version >0.0.0-0). If version is set, this is ignored"
     },
     "fileValues": {
       "type": "string",
+      "title": "File values",
       "description": "Set values from respective files. Can separate values with commas: key1=path1,key2=path2"
     },
     "inCluster": {
       "type": "boolean",
+      "title": "In cluster",
       "description": "If true, the Helm connector will use a ServiceAccount to connect to the Kubernetes cluster. This is useful when StreamFlow runs directly inside a Kubernetes Pod",
       "default": false
     },
     "keepHistory": {
       "type": "boolean",
+      "title": "Keep history",
       "description": "Remove all associated resources and mark the release as deleted, but retain the release history",
       "default": false
     },
     "keyFile": {
       "type": "string",
+      "title": "Key file",
       "description": "Identify HTTPS client using this SSL key file"
     },
     "keyring": {
       "type": "string",
-      "description": "Location of public keys used for verification",
-      "default": "${HOME}/.gnupg/pubring.gpg"
+      "title": "Key ring",
+      "description": "Location of public keys used for verification"
     },
     "kubeContext": {
       "type": "string",
+      "title": "Kubernetes context",
       "description": "Name of the kubeconfig context to use"
     },
     "kubeconfig": {
       "type": "string",
+      "title": "Kubernetes config",
       "description": "Absolute path of the kubeconfig file to be used"
     },
     "maxConcurrentConnections": {
       "type": "integer",
+      "title": "Max concurrent connections",
       "description": "Maximum number of concurrent connections to open for a single Kubernetes client",
       "default": 4096
     },
     "namespace": {
       "type": "string",
-      "description": "Namespace to install the release into",
-      "default": "Current kube config namespace"
+      "title": "Namespace",
+      "description": "Namespace to install the release into"
     },
     "nameTemplate": {
       "type": "string",
+      "title": "Name template",
       "description": "Specify template used to name the release"
     },
     "noHooks": {
       "type": "boolean",
+      "title": "No hooks",
       "description": "Prevent hooks from running during install"
     },
     "password": {
       "type": "string",
+      "title": "Password",
       "description": "Chart repository password where to locate the requested chart"
     },
     "registryConfig": {
       "type": "string",
-      "description": "Path to the registry config file",
-      "default": "${HOME}/.config/helm/registry.json"
+      "title": "Registry config",
+      "description": "Path to the registry config file"
     },
     "repositoryCache": {
       "type": "string",
-      "description": "Path to the file containing cached repository indexes",
-      "default": "${HOME}/.cache/helm/repository"
+      "title": "Repository cache",
+      "description": "Path to the file containing cached repository indexes"
     },
     "repositoryConfig": {
       "type": "string",
-      "description": "Path to the file containing repository names and URLs",
-      "default": "${HOME}/.config/helm/repositories.yaml"
+      "title": "Repository config",
+      "description": "Path to the file containing repository names and URLs"
     },
     "releaseName": {
       "type": "string",
+      "title": "Release name",
       "description": "The release name. If unspecified, it will autogenerate one for you"
     },
     "renderSubchartNotes": {
       "type": "boolean",
+      "title": "Render subchart notes",
       "description": "Render subchart notes along with the parent"
     },
     "repo": {
       "type": "string",
+      "title": "Repository",
       "description": "Chart repository url where to locate the requested chart"
     },
     "locationsCacheTTL": {
       "type": "integer",
+      "title": "Locations cache TTL",
       "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
       "default": 10
     },
     "resourcesCacheTTL": {
       "type": "integer",
+      "title": "Resources cache TTL",
+     "deprecated": true,
       "description": "(**Deprecated.** Use locationsCacheTTL.) Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
       "default": 10
     },
     "skipCrds": {
       "type": "boolean",
+      "title": "Skip CRDs",
       "description": "If set, no CRDs will be installed",
       "default": false
     },
     "stringValues": {
       "type": "string",
+      "title": "String values",
       "description": "Set string values. Can separate values with commas: key1=val1,key2=val2"
     },
     "timeout": {
       "type": "string",
+      "title": "Timeout",
       "description": "Time to wait for any individual Kubernetes operation",
       "default": "1000m"
     },
     "transferBufferSize": {
       "type": "integer",
+      "title": "Transfer buffer size",
       "description": "Buffer size allocated for local and remote data transfers",
-      "default": "32MiB - 1B",
+      "default": 33554431,
       "$comment": "Kubernetes Python client talks with its server counterpart, written in Golang, via Websocket protocol. The standard websocket package in Golang defines DefaultMaxPayloadBytes equal to 32 MB. Nevertheless, since kubernetes-client prepends channel number to the actual payload (which is always 0 for STDIN), we must reserve 1 byte for this purpose"
     },
     "username": {
       "type": "string",
+      "title": "Username",
       "description": "Chart repository username where to locate the requested chart"
     },
     "yamlValues": {
@@ -159,15 +189,17 @@
       "items": {
         "type": "string"
       },
-      "description": "Specify values in a list of YAML files and/or URLs",
-      "default": []
+      "title": "YAML values",
+      "description": "Specify values in a list of YAML files and/or URLs"
     },
     "verify": {
       "type": "boolean",
+      "title": "Verify",
       "description": "Verify the package before installing it"
     },
     "wait": {
       "type": "boolean",
+      "title": "Wait",
       "description": "If set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment are in a ready state before marking the release as successful. It will wait for as long as timeout",
       "default": true
     }

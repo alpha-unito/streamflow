@@ -1,15 +1,15 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/recovery/default_failure_manager.json",
   "type": "object",
   "properties": {
     "max_retries": {
       "type": "integer",
-      "description": "Number of task retries after a failure, prior to abort the workflow execution.",
-      "default": "infinity"
+      "description": "Number of task retries after a failure, prior to abort the workflow execution."
     },
     "retry_delay": {
       "type": "integer",
+      "title": "Retry delay",
       "description": "Time (in seconds) to wait before scheduling the next retry.",
       "default": 0
     }

@@ -1,78 +1,111 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/base/queue_manager.json",
-  "$$target": "base/queue_manager.json",
   "type": "object",
   "properties": {
     "checkHostKey": {
       "type": "boolean",
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Perform a strict validation of the host SSH keys (and return exception if key is not recognized as valid)",
-      "default": true
+      "default": true,
+      "deprecated": true
     },
     "dataTransferConnection": {
       "oneOf": [
         {
-          "type": "string"
+          "type": "string",
+          "title": "Name"
         },
         {
           "type": "object",
           "$ref": "ssh.json#/$defs/connection"
         }
       ],
+      "title": "Data transfer SSH connection",
+      "deprecated": true,
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"
     },
     "file": {
       "type": "string",
-      "description": "(**Deprecated.** Use services.) Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
+      "title": "File",
+      "description": "(**Deprecated.** Use services.) Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment",
+      "deprecated": true
     },
     "hostname": {
       "type": "string",
-      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Hostname of the HPC facility"
+      "title": "Hostname",
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Hostname of the HPC facility",
+      "deprecated": true
     },
     "maxConcurrentJobs": {
       "type": "integer",
+      "title": "Max concurrent jobs",
       "description": "Maximum number of jobs concurrently scheduled for execution on the Queue Manager",
       "default": 1
     },
     "maxConcurrentSessions": {
       "type": "integer",
+      "title": "Max concurrent sessions",
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Maximum number of concurrent session to open for a single SSH client connection",
+      "deprecated": true,
       "default": 10
     },
     "maxConnections": {
       "type": "integer",
+      "title": "Max connections",
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Maximum number of concurrent connection to open for a single SSH node",
+      "deprecated": true,
       "default": 1
     },
     "passwordFile": {
       "type": "string",
+      "title": "Password file",
+      "deprecated": true,
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Path to a file containing the password to use for authentication"
     },
     "pollingInterval": {
       "type": "integer",
+      "title": "Polling interval",
       "description": "Time interval (in seconds) between consecutive termination checks",
       "default": 5
     },
     "sshKey": {
       "type": "string",
+      "title": "SSH key",
+      "deprecated": true,
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Path to the SSH key needed to connect with Slurm environment"
     },
     "sshKeyPassphraseFile": {
       "type": "string",
+      "title": "SSH key passphrase file",
+      "deprecated": true,
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Path to a file containing the passphrase protecting the SSH key"
     },
     "transferBufferSize": {
       "type": "integer",
+      "title": "Transfer buffer size",
+      "deprecated": true,
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Buffer size allocated for local and remote data transfers",
-      "default": "64kiB"
+      "default": 65536
     },
     "tunnel": {
-      "type": "object",
-      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) External SSH connection parameters for tunneling",
-      "$ref": "ssh.json#/$defs/connection"
+      "oneOf": [
+        {
+          "type": "null",
+          "title": "None"
+        },
+        {
+          "type": "object",
+          "$ref": "ssh.json#/$defs/connection"
+        }
+      ],
+      "title": "SSH tunnel",
+      "deprecated": true,
+      "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) External SSH connection parameters for tunneling"
     },
     "username": {
       "type": "string",
+      "title": "Username",
+      "deprecated": true,
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Username needed to connect with the SSH environment"
     }
   }

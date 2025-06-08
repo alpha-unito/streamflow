@@ -17,7 +17,10 @@
 
 # -- Project information -----------------------------------------------------
 import importlib
-import os.path
+import json
+from urllib.parse import urljoin
+
+import streamflow.config.schema
 
 project = 'StreamFlow'
 copyright = '2023, Alpha Research Group, Computer Science Dept., University of Torino'
@@ -46,7 +49,6 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = [
 ]
-
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -88,7 +90,6 @@ sjs_wide_format = importlib.import_module("sphinx-jsonschema.wide_format")
 def _patched_simpletype(self, schema):
     rows = []
     if 'title' in schema and (not self.options['lift_title'] or self.nesting > 1):
-        rows.append(self._line(self._cell('*' + schema['title'] + '*')))
         del schema['title']
     self._check_description(schema, rows)
     if 'type' in schema:
@@ -130,6 +131,16 @@ _original_arraytype = sjs_wide_format.WideFormat._arraytype
 sjs_wide_format.WideFormat._arraytype = _patched_arraytype
 
 
+def _patched_objecttype(self, schema):
+    if 'additionalProperties' in schema:
+        del schema['additionalProperties']
+    return _original_objecttype(self, schema)
+
+
+_original_objecttype = sjs_wide_format.WideFormat._objecttype
+sjs_wide_format.WideFormat._objecttype = _patched_objecttype
+
+
 def _patched_objectproperties(self, schema, key):
     rows = []
     if key in schema:
@@ -165,7 +176,7 @@ def _patched_complexstructures(self, schema):
             if 'type' in obj:
                 if obj['type'] == 'object' and '$ref' in obj:
                     types.extend(self._reference(obj))
-                else:
+                elif obj['type'] != 'null':
                     types.append(self._line(self._decodetype(obj['type'])))
                 del obj['type']
         if not list(filter(bool, schema['oneOf'])):
@@ -196,8 +207,6 @@ def patched_run(self, schema, pointer=''):
         del schema['$id']
     if 'type' in schema:
         del schema['type']
-    if 'additionalProperties' in schema:
-        del schema['additionalProperties']
     if 'required' in schema and 'properties' in schema:
         props = {}
         for prop in schema['required']:
@@ -212,25 +221,26 @@ original_run = sjs_wide_format.WideFormat.run
 sjs_wide_format.WideFormat.run = patched_run
 
 
-def patched_get_json_data(self):
-    schema, source, pointer = original_get_json_data(self)
-
-    if self.arguments:
-        filename, pointer = self._splitpointer(self.arguments[0])
+def patched_from_url(self, url):
+    root_schema = json.loads(streamflow.config.schema.SfSchema().dump(version='v1.0'))
+    defs = root_schema.get('$defs', root_schema.get('definitions', {}))
+    if url in defs:
+        schema = defs[url]
+        if '$ref' in schema and not schema['$ref'].startswith('#'):
+            ref_id, ref_pointer = self._splitpointer(urljoin(schema['$id'], schema['$ref']))
+            ref_schema = defs[ref_id]
+            if ref_pointer:
+                ref_schema = self.resolve_pointer(ref_schema, ref_pointer)
+            schema = ref_schema | schema
+            schema['properties'] = ref_schema.get('properties', {}) | schema.get('properties', {})
+            schema['properties'] = dict(sorted(schema['properties'].items()))
+            del schema['$ref']
+        return json.dumps(schema), url
     else:
-        filename, pointer = None, ''
-
-    if 'allOf' in schema:
-        for obj in schema['allOf']:
-            if '$ref' in obj:
-                target_file = os.path.join(os.path.dirname(filename), obj['$ref'])
-                target_schema, _ = self.from_file(target_file)
-                target_schema = self.ordered_load(target_schema)
-                schema['properties'] = {**target_schema.get('properties', {}), **schema['properties']}
-        del schema['allOf']
-        schema['properties'] = dict(sorted(schema['properties'].items()))
-    return schema, source, pointer
+        raise self.error(
+            '"%s" directive tried to load reference with $id "%s", which does not exist.'
+            % (self.name, url)
+        )
 
 
-original_get_json_data = sjs.JsonSchema.get_json_data
-sjs.JsonSchema.get_json_data = patched_get_json_data
+sjs.JsonSchema.from_url = patched_from_url
