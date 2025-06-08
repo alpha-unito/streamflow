@@ -1,5 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/occam.json",
   "type": "object",
   "properties": {
@@ -23,7 +23,7 @@
     "transferBufferSize": {
       "type": "integer",
       "description": "Buffer size allocated for local and remote data transfers",
-      "default": "64kiB"
+      "default": 65536
     },
     "username": {
       "type": "string",
