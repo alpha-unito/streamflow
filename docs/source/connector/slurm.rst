@@ -2,7 +2,7 @@
 SlurmConnector
 =====================
 
-The `Slurm <https://slurm.schedmd.com/>`_ connector allows offloading execution to High-Performance Computing (HPC) facilities orchestrated by the Slurm queue manager. It extends the :ref:`QueueManagerConnector <QueueManagerConnector>`, which inherits from the :ref:`ConnectorWrapper <ConnectorWrapper>` interface, allowing users to offload jobs to local or remote Slurm controllers using the :ref:`stacked locations <Stacked locations>` mechanism. The HPC facility is supposed to be constantly active, reducing the deployment phase to deploy the inner connector (e.g., to create an :ref:`SSHConnection <SSHConnection>` pointing to an HPC login node).
+The `Slurm <https://slurm.schedmd.com/>`_ connector allows offloading execution to High-Performance Computing (HPC) facilities orchestrated by the Slurm queue manager. It extends the :ref:`QueueManagerConnector <QueueManagerConnector>`, which inherits from the :ref:`ConnectorWrapper <ConnectorWrapper>` interface, allowing users to offload jobs to local or remote Slurm controllers using the :ref:`stacked locations <Stacked locations>` mechanism. The HPC facility is supposed to be constantly active, reducing the deployment phase to deploy the inner connector (e.g., to create an :ref:`SSH Connection <SSH Connection>` pointing to an HPC login node).
 
 .. warning::
 
@@ -56,7 +56,7 @@ Being passed directly to the ``sbatch`` command line, the YAML options have high
 
 The unit of binding is the entire HPC facility. In contrast, the scheduling unit is a single job placement in the Slurm queue. Users can limit the maximum number of concurrently placed jobs by setting the ``maxConcurrentJobs`` parameter.
 
-.. jsonschema:: ../../../streamflow/deployment/connector/schemas/slurm.json
+.. jsonschema:: https://streamflow.di.unito.it/schemas/deployment/connector/slurm.json
     :lift_description: true
     :lift_definitions: true
     :auto_reference: true
