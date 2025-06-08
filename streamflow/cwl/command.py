@@ -394,7 +394,7 @@ async def _prepare_work_dir(
                             asyncio.create_task(
                                 StreamFlowPath(
                                     folder_path, context=context, location=location
-                                ).mkdir(mode=0o777, exist_ok=True)
+                                ).mkdir(mode=0o777, parents=True, exist_ok=True)
                             )
                             for location in locations
                         )
