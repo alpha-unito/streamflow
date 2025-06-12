@@ -63,28 +63,33 @@ from streamflow.workflow.command import UnionCommandTokenProcessor
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import CombinatorStep, ExecuteStep
 from tests.conftest import save_load_and_test
+from tests.utils.utils import get_full_instantiation
 from tests.utils.workflow import CWL_VERSION, create_workflow
 
 
 def _create_cwl_command(
-    step: Step, processors: MutableSequence[CommandTokenProcessor]
+    step: Step, processors: MutableSequence[CommandTokenProcessor] | None = None
 ) -> CWLCommand:
-    return CWLCommand(
-        step=step,
-        absolute_initial_workdir_allowed=True,
-        base_command=["command", "tool"],
-        processors=processors,
-        expression_lib=["Requirement"],
-        failure_codes=[0, 0],
-        full_js=True,
-        initial_work_dir="/home",
-        inplace_update=True,
-        is_shell_command=True,
-        success_codes=[1],
-        step_stderr="stderr",
-        step_stdin="stdin",
-        step_stdout="stdout",
-        time_limit=1000,
+    processors = processors or []
+    return get_full_instantiation(
+        CWLCommand,
+        {
+            "step": step,
+            "absolute_initial_workdir_allowed": True,
+            "processors": processors,
+            "base_command": ["command", "tool"],
+            "expression_lib": ["Requirement"],
+            "failure_codes": [0, 0],
+            "full_js": True,
+            "initial_work_dir": "/home",
+            "inplace_update": True,
+            "is_shell_command": True,
+            "success_codes": [1],
+            "step_stderr": "a",
+            "step_stdin": "b",
+            "step_stdout": "c",
+            "time_limit": 1000,
+        },
     )
 
 
@@ -192,7 +197,7 @@ async def test_cwl_command(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
-    step.command = _create_cwl_command(step, [])
+    step.command = _create_cwl_command(step)
     await save_load_and_test(step, context)
 
 
