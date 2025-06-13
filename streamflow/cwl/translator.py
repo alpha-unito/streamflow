@@ -2099,12 +2099,13 @@ class CWLTranslator:
         input_ports = {}
         value_from_transformers = {}
         input_dependencies = {}
-        for element_input in cwl_element.in_:
+        for i in range(len(cwl_element.in_)):
             self._translate_workflow_step_input(
                 workflow=workflow,
                 context=context,
                 element_id=cwl_element.id,
-                element_input=element_input,
+                element_idx=i,
+                element_inputs=cwl_element.in_,
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix,
                 requirements=requirements,
@@ -2464,12 +2465,13 @@ class CWLTranslator:
             loop_default_ports = {}
             loop_value_from_transformers = {}
             loop_input_dependencies = {}
-            for loop_input in requirements["Loop"].loop or []:
+            for i in range(len(requirements["Loop"].loop or [])):
                 self._translate_workflow_step_input(
                     workflow=workflow,
                     context=context,
                     element_id=cwl_element.id,
-                    element_input=loop_input,
+                    element_idx=i,
+                    element_inputs=requirements["Loop"].loop,
                     name_prefix=name_prefix,
                     cwl_name_prefix=cwl_name_prefix,
                     requirements=requirements,
@@ -2555,7 +2557,8 @@ class CWLTranslator:
         workflow: CWLWorkflow,
         context: MutableMapping[str, Any],
         element_id: str,
-        element_input: cwl_utils.parser.WorkflowStepInput,
+        element_idx: int,
+        element_inputs: MutableSequence[cwl_utils.parser.WorkflowStepInput],
         name_prefix: str,
         cwl_name_prefix: str,
         requirements: MutableMapping[str, Any],
@@ -2566,6 +2569,7 @@ class CWLTranslator:
         inner_steps_prefix: str = "",
         value_from_transformer_cls: type[ValueFromTransformer] = ValueFromTransformer,
     ):
+        element_input = element_inputs[element_idx]
         # Extract custom types if present
         schema_def_types = _get_schema_def_types(requirements)
         # Extract element source
@@ -2741,15 +2745,8 @@ class CWLTranslator:
                 workflow=workflow,
                 value=element_input.default,
             )
-        elif element_input.valueFrom:
-            default_ports[global_name] = self._handle_default_port(
-                global_name=global_name,
-                port_name=port_name,
-                transformer_suffix=inner_steps_prefix + "-step-default-transformer",
-                port=None,
-                workflow=workflow,
-                value=None,
-            )
+        elif element_input.valueFrom and len(element_inputs) == 1:
+            input_ports[global_name] = workflow.create_port()
 
     def translate(self) -> Workflow:
         # Parse streams
