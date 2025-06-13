@@ -2744,9 +2744,15 @@ class CWLTranslator:
                 workflow=workflow,
                 value=element_input.default,
             )
-        # Otherwise, inject a synthetic port into the workflow
-        else:
-            input_ports[global_name] = workflow.create_port()
+        elif element_input.valueFrom:
+            default_ports[global_name] = self._handle_default_port(
+                global_name=global_name,
+                port_name=port_name,
+                transformer_suffix=inner_steps_prefix + "-step-default-transformer",
+                port=None,
+                workflow=workflow,
+                value=None,
+            )
 
     def translate(self) -> Workflow:
         # Parse streams
