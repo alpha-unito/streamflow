@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from collections.abc import Callable, MutableMapping, MutableSequence
 from typing import Any, cast
@@ -399,7 +398,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 await loading_context.load_workflow(context, row["workflow"]),
             ),
             target=(
-                (await loading_context.load_target(context, row["workflow"]))
+                (await loading_context.load_target(context, row["target"]))
                 if row["target"]
                 else None
             ),
@@ -421,6 +420,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 SecondaryFile(sf["pattern"], sf["required"])
                 for sf in row["secondary_files"]
             ],
+            single=row["single"],
             streamable=row["streamable"],
         )
 
@@ -671,6 +671,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             "secondary_files": await asyncio.gather(
                 *(asyncio.create_task(s.save(context)) for s in self.secondary_files)
             ),
+            "single": self.single,
             "streamable": self.streamable,
         }
 
@@ -1000,7 +1001,6 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CommandOutputProcessor:
-        params = json.loads(row["params"])
         return cls(
             name=row["name"],
             workflow=cast(
@@ -1008,7 +1008,7 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
                 await loading_context.load_workflow(context, row["workflow"]),
             ),
             target=(
-                (await loading_context.load_target(context, row["workflow"]))
+                (await loading_context.load_target(context, row["target"]))
                 if row["target"]
                 else None
             ),
@@ -1026,9 +1026,9 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
                     ),
                 )
             },
-            expression_lib=params["expression_lib"],
-            full_js=params["full_js"],
-            output_eval=params["output_eval"],
+            expression_lib=row["expression_lib"],
+            full_js=row["full_js"],
+            output_eval=row["output_eval"],
         )
 
     async def _save_additional_params(

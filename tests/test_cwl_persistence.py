@@ -12,7 +12,7 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import FilterConfig, LocalTarget
-from streamflow.core.workflow import CommandTokenProcessor, Step
+from streamflow.core.workflow import CommandOutputProcessor, CommandTokenProcessor, Step
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
     CWLCommand,
@@ -23,10 +23,14 @@ from streamflow.cwl.command import (
 )
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
+    CWLCommandOutputProcessor,
     CWLFileToken,
+    CWLMapCommandOutputProcessor,
     CWLMapTokenProcessor,
+    CWLObjectCommandOutputProcessor,
     CWLObjectTokenProcessor,
     CWLTokenProcessor,
+    CWLUnionCommandOutputProcessor,
     CWLUnionTokenProcessor,
 )
 from streamflow.cwl.step import (
@@ -67,20 +71,43 @@ def _create_cwl_command(
 ) -> CWLCommand:
     return CWLCommand(
         step=step,
-        absolute_initial_workdir_allowed=False,
+        absolute_initial_workdir_allowed=True,
         base_command=["command", "tool"],
         processors=processors,
         expression_lib=["Requirement"],
         failure_codes=[0, 0],
-        full_js=False,
+        full_js=True,
         initial_work_dir="/home",
-        inplace_update=False,
-        is_shell_command=False,
+        inplace_update=True,
+        is_shell_command=True,
         success_codes=[1],
-        step_stderr=None,
-        step_stdin=None,
-        step_stdout=None,
+        step_stderr="stderr",
+        step_stdin="stdin",
+        step_stdout="stdout",
         time_limit=1000,
+    )
+
+
+def _create_cwl_command_output_processor(
+    name: str, workflow: CWLWorkflow
+) -> CommandOutputProcessor:
+    return CWLCommandOutputProcessor(
+        name=name,
+        workflow=workflow,
+        target=LocalTarget(workdir="/home"),
+        token_type=["string"],
+        enum_symbols=["test"],
+        expression_lib=["mylib"],
+        file_format="file",
+        full_js=True,
+        glob="*.png",
+        load_contents=True,
+        load_listing=LoadListing.shallow_listing,
+        optional=True,
+        output_eval="$(do something)",
+        secondary_files=[SecondaryFile(pattern=".bai", required="1 == 1")],
+        single=True,
+        streamable=True,
     )
 
 
@@ -88,16 +115,16 @@ def _create_cwl_command_token_processor(
     processor: CommandTokenProcessor | None = None, expression: Any | None = None
 ):
     return CWLCommandTokenProcessor(
-        is_shell_command=False,
-        item_separator="&",
         name="test",
+        expression=expression,
+        processor=processor,
+        token_type="string",
+        is_shell_command=True,
+        item_separator="&",
         position=2,
         prefix="--test",
         separate=True,
         shell_quote=True,
-        token_type="string",
-        processor=processor,
-        expression=expression,
     )
 
 
@@ -106,10 +133,17 @@ def _create_cwl_token_processor(name: str, workflow: CWLWorkflow) -> CWLTokenPro
         name=name,
         workflow=workflow,
         token_type="enum",
+        check_type=False,
         enum_symbols=["path1", "path2"],
         expression_lib=["expr_lib1", "expr_lib2"],
+        file_format="file",
+        full_js=True,
+        load_contents=True,
+        load_listing=LoadListing.shallow_listing,
+        only_propagate_secondary_files=False,
+        optional=True,
         secondary_files=[SecondaryFile("file1", True)],
-        load_listing=LoadListing.no_listing,
+        streamable=True,
     )
 
 
@@ -238,22 +272,68 @@ async def test_cwl_command_token_processors_nested(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_cwl_execute_step(context: StreamFlowContext):
+@pytest.mark.parametrize(
+    "output_type", ["no_output", "default", "primitive", "map", "object", "union"]
+)
+async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
     """Test saving and loading CWLExecuteStep from database"""
     workflow = CWLWorkflow(
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    job_port = workflow.create_port(JobPort)
+    if output_type != "no_output":
+        port = workflow.create_port()
     await workflow.save(context)
-
     step = workflow.create_step(
         cls=CWLExecuteStep,
         name=utils.random_name(),
-        job_port=port,
+        job_port=job_port,
         recoverable="$(inputs.file)",
         full_js=True,
         expression_lib=["a", "b"],
     )
+    if output_type != "no_output":
+        if output_type == "default":
+            processor = None
+        elif output_type == "primitive":
+            processor = _create_cwl_command_output_processor(
+                name=utils.random_name(), workflow=workflow
+            )
+        elif output_type == "map":
+            processor = CWLMapCommandOutputProcessor(
+                name=utils.random_name(),
+                workflow=workflow,
+                processor=_create_cwl_command_output_processor(
+                    name=utils.random_name(), workflow=workflow
+                ),
+            )
+        elif output_type == "object":
+            processor = CWLObjectCommandOutputProcessor(
+                name=utils.random_name(),
+                workflow=workflow,
+                processors={
+                    "attr_a": _create_cwl_command_output_processor(
+                        name=utils.random_name(), workflow=workflow
+                    ),
+                },
+                expression_lib=["a", "b"],
+                full_js=True,
+                output_eval="$(1 == 1)",
+                target=LocalTarget("/shared"),
+            )
+        elif output_type == "union":
+            processor = CWLUnionCommandOutputProcessor(
+                name=utils.random_name(),
+                workflow=workflow,
+                processors=[
+                    _create_cwl_command_output_processor(
+                        name=utils.random_name(), workflow=workflow
+                    ),
+                ],
+            )
+        else:
+            raise Exception(f"Unknown output type: {output_type}")
+        step.add_output_port("my_output", port, processor)
     await save_load_and_test(step, context)
 
 
