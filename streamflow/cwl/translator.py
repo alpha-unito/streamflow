@@ -2748,8 +2748,16 @@ class CWLTranslator:
                 workflow=workflow,
                 value=element_input.default,
             )
-        elif element_input.valueFrom and len(element_inputs) == 1:
-            input_ports[global_name] = workflow.create_port()
+        # Otherwise, handle valueFrom
+        elif element_input.valueFrom:
+            # Inject a synthetic port into the workflow
+            if len(element_inputs) == 1:
+                input_ports[global_name] = workflow.create_port()
+        # Handle unexpected step definitions in the workflow
+        else:
+            raise WorkflowDefinitionException(
+                f"Unexpected {global_name} step definition"
+            )
 
     def translate(self) -> Workflow:
         # Parse streams
