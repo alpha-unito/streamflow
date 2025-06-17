@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/base/kubernetes.json",
+  "type": "object",
+  "properties": {
+    "debug": {
+      "type": "boolean",
+      "title": "Debug",
+      "description": "Enable verbose output"
+    },
+    "inCluster": {
+      "type": "boolean",
+      "title": "In cluster",
+      "description": "If true, the Kubernetes connector will use a ServiceAccount to connect to the cluster. This is useful when StreamFlow runs directly inside a Kubernetes Pod",
+      "default": false
+    },
+    "kubeContext": {
+      "type": "string",
+      "title": "Kubernetes context",
+      "description": "Name of the kubeconfig context to use"
+    },
+    "kubeconfig": {
+      "type": "string",
+      "title": "Kubernetes config",
+      "description": "Absolute path of the kubeconfig file to be used"
+    },
+    "maxConcurrentConnections": {
+      "type": "integer",
+      "title": "Max concurrent connections",
+      "description": "Maximum number of concurrent connections to open for a single Kubernetes client",
+      "default": 4096
+    },
+    "namespace": {
+      "type": "string",
+      "title": "Namespace",
+      "description": "Namespace to deploy into"
+    },
+    "locationsCacheSize": {
+      "type": "integer",
+      "title": "Locations cache size",
+      "description": "Available locations cache size",
+      "default": 10
+    },
+    "locationsCacheTTL": {
+      "type": "integer",
+      "title": "Locations cache TTL",
+      "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
+      "default": 10
+    },
+    "resourcesCacheSize": {
+      "type": "integer",
+      "title": "Resources cache size",
+      "deprecated": true,
+      "description": "(**Deprecated.** Use locationsCacheSize.) Available resources cache size",
+      "default": 10
+    },
+    "resourcesCacheTTL": {
+      "type": "integer",
+      "title": "Resources cache TTL",
+      "deprecated": true,
+      "description": "(**Deprecated.** Use locationsCacheTTL.) Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
+      "default": 10
+    },
+    "timeout": {
+      "type": "integer",
+      "title": "Timeout",
+      "description": "Time (in seconds) to wait for any individual Kubernetes operation",
+      "default": 60000
+    },
+    "transferBufferSize": {
+      "type": "integer",
+      "title": "Transfer buffer size",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": 33554431,
+      "$comment": "Kubernetes Python client talks with its server counterpart, written in Golang, via Websocket protocol. The standard websocket package in Golang defines DefaultMaxPayloadBytes equal to 32 MB. Nevertheless, since kubernetes-client prepends channel number to the actual payload (which is always 0 for STDIN), we must reserve 1 byte for this purpose"
+    },
+    "wait": {
+      "type": "boolean",
+      "title": "Wait",
+      "description": "If set, will wait until all Pods, PVCs, Services, and minimum number of Pods of a Deployment are in a ready state before marking the deployment as successful. It will wait for as long as timeout",
+      "default": true
+    }
+  }
+}

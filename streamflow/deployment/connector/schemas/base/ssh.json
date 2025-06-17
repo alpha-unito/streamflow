@@ -1,61 +1,56 @@
 {
-  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/base/ssh.json",
-  "$$target": "base/ssh.json",
   "type": "object",
   "$defs": {
     "connection": {
       "type": "object",
-      "title": "SSHConnection",
+      "title": "SSH Connection",
       "description": "This complex type represents an SSH connection to a remote node, identified by its hostname.",
       "properties": {
         "checkHostKey": {
           "type": "boolean",
+          "title": "Check host key",
           "description": "Perform a strict validation of the host SSH keys (and return exception if key is not recognized as valid)",
           "default": true
         },
         "hostname": {
           "type": "string",
+          "title": "Hostname",
           "description": "The hostname[:port] or address[:port] to connect to."
         },
         "passwordFile": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
+          "title": "Password file",
           "description": "Path to a file containing the password to use for authentication"
         },
         "sshKey": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
+          "title": "SSH key",
           "description": "Path to the SSH key needed to connect with the environment"
         },
         "sshKeyPassphraseFile": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
+          "title": "SSH key passphrase",
           "description": "Path to a file containing the passphrase protecting the SSH key"
         },
         "tunnel": {
           "oneOf": [
             {
-              "type": "object",
-              "$ref": "#/$defs/connection"
+              "type": "null",
+              "title": "None"
             },
             {
-              "type": "null"
+              "type": "object",
+              "$ref": "#/$defs/connection"
             }
           ],
+          "title": "SSH tunnel",
           "description": "External SSH connection parameters for tunneling"
         },
         "username": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": "string",
+          "title": "Username",
           "description": "Username needed to connect with the SSH environment"
         }
       },
@@ -68,28 +63,34 @@
   "properties": {
     "checkHostKey": {
       "type": "boolean",
+      "title": "Check host key",
       "description": "Perform a strict validation of the host SSH keys (and return exception if key is not recognized as valid)",
       "default": true
     },
     "connectTimeout": {
       "type": "integer",
+      "title": "Connection timeout",
       "description": "Max time (in seconds) to wait for establishing an SSH connection.",
       "default": 30
     },
     "dataTransferConnection": {
       "oneOf": [
         {
-          "type": "string"
+          "type": "string",
+          "title": "Name"
         },
         {
           "type": "object",
           "$ref": "#/$defs/connection"
         }
       ],
+      "title": "Data transfer SSH connection",
       "description": "Sometimes HPC clusters provide dedicated hostnames for large data transfers, which guarantee a higher efficiency for data movements"
     },
     "file": {
       "type": "string",
+      "deprecated": true,
+      "title": "File",
       "description": "(**Deprecated.** Use services.) Path to a file containing a Jinja2 template, describing how the StreamFlow command should be executed in the remote environment"
     },
     "nodes": {
@@ -105,34 +106,41 @@
           }
         ]
       },
+      "title": "Worker nodes",
       "description": "List of worker nodes. They can be represented as either single hostnames or connection objects. When a property is missing, it is inherited from the connector context"
     },
     "maxConcurrentSessions": {
       "type": "integer",
+      "title": "Max concurrent sessions",
       "description": "Maximum number of concurrent session to open for a single SSH client connection",
       "default": 10
     },
     "maxConnections": {
       "type": "integer",
+      "title": "Max concurrent connections",
       "description": "Maximum number of concurrent connection to open for a single SSH node",
       "default": 1
     },
     "passwordFile": {
       "type": "string",
+      "title": "Password file",
       "description": "Path to a file containing the password to use for authentication"
     },
     "retries": {
       "type": "integer",
+      "title": "Retries",
       "description": "Number of consecutive connection errors to consider the connection failed",
       "default": 3
     },
     "retryDelay": {
       "type": "integer",
+      "title": "Retry delay",
       "description": "Time (in seconds) to wait before retrying to connect",
       "default": 5
     },
     "services": {
       "type": "object",
+      "title": "Services",
       "patternProperties": {
         "^[a-z][a-zA-Z0-9._-]*$": {
           "type": "string",
@@ -145,28 +153,43 @@
       "items": {
         "type": "string"
       },
+      "title": "Shared paths",
       "description": "Portions of the file-system shared among all the nodes in the farm"
     },
     "sshKey": {
       "type": "string",
+      "title": "SSH key",
       "description": "Path to the SSH key needed to connect with the environment"
     },
     "sshKeyPassphraseFile": {
       "type": "string",
+      "title": "SSH key passphrase",
       "description": "Path to a file containing the passphrase protecting the SSH key"
     },
     "transferBufferSize": {
       "type": "integer",
+      "title": "Transfer buffer size",
       "description": "Buffer size allocated for local and remote data transfers",
-      "default": "64kiB"
+      "default": 65536,
+      "minimum": 1
     },
     "tunnel": {
-      "type": "object",
-      "description": "External SSH connection parameters for tunneling",
-      "$ref": "#/$defs/connection"
+      "oneOf": [
+        {
+          "type": "null",
+          "title": "None"
+        },
+        {
+          "type": "object",
+          "$ref": "#/$defs/connection"
+        }
+      ],
+      "title": "SSH tunnel",
+      "description": "External SSH connection parameters for tunneling"
     },
     "username": {
       "type": "string",
+      "title": "Username",
       "description": "Username needed to connect with the SSH environment"
     }
   },
