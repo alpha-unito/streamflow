@@ -723,9 +723,9 @@ class CWLTransferStep(TransferStep):
                 path=location, dst_deployment=dst_connector.deployment_name
             )
         ):
+            filepath = dst_path or (dst_dir / selected_location.relpath)
             try:
                 # Build unique destination path
-                filepath = dst_path or (dst_dir / selected_location.relpath)
                 if not self.prefix_path:
                     filepath = cast(CWLWorkflow, self.workflow).get_unique_output_path(
                         path=filepath, src_location=selected_location
@@ -739,7 +739,19 @@ class CWLTransferStep(TransferStep):
                     writable=self.writable,
                 )
             except FileExistsError:
-                filepath = dst_path or (dst_dir / selected_location.relpath)
+                # Error thrown in the `get_unique_output_path` method
+                while (
+                    len(
+                        self.workflow.context.data_manager.get_data_locations(
+                            str(filepath),
+                            selected_location.deployment,
+                            selected_location.location.name,
+                        )
+                    )
+                    == 0
+                ):
+                    # The concurrent task has not created the `DataLocation` yet
+                    await asyncio.sleep(2)
             # Transform token value
             new_token_value = {
                 "class": token_class,
