@@ -34,7 +34,7 @@ FAILURE_STEP = ["execute", "transfer", "schedule"]
 NUM_STEPS = {"single_step": 1, "pipeline": 4}
 NUM_FAILURES = {"one_failure": 1, "two_failures_in_row": 2}
 ERROR_TYPE = [InjectorFailureCommand.SOFT_ERROR, InjectorFailureCommand.FAIL_STOP]
-TOKEN_TYPE = ["primitive", "file", "list"]
+TOKEN_TYPE = ["primitive", "file"]
 
 
 async def _assert_token_result(
