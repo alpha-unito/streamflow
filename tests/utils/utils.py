@@ -22,7 +22,7 @@ from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
 
 
-def get_full_instantiation(cls_: type[Any], arguments: MutableMapping[str, Any]) -> Any:
+def get_full_instantiation(cls_: type[Any], **arguments) -> Any:
     """
     Instantiates a class using the provided arguments, checking whether the resulting
     instance has values that differ from the class's default values.

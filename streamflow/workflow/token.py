@@ -125,6 +125,7 @@ class JobToken(Token):
         return cls(
             tag=row["tag"],
             value=await Job.load(context, params["job"], loading_context),
+            recoverable=row["recoverable"],
         )
 
 
@@ -147,6 +148,7 @@ class ListToken(Token):
                     for t in value
                 )
             ),
+            recoverable=row["recoverable"],
         )
 
     async def _save_value(self, context: StreamFlowContext):
@@ -195,6 +197,7 @@ class ObjectToken(Token):
                     ),
                 )
             },
+            recoverable=row["recoverable"],
         )
 
     async def _save_value(self, context: StreamFlowContext):

@@ -72,24 +72,22 @@ def _create_cwl_command(
 ) -> CWLCommand:
     processors = processors or []
     return get_full_instantiation(
-        CWLCommand,
-        {
-            "step": step,
-            "absolute_initial_workdir_allowed": True,
-            "processors": processors,
-            "base_command": ["command", "tool"],
-            "expression_lib": ["Requirement"],
-            "failure_codes": [0, 0],
-            "full_js": True,
-            "initial_work_dir": "/home",
-            "inplace_update": True,
-            "is_shell_command": True,
-            "success_codes": [1],
-            "step_stderr": "a",
-            "step_stdin": "b",
-            "step_stdout": "c",
-            "time_limit": 1000,
-        },
+        cls_=CWLCommand,
+        step=step,
+        absolute_initial_workdir_allowed=True,
+        processors=processors,
+        base_command=["command", "tool"],
+        expression_lib=["Requirement"],
+        failure_codes=[0, 0],
+        full_js=True,
+        initial_work_dir="/home",
+        inplace_update=True,
+        is_shell_command=True,
+        success_codes=[1],
+        step_stderr="a",
+        step_stdin="b",
+        step_stdout="c",
+        time_limit=1000,
     )
 
 
@@ -119,7 +117,9 @@ def _create_cwl_command_output_processor(
 def _create_cwl_command_token_processor(
     processor: CommandTokenProcessor | None = None, expression: Any | None = None
 ):
-    return CWLCommandTokenProcessor(
+    processor = processor or CWLCommandTokenProcessor("test1", "test2")
+    return get_full_instantiation(
+        cls_=CWLCommandTokenProcessor,
         name="test",
         expression=expression,
         processor=processor,
@@ -128,23 +128,24 @@ def _create_cwl_command_token_processor(
         item_separator="&",
         position=2,
         prefix="--test",
-        separate=True,
-        shell_quote=True,
+        separate=False,
+        shell_quote=False,
     )
 
 
 def _create_cwl_token_processor(name: str, workflow: CWLWorkflow) -> CWLTokenProcessor:
-    return CWLTokenProcessor(
-        name=name,
+    return get_full_instantiation(
+        cls_=CWLTokenProcessor,
+        name="test",
         workflow=workflow,
         token_type="enum",
         check_type=False,
         enum_symbols=["path1", "path2"],
         expression_lib=["expr_lib1", "expr_lib2"],
-        file_format="file",
+        file_format="directory",
         full_js=True,
         load_contents=True,
-        load_listing=LoadListing.shallow_listing,
+        load_listing=LoadListing.no_listing,
         only_propagate_secondary_files=False,
         optional=True,
         secondary_files=[SecondaryFile("file1", True)],
@@ -170,7 +171,8 @@ async def test_clone_transformer(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_cwl_file_token(context: StreamFlowContext):
     """Test saving and loading CWLFileToken from database"""
-    token = CWLFileToken(
+    token = get_full_instantiation(
+        cls_=CWLFileToken,
         value={
             "basename": "version.py",
             "checksum": "sha1$a4a8b0c0b19d3187a1ab8c9346fc105978115781",
@@ -181,7 +183,9 @@ async def test_cwl_file_token(context: StreamFlowContext):
             "nameroot": "version",
             "path": "/home/ubuntu/streamflow/streamflow/version.py",
             "size": 24,
-        }
+        },
+        tag="0.0",
+        recoverable=True,
     )
     await save_load_and_test(token, context)
 
@@ -212,14 +216,16 @@ async def test_cwl_expression_command(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
-    step.command = CWLExpressionCommand(
+    step.command = get_full_instantiation(
+        cls_=CWLExpressionCommand,
         step=step,
         expression="$(some.js.expression)",
-        absolute_initial_workdir_allowed=False,
+        absolute_initial_workdir_allowed=True,
         expression_lib=["a", "b"],
-        full_js=False,
-        initial_work_dir="/tmp/workdir",
-        inplace_update=False,
+        full_js=True,
+        initial_work_dir=["/tmp/workdir"],
+        inplace_update=True,
+        time_limit="$(1+1)",
     )
     await save_load_and_test(step, context)
 
@@ -356,7 +362,8 @@ async def test_cwl_object_command_token_processor(context: StreamFlowContext):
     step.command = _create_cwl_command(
         step,
         [
-            CWLObjectCommandTokenProcessor(
+            get_full_instantiation(
+                cls_=CWLObjectCommandTokenProcessor,
                 name="test",
                 processors={
                     "a": _create_cwl_command_token_processor(expression=10),
@@ -381,10 +388,12 @@ async def test_cwl_object_command_token_processors_nested(context: StreamFlowCon
     )
 
     processors = [
-        CWLObjectCommandTokenProcessor(
+        get_full_instantiation(
+            cls_=CWLObjectCommandTokenProcessor,
             name="test",
             processors={
-                "zero": CWLObjectCommandTokenProcessor(
+                "zero": get_full_instantiation(
+                    cls_=CWLObjectCommandTokenProcessor,
                     name="test",
                     processors={
                         "type": _create_cwl_command_token_processor(expression="File"),
@@ -393,7 +402,8 @@ async def test_cwl_object_command_token_processors_nested(context: StreamFlowCon
                 )
             },
         ),
-        CWLObjectCommandTokenProcessor(
+        get_full_instantiation(
+            cls_=CWLObjectCommandTokenProcessor,
             name="test",
             processors={
                 "zero": CWLObjectCommandTokenProcessor(
@@ -426,7 +436,8 @@ async def test_cwl_union_command_token_processor(context: StreamFlowContext):
     step.command = _create_cwl_command(
         step,
         [
-            UnionCommandTokenProcessor(
+            get_full_instantiation(
+                cls_=UnionCommandTokenProcessor,
                 name="test",
                 processors=[
                     _create_cwl_command_token_processor(expression="qwerty"),
@@ -453,17 +464,20 @@ async def test_cwl_union_command_token_processor_nested(context: StreamFlowConte
     step.command = _create_cwl_command(
         step,
         [
-            UnionCommandTokenProcessor(
+            get_full_instantiation(
+                cls_=UnionCommandTokenProcessor,
                 name="test",
                 processors=[
-                    UnionCommandTokenProcessor(
+                    get_full_instantiation(
+                        cls_=UnionCommandTokenProcessor,
                         name="test",
                         processors=[
                             _create_cwl_command_token_processor(expression="aaa"),
                             _create_cwl_command_token_processor(expression="bbb"),
                         ],
                     ),
-                    UnionCommandTokenProcessor(
+                    get_full_instantiation(
+                        cls_=UnionCommandTokenProcessor,
                         name="test",
                         processors=[
                             _create_cwl_command_token_processor(expression="ccc"),
@@ -491,11 +505,13 @@ async def test_cwl_map_command_token_processor(context: StreamFlowContext):
     step.command = _create_cwl_command(
         step,
         [
-            CWLMapCommandTokenProcessor(
+            get_full_instantiation(
+                cls_=CWLMapCommandTokenProcessor,
                 name="test",
                 processor=_create_cwl_command_token_processor(expression="z"),
             ),
-            CWLMapCommandTokenProcessor(
+            get_full_instantiation(
+                cls_=CWLMapCommandTokenProcessor,
                 name="test",
                 processor=_create_cwl_command_token_processor(expression="xy"),
             ),
@@ -512,12 +528,13 @@ async def test_list_merge_combinator(context: StreamFlowContext):
     step = workflow.create_step(
         cls=CombinatorStep,
         name=name + "-combinator",
-        combinator=ListMergeCombinator(
+        combinator=get_full_instantiation(
+            cls_=ListMergeCombinator,
             name=utils.random_name(),
             workflow=cast(CWLWorkflow, workflow),
             input_names=[port.name],
             output_name=name,
-            flatten=False,
+            flatten=True,
         ),
     )
     await save_load_and_test(step, context)
@@ -636,10 +653,12 @@ async def test_cwl_map_token_transformer(context: StreamFlowContext):
         cls=CWLTokenTransformer,
         name=name + "-transformer",
         port_name=port.name,
-        processor=CWLMapTokenProcessor(
+        processor=get_full_instantiation(
+            cls_=CWLMapTokenProcessor,
             name=port.name,
             workflow=workflow,
             processor=_create_cwl_token_processor(port.name, workflow),
+            optional=True,
         ),
     )
     await save_load_and_test(transformer, context)
@@ -661,12 +680,14 @@ async def test_cwl_object_token_transformer(context: StreamFlowContext):
         cls=CWLTokenTransformer,
         name=name + "-transformer",
         port_name=port.name,
-        processor=CWLObjectTokenProcessor(
+        processor=get_full_instantiation(
+            cls_=CWLObjectTokenProcessor,
             name=port.name,
             workflow=workflow,
             processors={
                 utils.random_name(): _create_cwl_token_processor(port.name, workflow)
             },
+            optional=True,
         ),
     )
     await save_load_and_test(transformer, context)
@@ -688,7 +709,8 @@ async def test_cwl_union_token_transformer(context: StreamFlowContext):
         cls=CWLTokenTransformer,
         name=name + "-transformer",
         port_name=port.name,
-        processor=CWLUnionTokenProcessor(
+        processor=get_full_instantiation(
+            cls_=CWLUnionTokenProcessor,
             name=port.name,
             workflow=workflow,
             processors=[_create_cwl_token_processor(port.name, workflow)],
@@ -856,11 +878,16 @@ async def test_cwl_loop_output(context: StreamFlowContext, step_cls: type[Step])
 async def test_cwl_schedule_step(context: StreamFlowContext):
     """Test saving and loading CWLScheduleStep with a CWLHardwareRequirement from database"""
     workflow, _ = await create_workflow(context, 0)
-    binding_config = BindingConfig(
+    binding_config = get_full_instantiation(
+        cls_=BindingConfig,
         targets=[
-            LocalTarget(workdir=utils.random_name()),
+            get_full_instantiation(cls_=LocalTarget, workdir=utils.random_name()),
         ],
-        filters=[FilterConfig(config={}, name=utils.random_name(), type="shuffle")],
+        filters=[
+            get_full_instantiation(
+                cls_=FilterConfig, config={}, name=utils.random_name(), type="shuffle"
+            )
+        ],
     )
     connector_ports = {
         target.deployment.name: workflow.create_port(ConnectorPort)
@@ -874,14 +901,15 @@ async def test_cwl_schedule_step(context: StreamFlowContext):
         job_prefix="something",
         connector_ports=connector_ports,
         binding_config=binding_config,
-        hardware_requirement=CWLHardwareRequirement(
-            CWL_VERSION,
-            1.5,
-            "$(inputs.mem * 2)",
-            1024,
-            4096,
-            True,
-            ["function function nope(message) {return message}"],
+        hardware_requirement=get_full_instantiation(
+            cls_=CWLHardwareRequirement,
+            cwl_version=CWL_VERSION,
+            cores=1.5,
+            memory="$(inputs.mem * 2)",
+            tmpdir=1024,
+            outdir=4096,
+            full_js=True,
+            expression_lib=["function function nope(message) {return message}"],
         ),
     )
     await save_load_and_test(schedule_step, context)

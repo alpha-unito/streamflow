@@ -193,7 +193,7 @@ class DeploymentConfig(PersistableEntity):
         self.config: MutableMapping[str, Any] = config or {}
         self.external: bool = external
         self.lazy: bool = lazy
-        self.scheduling_policy: Config | None = scheduling_policy or Config(
+        self.scheduling_policy: Config = scheduling_policy or Config(
             name="__DEFAULT__", type="data_locality", config={}
         )
         self.workdir: str | None = workdir
@@ -213,8 +213,21 @@ class DeploymentConfig(PersistableEntity):
             config=json.loads(row["config"]),
             external=row["external"],
             lazy=row["lazy"],
+            scheduling_policy=await Config.load(
+                context=context,
+                row=json.loads(row["scheduling_policy"]),
+                loading_context=loading_context,
+            ),
             workdir=row["workdir"],
-            wraps=json.loads(row["wraps"]),
+            wraps=(
+                await WrapsConfig.load(
+                    context=context,
+                    row=json.loads(row["wraps"]),
+                    loading_context=loading_context,
+                )
+                if row["wraps"] != "null"
+                else None
+            ),
         )
         loading_context.add_deployment(persistent_id, obj)
         return obj
@@ -228,6 +241,7 @@ class DeploymentConfig(PersistableEntity):
                     config=json.dumps(self.config),
                     external=self.external,
                     lazy=self.lazy,
+                    scheduling_policy=await self.scheduling_policy.save(context),
                     workdir=self.workdir,
                     wraps=(
                         await self.wraps.save(context)

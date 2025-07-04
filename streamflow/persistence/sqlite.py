@@ -107,19 +107,21 @@ class SqliteDatabase(CachedDatabase):
         config: str,
         external: bool,
         lazy: bool,
+        scheduling_policy: MutableMapping[str, Any],
         workdir: str | None,
         wraps: MutableMapping[str, Any] | None,
     ) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO deployment(name, type, config, external, lazy, workdir, wraps) "
-                "VALUES (:name, :type, :config, :external, :lazy, :workdir, :wraps)",
+                "INSERT INTO deployment(name, type, config, external, lazy, scheduling_policy, workdir, wraps) "
+                "VALUES (:name, :type, :config, :external, :lazy, :scheduling_policy, :workdir, :wraps)",
                 {
                     "name": name,
                     "type": type,
                     "config": config,
                     "external": external,
                     "lazy": lazy,
+                    "scheduling_policy": json.dumps(scheduling_policy),
                     "workdir": workdir,
                     "wraps": json.dumps(wraps),
                 },

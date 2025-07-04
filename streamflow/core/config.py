@@ -24,6 +24,20 @@ class Config:
         self.type: str = type
         self.config: MutableMapping[str, Any] = config or {}
 
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ):
+        return Config(
+            name=row["name"], type=row["type"], config=json.loads(row["config"])
+        )
+
+    async def save(self, context: StreamFlowContext):
+        return {"name": self.name, "type": self.type, "config": json.dumps(self.config)}
+
 
 class BindingConfig:
     __slots__ = ("targets", "filters")
