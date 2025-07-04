@@ -606,6 +606,7 @@ class CWLTransferStep(TransferStep):
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])
             ),
+            prefix_path=params["prefix_path"],
             writable=params["writable"],
         )
         return step
@@ -614,7 +615,8 @@ class CWLTransferStep(TransferStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "writable": self.writable
+            "prefix_path": self.prefix_path,
+            "writable": self.writable,
         }
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
