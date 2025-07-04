@@ -147,6 +147,7 @@ class ListToken(Token):
                     for t in value
                 )
             ),
+            recoverable=row["recoverable"],
         )
 
     async def _save_value(self, context: StreamFlowContext):
@@ -195,6 +196,7 @@ class ObjectToken(Token):
                     ),
                 )
             },
+            recoverable=row["recoverable"],
         )
 
     async def _save_value(self, context: StreamFlowContext):

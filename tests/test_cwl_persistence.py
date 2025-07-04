@@ -176,7 +176,9 @@ async def test_cwl_file_token(context: StreamFlowContext):
             "nameroot": "version",
             "path": "/home/ubuntu/streamflow/streamflow/version.py",
             "size": 24,
-        }
+        },
+        tag="0.0",
+        recoverable=True,
     )
     await save_load_and_test(token, context)
 
