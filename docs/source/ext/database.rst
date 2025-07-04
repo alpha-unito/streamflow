@@ -46,7 +46,7 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         config: str,
         external: bool,
         lazy: bool,
-        scheduling_policy: str,
+        scheduling_policy: MutableMapping[str, Any],
         workdir: str | None,
         wraps: MutableMapping[str, Any] | None,
     ) -> int:

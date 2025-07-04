@@ -123,7 +123,7 @@ class SqliteDatabase(CachedDatabase):
                     "lazy": lazy,
                     "scheduling_policy": json.dumps(scheduling_policy),
                     "workdir": workdir,
-                    "wraps": json.dumps(wraps),
+                    "wraps": json.dumps(wraps) if wraps else None,
                 },
             ) as cursor:
                 return cursor.lastrowid

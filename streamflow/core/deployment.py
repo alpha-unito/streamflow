@@ -225,7 +225,7 @@ class DeploymentConfig(PersistableEntity):
                     row=json.loads(row["wraps"]),
                     loading_context=loading_context,
                 )
-                if row["wraps"] != "null"
+                if row["wraps"] is not None
                 else None
             ),
         )

@@ -115,7 +115,7 @@ class Database(SchemaEntity):
         config: str,
         external: bool,
         lazy: bool,
-        scheduling_policy: str,
+        scheduling_policy: MutableMapping[str, Any],
         workdir: str | None,
         wraps: MutableMapping[str, Any] | None,
     ) -> int: ...

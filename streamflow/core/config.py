@@ -31,12 +31,10 @@ class Config:
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ):
-        return Config(
-            name=row["name"], type=row["type"], config=json.loads(row["config"])
-        )
+        return Config(name=row["name"], type=row["type"], config=row["config"])
 
     async def save(self, context: StreamFlowContext):
-        return {"name": self.name, "type": self.type, "config": json.dumps(self.config)}
+        return {"name": self.name, "type": self.type, "config": self.config}
 
 
 class BindingConfig:
