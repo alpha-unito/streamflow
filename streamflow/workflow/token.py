@@ -190,15 +190,15 @@ class ObjectToken(Token):
     __slots__ = ()
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
-        super().__init__(
-            value=(
-                {k: t.update(t.value, recoverable) for k, t in value.items()}
-                if recoverable
-                else value
-            ),
-            tag=tag,
-            recoverable=recoverable,
-        )
+        if recoverable:
+            new_value = {}
+            for k, t in value.items():
+                new_t = t.update(t.value, recoverable)
+                new_t.persistent_id = t.persistent_id
+                new_value[k] = new_t
+        else:
+            new_value = value
+        super().__init__(value=new_value, tag=tag, recoverable=recoverable)
 
     @classmethod
     async def _load(
