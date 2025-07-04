@@ -4,6 +4,8 @@ import asyncio
 import json
 import os
 import posixpath
+import shutil
+from collections.abc import MutableMapping, MutableSequence
 from collections.abc import Iterable, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any, cast
 
@@ -889,3 +891,21 @@ class RecoveryTranslator:
                 EvalCommandOutputProcessor(output, workflow, value_type),
             )
         return execute_step
+
+    def get_schedule_step(
+        self,
+        binding_config: BindingConfig,
+        deployment_names: MutableSequence[str],
+        step_name: str,
+        workflow: Workflow,
+    ) -> ScheduleStep:
+        deploy_steps = {
+            deployment: self._get_deploy_step(deployment)
+            for deployment in deployment_names
+        }
+        return create_schedule_step(
+            workflow=workflow,
+            deploy_steps=[d for d in deploy_steps.values()],
+            binding_config=binding_config,
+            name_prefix=step_name,
+        )
