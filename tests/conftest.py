@@ -226,7 +226,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     differences = [
         (dict1[attr], dict2[attr])
         for attr in dict1.keys()
-        if dict1[attr] != dict2[attr]
+        if type(dict1[attr]) is not type(dict2[attr]) or dict1[attr] != dict2[attr]
     ]
     for value1, value2 in differences:
         # Check recursively the elements

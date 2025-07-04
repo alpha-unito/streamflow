@@ -182,7 +182,7 @@ async def test_execute(
             is_last_step = num_of_steps - int(step.name.split(os.sep)[1]) - 1 == 0
             if error_type == InjectorFailureCommand.FAIL_STOP:
                 if token_type != "primitive":
-                    if (failure_step != "transfer" and num_of_failures > 1):
+                    if failure_step != "transfer" and num_of_failures > 1:
                         # Each failure needs the re-execution of previous step
                         # fst step retries = fst step failures + snd step failures
                         # snd step retries = snd step failures + trd step failures
