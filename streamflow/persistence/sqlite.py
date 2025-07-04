@@ -455,9 +455,7 @@ class SqliteDatabase(CachedDatabase):
                 "WHERE id =:id",
                 {"id": token_id},
             ) as cursor:
-                row = dict(await cursor.fetchone())
-                row["recoverable"] = bool(row["recoverable"])
-                return row
+                return await cursor.fetchone()
 
     async def get_workflow(self, workflow_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
