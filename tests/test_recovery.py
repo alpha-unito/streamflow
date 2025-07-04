@@ -418,7 +418,10 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
         ):
             retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             # The job is not restarted, so it has number of version = 1
-            assert retry_request.version == 1
+            assert (
+                fault_tolerant_context.failure_manager.get_request(job.name).version
+                == 1
+            )
 
 
 @pytest.mark.asyncio
