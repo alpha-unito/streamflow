@@ -34,7 +34,7 @@ FAILURE_STEP = ["execute", "transfer", "schedule"]
 NUM_STEPS = {"single_step": 1, "pipeline": 4}
 NUM_FAILURES = {"one_failure": 1, "two_failures_in_row": 2}
 ERROR_TYPE = [InjectorFailureCommand.SOFT_ERROR, InjectorFailureCommand.FAIL_STOP]
-TOKEN_TYPE = ["primitive", "file"]
+TOKEN_TYPE = ["primitive", "file", "list"]
 
 
 async def _assert_token_result(
@@ -377,4 +377,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
         ):
             retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             # The job is not restarted, so it has number of version = 1
-            assert retry_request.version == 1
+            assert (
+                fault_tolerant_context.failure_manager.get_request(job.name).version
+                == 1
+            )
