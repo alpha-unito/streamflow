@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import posixpath
-import shutil
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any, cast
 
@@ -17,17 +16,15 @@ from streamflow.core.deployment import (
     ExecutionLocation,
     Target,
 )
-from streamflow.core.exception import (
-    FailureHandlingException,
-    WorkflowDefinitionException,
-    WorkflowExecutionException,
-)
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.recovery import RetryRequest
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import flatten_list, get_job_tag, get_tag
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
+    CommandOutputProcessor,
     Job,
     Port,
     Status,
@@ -39,8 +36,8 @@ from streamflow.cwl.utils import get_token_class, search_in_parent_locations
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
-from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.recovery.failure_manager import DefaultFailureManager
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
     DotProductCombinator,
@@ -50,7 +47,6 @@ from streamflow.workflow.combinator import (
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
-    DefaultCommandOutputProcessor,
     DeployStep,
     ExecuteStep,
     InputInjectorStep,
@@ -334,70 +330,18 @@ class BaseInputInjectorStep(InputInjectorStep):
         )
 
 
-class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
-    def __init__(
-        self,
-        name: str,
-        workflow: Workflow,
-        value_type: str,
-        target: Target | None = None,
-    ):
-        super().__init__(name, workflow, target)
-        self.value_type: str = value_type.lower()
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> EvalCommandOutputProcessor:
-        return cls(
-            name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            value_type=row["value_type"],
-            target=(
-                (await loading_context.load_target(context, row["workflow"]))
-                if row["target"]
-                else None
-            ),
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        if self.target:
-            await self.target.save(context)
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "value_type": self.value_type,
-        }
-
+class ForwardFirstInputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
         command_output: CommandOutput,
         connector: Connector | None = None,
     ) -> Token | None:
-        context = self.workflow.context
-        value = command_output.value
-        if self.value_type == "file":
-            locations = context.scheduler.get_locations(job.name)
-            await _register_path(
-                context, connector, next(iter(locations)), value, value
-            )
-            return BaseFileToken(tag=get_tag(job.inputs.values()), value=value)
-        elif self.value_type == "list":
-            return ListToken(
-                tag=get_tag(job.inputs.values()),
-                value=[await build_token(job, v, context) for v in value],
-            )
-        elif self.value_type == "dict":
-            return ObjectToken(
-                tag=get_tag(job.inputs.values()),
-                value={k: await build_token(job, v, context) for k, v in value.items()},
-            )
+        token = next(iter(job.inputs.values()))
+        if isinstance(token, FileToken):
+            return token.update(token.value)
         else:
-            return Token(tag=get_tag(job.inputs.values()), value=value)
+            return await build_token(job, token.value, self.workflow.context)
 
 
 class InjectorFailureCommand(Command):
@@ -408,22 +352,14 @@ class InjectorFailureCommand(Command):
     def __init__(
         self,
         step: Step,
-        command: str,
-        failure_tags: MutableMapping[str, int] | None = None,
-        failure_type: str | None = None,
+        inject_failure: MutableMapping[str, int] | None = None,
+        failure_t: str | None = None,
     ):
         super().__init__(step)
-        self.command: str = command
-        self.failure_tags: MutableMapping[str, int] = failure_tags or {}
-        self.failure_type: str | None = failure_type
-        if self.failure_tags and self.failure_type is None:
-            raise WorkflowDefinitionException(
-                f"Failure type does not defined. "
-                f"Impossible to inject failures to the tags: {list(self.failure_tags.keys())}"
-            )
+        self.inject_failure: MutableMapping[str, int] = inject_failure or {}
+        self.failure_t: int | None = failure_t
 
     async def execute(self, job: Job) -> CommandOutput:
-        logger.info(f"EXECUTING {job.name}")
         # Counts all the execution of the step in the different workflows
         context = self.step.workflow.context
         loading_context = DefaultDatabaseLoadingContext()
@@ -452,6 +388,7 @@ class InjectorFailureCommand(Command):
                 for s in steps
             )
         )
+        num_executions = len(flatten_list(executions))
 
         tag = get_job_tag(job.name)
         num_executions = len([e for e in flatten_list(executions) if e["tag"] == tag])
@@ -463,7 +400,7 @@ class InjectorFailureCommand(Command):
                     k: t.update(t.value, recoverable=True)
                     for k, t in job.inputs.items()
                 }
-            elif self.failure_type == InjectorFailureCommand.FAIL_STOP:
+            elif self.failure_t == InjectorFailureCommand.FAIL_STOP:
                 for t in job.inputs.values():
                     await _invalidate_token(context, job, t)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
@@ -477,9 +414,7 @@ class InjectorFailureCommand(Command):
                 logger.error(f"Failed command evaluation: {err}")
                 raise FailureHandlingException(err)
         await context.database.update_execution(
-            await context.database.add_execution(
-                self.step.persistent_id, tag, self.command
-            ),
+            await context.database.add_execution(self.step.persistent_id, tag, "true"),
             {
                 "status": cmd_out.status,
             },
@@ -627,17 +562,12 @@ class InjectorFailureTransferStep(TransferStep):
         name: str,
         workflow: Workflow,
         job_port: JobPort,
-        failure_tags: MutableMapping[str, int] | None = None,
-        failure_type: str | None = None,
+        num_failures: int = 0,
+        failure_t: str | None = None,
     ):
         super().__init__(name, workflow, job_port)
-        self.failure_tags: MutableMapping[str, int] = failure_tags or {}
-        self.failure_type: str | None = failure_type
-        if self.failure_tags and self.failure_type is None:
-            raise WorkflowDefinitionException(
-                f"Failure type does not defined. "
-                f"Impossible to inject failures to the tags: {list(self.failure_tags.keys())}"
-            )
+        self.num_failures: int = num_failures
+        self.failure_t: str | None = failure_t
 
     @classmethod
     async def _load(
@@ -698,10 +628,11 @@ class InjectorFailureTransferStep(TransferStep):
                 )
             )
         )
-        if len(
-            [w.steps[self.name] for w in workflows if self.name in w.steps]
-        ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
-            if self.failure_type == InjectorFailureCommand.FAIL_STOP:
+        if (
+            len([w.steps[self.name] for w in workflows if self.name in w.steps]) - 1
+            < self.num_failures
+        ):
+            if self.failure_t == InjectorFailureCommand.FAIL_STOP:
                 for t in job.inputs.values():
                     await _invalidate_token(self.workflow.context, job, t)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
@@ -736,6 +667,7 @@ class InjectorFailureTransferStep(TransferStep):
 class RecoveryTranslator:
     def __init__(self, workflow: Workflow):
         self.deployment_configs: MutableMapping[str, DeploymentConfig] = {}
+        self.sub_workflows: MutableMapping[str, Workflow] = {}
         self.workflow: Workflow = workflow
 
     def _get_deploy_step(self, deployment_name: str):
@@ -798,16 +730,14 @@ class RecoveryTranslator:
 
     def get_execute_pipeline(
         self,
-        command: str,
+        workflow: Workflow,
+        step_name: str,
         deployment_names: MutableSequence[str],
         input_ports: MutableMapping[str, Port],
-        outputs: MutableMapping[str, str],
-        step_name: str,
-        workflow: Workflow,
+        outputs: MutableSequence[str],
         binding_config: BindingConfig | None = None,
-        failure_type: str | None = None,
-        failure_step: str | None = None,
-        failure_tags: MutableMapping[str, int] | None = None,
+        transfer_failures: int = 0,
+        failure_t: str | None = None,
     ) -> ExecuteStep:
         schedule_step = self._get_schedule_step(
             cls=InjectorFailureScheduleStep,
@@ -821,47 +751,22 @@ class RecoveryTranslator:
         execute_step = workflow.create_step(
             ExecuteStep, name=step_name, job_port=schedule_step.get_output_port()
         )
-        execute_step.command = InjectorFailureCommand(
-            execute_step,
-            command=command,
-            failure_tags=failure_tags if failure_step == "execute" else None,
-            failure_type=failure_type if failure_step == "execute" else None,
-        )
         for key, port in input_ports.items():
             schedule_step.add_input_port(key, port)
             transfer_step = workflow.create_step(
                 cls=InjectorFailureTransferStep,
                 name=posixpath.join(step_name, "__transfer__", key),
                 job_port=schedule_step.get_output_port(),
-                failure_tags=failure_tags if failure_step == "transfer" else None,
-                failure_type=failure_type if failure_step == "transfer" else None,
+                num_failures=transfer_failures,
+                failure_t=failure_t,
             )
             transfer_step.add_input_port(key, port)
             transfer_step.add_output_port(key, workflow.create_port())
             execute_step.add_input_port(key, transfer_step.get_output_port(key))
-        # Add output port and output processors
-        for output, value_type in outputs.items():
+        for output in outputs:
             execute_step.add_output_port(
                 output,
                 workflow.create_port(),
-                EvalCommandOutputProcessor(output, workflow, value_type),
+                ForwardFirstInputProcessor(output, workflow),
             )
         return execute_step
-
-    def get_schedule_step(
-        self,
-        binding_config: BindingConfig,
-        deployment_names: MutableSequence[str],
-        step_name: str,
-        workflow: Workflow,
-    ) -> ScheduleStep:
-        deploy_steps = {
-            deployment: self._get_deploy_step(deployment)
-            for deployment in deployment_names
-        }
-        return create_schedule_step(
-            workflow=workflow,
-            deploy_steps=[d for d in deploy_steps.values()],
-            binding_config=binding_config,
-            name_prefix=step_name,
-        )
