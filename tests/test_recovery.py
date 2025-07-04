@@ -16,6 +16,7 @@ from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.workflow import Job, Token
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.main import build_context
+from streamflow.recovery.failure_manager import DefaultFailureManager
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import GatherStep, ScatterStep
 from streamflow.workflow.token import (
@@ -116,24 +117,24 @@ async def fault_tolerant_context(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "num_of_steps,failure_step,error_type,num_of_failures,token_type",
+    "num_of_steps,task,error_t,num_of_failures,token_t",
     itertools.product(
-        NUM_STEPS.values(), FAILURE_STEP, ERROR_TYPE, NUM_FAILURES.values(), TOKEN_TYPE
+        NUM_STEPS.values(), TASK_FAILURE, ERROR_TYPE, NUM_FAILURES.values(), TOKEN_TYPE
     ),
     ids=[
         f"{n_step}_{step_t}_{error_t}_{n_failure}_{token_t}"
         for n_step, step_t, error_t, n_failure, token_t in itertools.product(
-            NUM_STEPS.keys(), FAILURE_STEP, ERROR_TYPE, NUM_FAILURES.keys(), TOKEN_TYPE
+            NUM_STEPS.keys(), TASK_FAILURE, ERROR_TYPE, NUM_FAILURES.keys(), TOKEN_TYPE
         )
     ],
 )
 async def test_execute(
     fault_tolerant_context: StreamFlowContext,
-    failure_step: str,
-    error_type: str,
-    num_of_failures: int,
+    task: str,
     num_of_steps: int,
-    token_type: str,
+    error_t: str,
+    num_of_failures: int,
+    token_t: str,
 ):
     deployment_t = "local-fs-volatile"
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
@@ -144,7 +145,7 @@ async def test_execute(
     execution_location = await get_location(fault_tolerant_context, deployment_t)
     translator.deployment_configs = {deployment_config.name: deployment_config}
     input_ports = {}
-    if token_type == "primitive":
+    if token_t == "primitive":
         token_value = 100
     elif token_type == "file":
         token_value = await _create_file(fault_tolerant_context, execution_location)
@@ -187,7 +188,6 @@ async def test_execute(
     injector_step.get_input_port(input_name).put(TerminationToken())
     execute_steps = []
     for i in range(num_of_steps):
-        input_port = next(iter(input_ports.keys()))
         execute_steps.append(
             translator.get_execute_pipeline(
                 command=f"lambda x : ('copy', '{token_type}', x['{input_port}'].value)",
@@ -200,6 +200,11 @@ async def test_execute(
                 failure_step=failure_step,
                 failure_type=error_type,
             )
+        )
+        execute_steps[-1].command = InjectorFailureCommand(
+            execute_steps[-1],
+            {"0": num_of_failures} if task == "execute" else {},
+            failure_t=error_t,
         )
         input_ports = execute_steps[-1].get_output_ports()
     await workflow.save(fault_tolerant_context)
@@ -224,6 +229,9 @@ async def test_execute(
                 step.get_input_port("__job__").token_list,
             ),
         ):
+            retry_request = cast(
+                DefaultFailureManager, fault_tolerant_context.failure_manager
+            ).get_request(job_name)
             expected_failures = num_of_failures
             if error_type == InjectorFailureCommand.FAIL_STOP:
                 if token_type != "primitive":
@@ -290,6 +298,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         step_name=os.path.join(posixpath.sep, utils.random_name()),
         workflow=workflow,
     )
+    step.command = InjectorFailureCommand(step)
     # ScatterStep
     scatter_step = workflow.create_step(
         cls=ScatterStep, name=utils.random_name() + "-scatter"
@@ -305,6 +314,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         step_name=os.path.join(posixpath.sep, utils.random_name()),
         workflow=workflow,
     )
+    step.command = InjectorFailureCommand(step)
     # GatherStep
     gather_step = workflow.create_step(
         cls=GatherStep,
@@ -394,6 +404,11 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
                 failure_type=InjectorFailureCommand.INJECT_TOKEN,
             )
         )
+        execute_steps[-1].command = InjectorFailureCommand(
+            execute_steps[-1],
+            {"0": num_of_failures} if step_t == "execute" else {},
+            failure_t=InjectorFailureCommand.INJECT_TOKEN,
+        )
         input_ports = execute_steps[-1].get_output_ports()
     await workflow.save(fault_tolerant_context)
     executor = StreamFlowExecutor(workflow)
@@ -418,10 +433,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
         ):
             retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             # The job is not restarted, so it has number of version = 1
-            assert (
-                fault_tolerant_context.failure_manager.get_request(job.name).version
-                == 1
-            )
+            assert retry_request.version == 1
 
 
 @pytest.mark.asyncio
