@@ -179,15 +179,9 @@ async def test_execute(
                 step.get_input_port("__job__").token_list,
             ),
         ):
-            assert (
-                job_name
-                in cast(
-                    DefaultFailureManager, fault_tolerant_context.failure_manager
-                )._retry_requests
-            )
             retry_request = cast(
                 DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests[job_name]
+            ).get_request(job_name)
             expected_failures = num_of_failures
             if error_t == InjectorFailureCommand.FAIL_STOP:
                 if token_t != "primitive":
@@ -297,15 +291,9 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         for t in step.get_input_port("__job__").token_list
         if isinstance(t, JobToken)
     ):
-        assert (
-            job.name
-            in cast(
-                DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests
-        )
         retry_request = cast(
             DefaultFailureManager, fault_tolerant_context.failure_manager
-        )._retry_requests[job.name]
+        ).get_request(job.name)
         assert retry_request.version == num_of_failures + 1
 
 
@@ -386,14 +374,8 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
             for t in step.get_input_port("__job__").token_list
             if isinstance(t, JobToken)
         ):
-            assert (
-                job.name
-                in cast(
-                    DefaultFailureManager, fault_tolerant_context.failure_manager
-                )._retry_requests
-            )
             retry_request = cast(
                 DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests[job.name]
+            ).get_request(job.name)
             # The job is not restarted, so it has number of version = 1
             assert retry_request.version == 1

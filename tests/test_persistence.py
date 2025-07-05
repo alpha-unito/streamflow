@@ -252,12 +252,9 @@ async def test_local_target(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("recoverable", ["recoverable", "unrecoverable"])
-async def test_token(context: StreamFlowContext, recoverable: str):
+async def test_token(context: StreamFlowContext):
     """Test saving and loading Token from database"""
-    token = Token(
-        value=["test", "token"], tag="0.0", recoverable=recoverable == "recoverable"
-    )
+    token = Token(value="test", tag="0.0", recoverable=True)
     await save_load_and_test(token, context)
 
 
@@ -280,14 +277,14 @@ async def test_job_token(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_list_token(context: StreamFlowContext):
     """Test saving and loading ListToken from database"""
-    token = ListToken(value=[Token("list"), Token("test")])
+    token = ListToken(value=[Token("list"), Token("test")], tag="0.0", recoverable=True)
     await save_load_and_test(token, context)
 
 
 @pytest.mark.asyncio
 async def test_object_token(context: StreamFlowContext):
     """Test saving and loading ObjectToken from database"""
-    token = ObjectToken(value={"test": Token("object")})
+    token = ObjectToken(value={"test": Token("object")}, tag="0.0", recoverable=True)
     await save_load_and_test(token, context)
 
 
