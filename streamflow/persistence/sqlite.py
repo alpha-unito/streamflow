@@ -24,6 +24,14 @@ DEFAULT_SQLITE_CONNECTION = os.path.join(
 )
 
 
+def _load_keys(
+    row: MutableMapping[str, Any], keys: MutableSequence[str] | None = None
+) -> MutableMapping[str, Any]:
+    for key in keys or ["params"]:
+        row[key] = json.loads(row[key])
+    return row
+
+
 class SqliteConnection:
     def __init__(self, connection: str, timeout: int, init_db: bool):
         self.connection: str = connection
@@ -104,24 +112,26 @@ class SqliteDatabase(CachedDatabase):
         self,
         name: str,
         type: str,
-        config: str,
+        config: MutableMapping[str, Any],
         external: bool,
         lazy: bool,
+        scheduling_policy: MutableMapping[str, Any],
         workdir: str | None,
         wraps: MutableMapping[str, Any] | None,
     ) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO deployment(name, type, config, external, lazy, workdir, wraps) "
-                "VALUES (:name, :type, :config, :external, :lazy, :workdir, :wraps)",
+                "INSERT INTO deployment(name, type, config, external, lazy, scheduling_policy, workdir, wraps) "
+                "VALUES (:name, :type, :config, :external, :lazy, :scheduling_policy, :workdir, :wraps)",
                 {
                     "name": name,
                     "type": type,
-                    "config": config,
+                    "config": json.dumps(config),
                     "external": external,
                     "lazy": lazy,
+                    "scheduling_policy": json.dumps(scheduling_policy),
                     "workdir": workdir,
-                    "wraps": json.dumps(wraps),
+                    "wraps": json.dumps(wraps) if wraps else None,
                 },
             ) as cursor:
                 return cursor.lastrowid
@@ -138,7 +148,7 @@ class SqliteDatabase(CachedDatabase):
         self,
         name: str,
         type: str,
-        config: str,
+        config: MutableMapping[str, Any],
     ) -> int:
         async with self.connection as db:
             async with db.execute(
@@ -147,7 +157,7 @@ class SqliteDatabase(CachedDatabase):
                 {
                     "name": name,
                     "type": type,
-                    "config": config,
+                    "config": json.dumps(config),
                 },
             ) as cursor:
                 return cursor.lastrowid
@@ -250,7 +260,7 @@ class SqliteDatabase(CachedDatabase):
                     "port": port,
                     "type": utils.get_class_fullname(type),
                     "tag": tag,
-                    "value": value,
+                    "value": json.dumps(value),
                 },
             ) as cursor:
                 token_id = cursor.lastrowid
@@ -309,7 +319,11 @@ class SqliteDatabase(CachedDatabase):
             async with db.execute(
                 "SELECT * FROM deployment WHERE id = :id", {"id": deployment_id}
             ) as cursor:
-                return await cursor.fetchone()
+                row = _load_keys(
+                    dict(await cursor.fetchone()), ["config", "scheduling_policy"]
+                )
+                row["wraps"] = json.loads(row["wraps"]) if row["wraps"] else None
+                return row
 
     async def get_execution(self, execution_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
@@ -333,7 +347,7 @@ class SqliteDatabase(CachedDatabase):
             async with db.execute(
                 "SELECT * FROM filter WHERE id = :id", {"id": filter_id}
             ) as cursor:
-                return await cursor.fetchone()
+                return _load_keys(dict(await cursor.fetchone()), ["config"])
 
     async def get_input_ports(
         self, step_id: int
@@ -381,7 +395,7 @@ class SqliteDatabase(CachedDatabase):
             async with db.execute(
                 "SELECT * FROM port WHERE id = :id", {"id": port_id}
             ) as cursor:
-                return await cursor.fetchone()
+                return _load_keys(dict(await cursor.fetchone()))
 
     async def get_port_from_token(self, token_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
@@ -391,7 +405,7 @@ class SqliteDatabase(CachedDatabase):
                 "WHERE token.id = :token_id",
                 {"token_id": token_id},
             ) as cursor:
-                return await cursor.fetchone()
+                return _load_keys(dict(await cursor.fetchone()))
 
     async def get_port_tokens(self, port_id: int) -> MutableSequence[int]:
         async with self.connection as db:
@@ -435,7 +449,7 @@ class SqliteDatabase(CachedDatabase):
             async with db.execute(
                 "SELECT * FROM step WHERE id = :id", {"id": step_id}
             ) as cursor:
-                return await cursor.fetchone()
+                return _load_keys(dict(await cursor.fetchone()))
 
     @cachedmethod(lambda self: self.target_cache)
     async def get_target(self, target_id: int) -> MutableMapping[str, Any]:
@@ -443,7 +457,7 @@ class SqliteDatabase(CachedDatabase):
             async with db.execute(
                 "SELECT * FROM target WHERE id = :id", {"id": target_id}
             ) as cursor:
-                return await cursor.fetchone()
+                return _load_keys(dict(await cursor.fetchone()))
 
     @cachedmethod(lambda self: self.token_cache)
     async def get_token(self, token_id: int) -> MutableMapping[str, Any]:
@@ -455,14 +469,14 @@ class SqliteDatabase(CachedDatabase):
                 "WHERE id =:id",
                 {"id": token_id},
             ) as cursor:
-                return await cursor.fetchone()
+                return _load_keys(dict(await cursor.fetchone()), keys=["value"])
 
     async def get_workflow(self, workflow_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
                 "SELECT * FROM workflow WHERE id = :id", {"id": workflow_id}
             ) as cursor:
-                return await cursor.fetchone()
+                return _load_keys(dict(await cursor.fetchone()))
 
     async def get_workflow_ports(
         self, workflow_id: int
@@ -472,7 +486,7 @@ class SqliteDatabase(CachedDatabase):
                 "SELECT * FROM port WHERE workflow = :workflow",
                 {"workflow": workflow_id},
             ) as cursor:
-                return await cursor.fetchall()
+                return [_load_keys(dict(r)) for r in await cursor.fetchall()]
 
     async def get_workflow_steps(
         self, workflow_id: int
@@ -482,7 +496,7 @@ class SqliteDatabase(CachedDatabase):
                 "SELECT * FROM step WHERE workflow = :workflow",
                 {"workflow": workflow_id},
             ) as cursor:
-                return await cursor.fetchall()
+                return [_load_keys(dict(r)) for r in await cursor.fetchall()]
 
     async def get_workflows_by_name(
         self, workflow_name: str, last_only: bool = False
@@ -493,7 +507,9 @@ class SqliteDatabase(CachedDatabase):
                 {"name": workflow_name},
             ) as cursor:
                 return (
-                    [await cursor.fetchone()] if last_only else await cursor.fetchall()
+                    [_load_keys(dict(await cursor.fetchone()))]
+                    if last_only
+                    else [_load_keys(dict(r)) for r in await cursor.fetchall()]
                 )
 
     async def get_workflows_list(

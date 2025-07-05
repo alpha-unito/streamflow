@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import posixpath
 from abc import ABC, abstractmethod
@@ -299,12 +298,11 @@ class CombinatorStep(BaseStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CombinatorStep:
-        params = json.loads(row["params"])
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             combinator=await Combinator.load(
-                context, params["combinator"], loading_context
+                context, row["params"]["combinator"], loading_context
             ),
         )
 
@@ -466,7 +464,7 @@ class DeployStep(BaseStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> DeployStep:
-        params = json.loads(row["params"])
+        params = row["params"]
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -615,7 +613,7 @@ class ExecuteStep(BaseStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> ExecuteStep:
-        params = json.loads(row["params"])
+        params = row["params"]
         step = cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -909,7 +907,7 @@ class GatherStep(BaseStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> GatherStep:
-        params = json.loads(row["params"])
+        params = row["params"]
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -1042,12 +1040,12 @@ class InputInjectorStep(BaseStep, ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> InputInjectorStep:
-        params = json.loads(row["params"])
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
+                JobPort,
+                await loading_context.load_port(context, row["params"]["job_port"]),
             ),
         )
 
@@ -1339,7 +1337,7 @@ class ScheduleStep(BaseStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> ScheduleStep:
-        params = json.loads(row["params"])
+        params = row["params"]
         if hardware_requirement := params.get("hardware_requirement"):
             hardware_requirement = await HardwareRequirement.load(
                 context, hardware_requirement, loading_context
@@ -1611,11 +1609,12 @@ class ScatterStep(BaseStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> ScatterStep:
-        params = json.loads(row["params"])
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
-            size_port=await loading_context.load_port(context, params["size_port"]),
+            size_port=await loading_context.load_port(
+                context, row["params"]["size_port"]
+            ),
         )
 
     async def _save_additional_params(
@@ -1709,12 +1708,12 @@ class TransferStep(BaseStep, ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> TransferStep:
-        params = json.loads(row["params"])
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
+                JobPort,
+                await loading_context.load_port(context, row["params"]["job_port"]),
             ),
         )
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import urllib.parse
 from abc import ABC
@@ -284,7 +283,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLConditionalStep:
-        params = json.loads(row["params"])
+        params = row["params"]
         step = cls(
             name=row["name"],
             workflow=cast(
@@ -367,15 +366,14 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
-        params = json.loads(row["params"])
+    ) -> CWLEmptyScatterConditionalStep:
         return cls(
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
                 await loading_context.load_workflow(context, row["workflow"]),
             ),
-            scatter_method=params["scatter_method"],
+            scatter_method=row["params"]["scatter_method"],
         )
 
     async def _on_true(self, inputs: MutableMapping[str, Token]):
@@ -493,7 +491,7 @@ class CWLExecuteStep(ExecuteStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLExecuteStep:
-        params = json.loads(row["params"])
+        params = row["params"]
         step = cls(
             name=row["name"],
             workflow=cast(
@@ -596,7 +594,7 @@ class CWLTransferStep(TransferStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLTransferStep:
-        params = json.loads(row["params"])
+        params = row["params"]
         step = cls(
             name=row["name"],
             workflow=cast(
@@ -606,6 +604,7 @@ class CWLTransferStep(TransferStep):
             job_port=cast(
                 JobPort, await loading_context.load_port(context, params["job_port"])
             ),
+            prefix_path=params["prefix_path"],
             writable=params["writable"],
         )
         return step
@@ -614,7 +613,8 @@ class CWLTransferStep(TransferStep):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "writable": self.writable
+            "prefix_path": self.prefix_path,
+            "writable": self.writable,
         }
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:

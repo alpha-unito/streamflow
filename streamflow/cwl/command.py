@@ -1228,6 +1228,7 @@ class CWLExpressionCommand(Command):
             initial_work_dir=row["initial_work_dir"],
             inplace_update=row["inplace_update"],
             expression=row["expression"],
+            time_limit=row["time_limit"],
         )
 
 
