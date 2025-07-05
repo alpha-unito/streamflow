@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
@@ -121,10 +120,9 @@ class JobToken(Token):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> JobToken:
-        params = json.loads(row["value"])
         return cls(
             tag=row["tag"],
-            value=await Job.load(context, params["job"], loading_context),
+            value=await Job.load(context, row["value"]["job"], loading_context),
             recoverable=row["recoverable"],
         )
 
@@ -139,13 +137,12 @@ class ListToken(Token):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Token:
-        value = json.loads(row["value"])
         return cls(
             tag=row["tag"],
             value=await asyncio.gather(
                 *(
                     asyncio.create_task(loading_context.load_token(context, t))
-                    for t in value
+                    for t in row["value"]
                 )
             ),
             recoverable=row["recoverable"],
@@ -182,7 +179,7 @@ class ObjectToken(Token):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Token:
-        value = json.loads(row["value"])
+        value = row["value"]
         return cls(
             tag=row["tag"],
             value={
@@ -256,5 +253,4 @@ class TerminationToken(Token):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> TerminationToken:
-        value = json.loads(row["value"])
-        return cls(Status(value["status"]))
+        return cls(Status(row["value"]["status"]))

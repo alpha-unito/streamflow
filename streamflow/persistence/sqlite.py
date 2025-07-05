@@ -260,7 +260,7 @@ class SqliteDatabase(CachedDatabase):
                     "port": port,
                     "type": utils.get_class_fullname(type),
                     "tag": tag,
-                    "value": value,
+                    "value": json.dumps(value),
                 },
             ) as cursor:
                 token_id = cursor.lastrowid
@@ -469,7 +469,7 @@ class SqliteDatabase(CachedDatabase):
                 "WHERE id =:id",
                 {"id": token_id},
             ) as cursor:
-                return await cursor.fetchone()
+                return _load_keys(dict(await cursor.fetchone()), keys=["value"])
 
     async def get_workflow(self, workflow_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:

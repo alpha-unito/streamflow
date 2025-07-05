@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 import uuid
 from abc import ABC, abstractmethod
@@ -582,12 +581,12 @@ class Token(PersistableEntity):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Token:
-        value = json.loads(row["value"])
+        value = row["value"]
         if isinstance(value, MutableMapping) and "token" in value:
             value = await loading_context.load_token(context, value["token"])
         return cls(tag=row["tag"], value=value, recoverable=row["recoverable"])
 
-    async def _save_value(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+    async def _save_value(self, context: StreamFlowContext):
         if isinstance(self.value, Token) and not self.value.persistent_id:
             await self.value.save(context)
         return (
@@ -633,7 +632,7 @@ class Token(PersistableEntity):
                         recoverable=self.recoverable,
                         tag=self.tag,
                         type=type(self),
-                        value=json.dumps(await self._save_value(context)),
+                        value=await self._save_value(context),
                     )
                 except TypeError as e:
                     raise WorkflowExecutionException from e
