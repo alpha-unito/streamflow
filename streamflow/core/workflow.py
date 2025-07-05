@@ -497,9 +497,12 @@ class Token(PersistableEntity):
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
         self.recoverable: bool = recoverable
-        if self.recoverable and isinstance(value, Token):
-            new_value = value.update(value=value, recoverable=self.recoverable)
-            new_value.persistent_id = value.persistent_id
+        if (
+            isinstance(value, Token)
+            and value.persistent_id is not None
+            and self.recoverable
+        ):
+            new_value = value.update(value=value.value, recoverable=self.recoverable)
         else:
             new_value = value
         self.value: Any = new_value
