@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import posixpath
 from collections.abc import MutableMapping, MutableSequence
@@ -417,7 +416,7 @@ class InjectorFailureCommand(Command):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "inject_failure": json.dumps(self.inject_failure)
+            "inject_failure": self.inject_failure
         }
 
     @classmethod
@@ -428,7 +427,7 @@ class InjectorFailureCommand(Command):
         loading_context: DatabaseLoadingContext,
         step: Step,
     ) -> InjectorFailureCommand:
-        return cls(step=step, inject_failure=json.loads(row["inject_failure"]))
+        return cls(step=step, inject_failure=row["inject_failure"])
 
 
 class InjectorFailureTransferStep(TransferStep):
@@ -451,7 +450,7 @@ class InjectorFailureTransferStep(TransferStep):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> InjectorFailureTransferStep:
-        params = json.loads(row["params"])
+        params = row["params"]
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),

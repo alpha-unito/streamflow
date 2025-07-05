@@ -170,7 +170,7 @@ async def test_deploy_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_schedule_step(context: StreamFlowContext):
     """Test saving and loading ScheduleStep from database"""
-    workflow, (job_port,) = await create_workflow(context, 1)
+    workflow, (job_port,) = await create_workflow(context, type_="default", num_port=1)
     binding_config = get_full_instantiation(
         BindingConfig,
         targets=[
@@ -215,7 +215,7 @@ async def test_schedule_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_execute_step(context: StreamFlowContext):
     """Test saving and loading ExecuteStep from database"""
-    workflow, (job_port,) = await create_workflow(context, 1)
+    workflow, (job_port,) = await create_workflow(context, type_="default", num_port=1)
     await workflow.save(context)
 
     step = get_full_instantiation(
@@ -231,7 +231,7 @@ async def test_execute_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_gather_step(context: StreamFlowContext):
     """Test saving and loading GatherStep from database"""
-    workflow, (port,) = await create_workflow(context, num_port=1)
+    workflow, (port,) = await create_workflow(context, type_="default", num_port=1)
     await workflow.save(context)
 
     step = get_full_instantiation(
@@ -248,7 +248,7 @@ async def test_gather_step(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_scatter_step(context: StreamFlowContext):
     """Test saving and loading ScatterStep from database"""
-    workflow, (port,) = await create_workflow(context, num_port=1)
+    workflow, (port,) = await create_workflow(context, type_="default", num_port=1)
     await workflow.save(context)
 
     step = get_full_instantiation(

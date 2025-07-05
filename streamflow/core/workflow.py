@@ -57,7 +57,7 @@ class Command(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
-    ):
+    ) -> Command:
         return cls(step=step)
 
     async def _save_additional_params(
@@ -175,7 +175,7 @@ class CommandTokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> CommandTokenProcessor:
         return cls(name=row["name"])
 
     async def _save_additional_params(
@@ -429,7 +429,7 @@ class Step(PersistableEntity, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Step:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -587,7 +587,7 @@ class Token(PersistableEntity):
             value = await loading_context.load_token(context, value["token"])
         return cls(tag=row["tag"], value=value, recoverable=row["recoverable"])
 
-    async def _save_value(self, context: StreamFlowContext):
+    async def _save_value(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         if isinstance(self.value, Token) and not self.value.persistent_id:
             await self.value.save(context)
         return (
@@ -715,8 +715,7 @@ class Workflow(PersistableEntity):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Workflow:
-        params = json.loads(row["params"])
-        return cls(context=context, config=params["config"], name=row["name"])
+        return cls(context=context, config=row["params"]["config"], name=row["name"])
 
     async def _save_additional_params(
         self, context: StreamFlowContext
@@ -763,7 +762,7 @@ class Workflow(PersistableEntity):
         if workflow.persistent_id is None:
             return workflow
         rows = await context.database.get_workflow_ports(persistent_id)
-        params = json.loads(row["params"])
+        params = row["params"]
         workflow.ports = {
             r["name"]: v
             for r, v in zip(

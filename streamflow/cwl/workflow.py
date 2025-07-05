@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import MutableMapping, MutableSet
 from typing import TYPE_CHECKING, Any, cast
 
@@ -48,7 +47,7 @@ class CWLWorkflow(Workflow):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> CWLWorkflow:
-        params = json.loads(row["params"])
+        params = row["params"]
         return cls(
             context=context,
             config=params["config"],

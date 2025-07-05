@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import functools
-import json
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
@@ -74,7 +73,7 @@ class CloneTransformer(ManyToOneTransformer):
                 await loading_context.load_workflow(context, row["workflow"]),
             ),
             replicas_port=await loading_context.load_port(
-                context, json.loads(row["params"])["replicas_port"]
+                context, row["params"]["replicas_port"]
             ),
         )
 
@@ -142,8 +141,8 @@ class CWLTokenTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
-        params = json.loads(row["params"])
+    ) -> CWLTokenTransformer:
+        params = row["params"]
         return cls(
             name=row["name"],
             workflow=cast(
@@ -186,8 +185,7 @@ class DefaultTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
-        params = json.loads(row["params"])
+    ) -> DefaultTransformer:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -195,7 +193,7 @@ class DefaultTransformer(ManyToOneTransformer):
                 await loading_context.load_workflow(context, row["workflow"]),
             ),
             default_port=await loading_context.load_port(
-                context, params["default_port"]
+                context, row["params"]["default_port"]
             ),
         )
 
@@ -368,8 +366,8 @@ class ValueFromTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
-        params = json.loads(row["params"])
+    ) -> ValueFromTransformer:
+        params = row["params"]
         job_port = cast(
             JobPort, await loading_context.load_port(context, params["job_port"])
         )

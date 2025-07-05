@@ -43,7 +43,7 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         self,
         name: str,
         type: str,
-        config: str,
+        config: MutableMapping[str, Any],
         external: bool,
         lazy: bool,
         scheduling_policy: MutableMapping[str, Any],
@@ -54,6 +54,14 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
 
     async def add_execution(
         self, step_id: int, tag: str, cmd: str
+    ) -> int:
+        ...
+
+    async def add_filter(
+        self,
+        name: str,
+        type: str,
+        config: MutableMapping[str, Any],
     ) -> int:
         ...
 

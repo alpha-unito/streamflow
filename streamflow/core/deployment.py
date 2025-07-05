@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import posixpath
 import tempfile
@@ -210,19 +209,19 @@ class DeploymentConfig(PersistableEntity):
         obj = cls(
             name=row["name"],
             type=row["type"],
-            config=json.loads(row["config"]),
+            config=row["config"],
             external=row["external"],
             lazy=row["lazy"],
             scheduling_policy=await Config.load(
                 context=context,
-                row=json.loads(row["scheduling_policy"]),
+                row=row["scheduling_policy"],
                 loading_context=loading_context,
             ),
             workdir=row["workdir"],
             wraps=(
                 await WrapsConfig.load(
                     context=context,
-                    row=json.loads(row["wraps"]),
+                    row=row["wraps"],
                     loading_context=loading_context,
                 )
                 if row["wraps"] is not None
@@ -238,7 +237,7 @@ class DeploymentConfig(PersistableEntity):
                 self.persistent_id = await context.database.add_deployment(
                     name=self.name,
                     type=self.type,
-                    config=json.dumps(self.config),
+                    config=self.config,
                     external=self.external,
                     lazy=self.lazy,
                     scheduling_policy=await self.scheduling_policy.save(context),
@@ -372,7 +371,7 @@ class FilterConfig(PersistableEntity):
         obj = cls(
             name=row["name"],
             type=row["type"],
-            config=json.loads(row["config"]),
+            config=row["config"],
         )
         loading_context.add_filter(persistent_id, obj)
         return obj
@@ -383,7 +382,7 @@ class FilterConfig(PersistableEntity):
                 self.persistent_id = await context.database.add_filter(
                     name=self.name,
                     type=self.type,
-                    config=json.dumps(self.config),
+                    config=self.config,
                 )
 
 
