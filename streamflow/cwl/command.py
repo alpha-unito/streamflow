@@ -117,9 +117,7 @@ def _adjust_input(
                 and src_path.startswith(path)
                 and "listing" in input_
             ):
-                input_["listing"] = _adjust_inputs(
-                    input_["listing"], path_processor, src_path, dst_path
-                )
+                _adjust_inputs(input_["listing"], path_processor, src_path, dst_path)
                 return True
         else:
             for i in input_.values():
@@ -137,22 +135,21 @@ def _adjust_inputs(
     path_processor: ModuleType,
     src_path: str,
     dst_path: str,
-) -> MutableSequence[MutableMapping[str, Any]]:
+) -> None:
     """
-    Searches for `src_path` within the values of the `inputs` parameter and replaces it with `dst_path`.
-    The update is performed in-place on the `inputs` parameter.
+    Search for `src_path` within the values of the `inputs` parameter and replaces it with `dst_path`.
+    The update is performed in place on the `inputs` parameter.
 
-    :param inputs: A dictionary mapping input names to values. Values can be of any type,
-                   including lists, file objects, or objects (e.g., records in CWL).
-    :param path_processor: A module used to process and manipulate paths (e.g. posixpath).
+    :param inputs: A dictionary mapping input names to values of any type,
+                   including lists, objects (e.g., CWL records), files, and directories.
+    :param path_processor: A module used to process and manipulate paths (e.g., posixpath).
     :param src_path: The path to search for within the input values.
     :param dst_path: The path that will replace `src_path` in the input values.
-    :return: The modified `inputs` dictionary with updates made in-place.
+    :return: None
     """
     for inp in inputs:
         if _adjust_input(inp, path_processor, src_path, dst_path):
             break
-    return inputs
 
 
 def _build_command_output_processor(name: str, step: Step, value: Any):
