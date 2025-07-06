@@ -112,9 +112,10 @@ class Database(SchemaEntity):
         self,
         name: str,
         type: str,
-        config: str,
+        config: MutableMapping[str, Any],
         external: bool,
         lazy: bool,
+        scheduling_policy: MutableMapping[str, Any],
         workdir: str | None,
         wraps: MutableMapping[str, Any] | None,
     ) -> int: ...
@@ -127,7 +128,7 @@ class Database(SchemaEntity):
         self,
         name: str,
         type: str,
-        config: str,
+        config: MutableMapping[str, Any],
     ) -> int: ...
 
     @abstractmethod

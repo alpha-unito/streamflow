@@ -223,14 +223,15 @@ def are_equals(elem1, elem2, obj_compared=None):
     # Save the different values on the same attribute in the two dicts in a list:
     #   - if we find objects in the list, they must be checked recursively on their attributes
     #   - if we find elems of primitive types, their values are actually different
-    differences = [
-        (dict1[attr], dict2[attr])
+    differences = {
+        attr: (dict1[attr], dict2[attr])
         for attr in dict1.keys()
         if dict1[attr] != dict2[attr]
-    ]
-    for value1, value2 in differences:
+    }
+    for key, (value1, value2) in differences.items():
         # Check recursively the elements
         if not are_equals(value1, value2, obj_compared):
+            print(f"Attribute {key} has different values")
             return False
     return True
 

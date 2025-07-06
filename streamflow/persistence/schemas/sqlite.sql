@@ -85,14 +85,15 @@ CREATE TABLE IF NOT EXISTS provenance
 
 CREATE TABLE IF NOT EXISTS deployment
 (
-    id       INTEGER PRIMARY KEY,
-    name     TEXT,
-    type     TEXT,
-    config   TEXT,
-    external INTEGER,
-    lazy     INTEGER,
-    workdir  TEXT,
-    wraps    TEXT
+    id                  INTEGER PRIMARY KEY,
+    name                TEXT,
+    type                TEXT,
+    config              TEXT,
+    external            INTEGER,
+    lazy                INTEGER,
+    scheduling_policy   TEXT,
+    workdir             TEXT,
+    wraps               TEXT
 );
 
 

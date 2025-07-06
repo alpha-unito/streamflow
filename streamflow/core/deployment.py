@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import posixpath
 import tempfile
@@ -193,7 +192,7 @@ class DeploymentConfig(PersistableEntity):
         self.config: MutableMapping[str, Any] = config or {}
         self.external: bool = external
         self.lazy: bool = lazy
-        self.scheduling_policy: Config | None = scheduling_policy or Config(
+        self.scheduling_policy: Config = scheduling_policy or Config(
             name="__DEFAULT__", type="data_locality", config={}
         )
         self.workdir: str | None = workdir
@@ -210,11 +209,24 @@ class DeploymentConfig(PersistableEntity):
         obj = cls(
             name=row["name"],
             type=row["type"],
-            config=json.loads(row["config"]),
+            config=row["config"],
             external=row["external"],
             lazy=row["lazy"],
+            scheduling_policy=await Config.load(
+                context=context,
+                row=row["scheduling_policy"],
+                loading_context=loading_context,
+            ),
             workdir=row["workdir"],
-            wraps=json.loads(row["wraps"]),
+            wraps=(
+                await WrapsConfig.load(
+                    context=context,
+                    row=row["wraps"],
+                    loading_context=loading_context,
+                )
+                if row["wraps"] is not None
+                else None
+            ),
         )
         loading_context.add_deployment(persistent_id, obj)
         return obj
@@ -225,9 +237,10 @@ class DeploymentConfig(PersistableEntity):
                 self.persistent_id = await context.database.add_deployment(
                     name=self.name,
                     type=self.type,
-                    config=json.dumps(self.config),
+                    config=self.config,
                     external=self.external,
                     lazy=self.lazy,
+                    scheduling_policy=await self.scheduling_policy.save(context),
                     workdir=self.workdir,
                     wraps=(
                         await self.wraps.save(context)
@@ -358,7 +371,7 @@ class FilterConfig(PersistableEntity):
         obj = cls(
             name=row["name"],
             type=row["type"],
-            config=json.loads(row["config"]),
+            config=row["config"],
         )
         loading_context.add_filter(persistent_id, obj)
         return obj
@@ -369,7 +382,7 @@ class FilterConfig(PersistableEntity):
                 self.persistent_id = await context.database.add_filter(
                     name=self.name,
                     type=self.type,
-                    config=json.dumps(self.config),
+                    config=self.config,
                 )
 
 
