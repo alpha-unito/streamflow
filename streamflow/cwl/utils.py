@@ -23,7 +23,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.scheduling import Hardware
+from streamflow.core.hardware import Hardware
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver

@@ -21,7 +21,8 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
+from streamflow.core.hardware import Device, Hardware, Storage
+from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import (
     get_local_to_remote_destination,
     get_option,
@@ -34,6 +35,8 @@ from streamflow.deployment.connector.base import (
     copy_remote_to_local,
     copy_remote_to_remote,
     copy_same_connector,
+    get_nvidia_smi_command,
+    parse_nvidia_smi,
 )
 from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
@@ -98,19 +101,21 @@ def _parse_mount(mount: str) -> tuple[str, str]:
 
 
 class ContainerInstance:
-    __slots__ = ("address", "cores", "current_user", "memory", "volumes")
+    __slots__ = ("address", "cores", "current_user", "devices", "memory", "volumes")
 
     def __init__(
         self,
         address: str,
         cores: float,
         current_user: bool,
+        devices: MutableSequence[Device],
         memory: float,
         volumes: MutableMapping[str, Storage],
     ):
         self.address: str = address
         self.cores: float = cores
         self.current_user: bool = current_user
+        self.devices: MutableSequence[Device] = devices
         self.memory: float = memory
         self.volumes: MutableMapping[str, Storage] = volumes
 
@@ -832,12 +837,24 @@ class DockerBaseConnector(ContainerConnector, ABC):
                 if v["Type"] == "bind"
             },
         )
+        # Get GPUs
+        devices = []
+        stdout, returncode = await self.run(
+            location=location,
+            command=get_nvidia_smi_command(),
+            capture_output=True,
+        )
+        if returncode == 0:
+            devices.extend(parse_nvidia_smi(stdout))
+        elif logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"No NVIDIA GPU found on location {location}")
         # Create instance
         self._instances[name] = ContainerInstance(
             address=container["NetworkSettings"]["IPAddress"],
             cores=cores,
-            memory=memory,
             current_user=host_user == container_user,
+            devices=devices,
+            memory=memory,
             volumes=volumes,
         )
 
@@ -1199,6 +1216,7 @@ class DockerConnector(DockerBaseConnector):
                     cores=instance.cores,
                     memory=instance.memory,
                     storage=instance.volumes,
+                    devices=instance.devices,
                 ),
                 stacked=True,
                 wraps=self._inner_location,
@@ -1452,6 +1470,7 @@ class DockerComposeConnector(DockerBaseConnector):
                     cores=instance.cores,
                     memory=instance.memory,
                     storage=instance.volumes,
+                    devices=instance.devices,
                 ),
                 stacked=True,
                 wraps=self._inner_location,
@@ -1810,12 +1829,24 @@ class SingularityConnector(ContainerConnector):
             entity="Singularity instance",
             binds=cast(MutableMapping[str, str], binds),
         )
+        # Get GPUs
+        devices = []
+        stdout, returncode = await self.run(
+            location=location,
+            command=get_nvidia_smi_command(),
+            capture_output=True,
+        )
+        if returncode == 0:
+            devices.extend(parse_nvidia_smi(stdout))
+        elif logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"No NVIDIA GPU found on location {location}")
         # Create instance
         self._instances[name] = ContainerInstance(
             address=ip_address,
             cores=cores,
-            memory=memory,
             current_user=True,
+            devices=devices,
+            memory=memory,
             volumes=volumes,
         )
 
@@ -1925,6 +1956,7 @@ class SingularityConnector(ContainerConnector):
                     cores=instance.cores,
                     memory=instance.memory,
                     storage=instance.volumes,
+                    devices=instance.devices,
                 ),
                 stacked=True,
                 wraps=self._inner_location,

@@ -24,8 +24,8 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowException,
 )
+from streamflow.core.hardware import HardwareRequirement
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import get_entity_ids
 from streamflow.core.workflow import (
     Command,

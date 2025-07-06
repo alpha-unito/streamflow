@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import io
 import logging
 import os
 import posixpath
@@ -22,6 +23,7 @@ from streamflow.deployment.stream import (
     SubprocessStreamReaderWrapperContextManager,
     SubprocessStreamWriterWrapperContextManager,
 )
+from streamflow.hardware.device import NVIDIAGPUDevice
 from streamflow.log_handler import logger
 
 FS_TYPES_TO_SKIP = {
@@ -254,6 +256,32 @@ async def copy_same_connector(
                     )
                 return [loc for loc in locations if loc != location]
     return locations
+
+
+def get_nvidia_smi_command() -> MutableSequence[str]:
+    return [
+        "nvidia-smi",
+        "-q",
+        "|",
+        "grep 'CUDA'",
+        "|",
+        "awk '{print $4}'",
+        "&&",
+        "nvidia-smi",
+        "--query-gpu=compute_cap",
+        "--format=csv,noheader",
+    ]
+
+
+def parse_nvidia_smi(output: str) -> MutableSequence[NVIDIAGPUDevice]:
+    buffer = io.StringIO(output)
+    cuda_version = float(buffer.readline().strip())
+    devices = []
+    while line := buffer.readline().strip():
+        devices.append(
+            NVIDIAGPUDevice(compute_capability=float(line), cuda_version=cuda_version)
+        )
+    return devices
 
 
 class BaseConnector(Connector, FutureAware, ABC):

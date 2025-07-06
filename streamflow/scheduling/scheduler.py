@@ -12,14 +12,16 @@ from typing import TYPE_CHECKING, cast
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.deployment import BindingFilter, Connector, FilterConfig, Target
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import (
+from streamflow.core.hardware import (
     Hardware,
     HardwareRequirement,
+    Storage,
+)
+from streamflow.core.scheduling import (
     JobAllocation,
     LocationAllocation,
     Policy,
     Scheduler,
-    Storage,
 )
 from streamflow.core.utils import compare_tags, get_job_step_name, get_job_tag
 from streamflow.core.workflow import Job, Status

@@ -267,7 +267,7 @@ async def test_cwl_execute_step(context: StreamFlowContext):
         token=execute_step.get_output_port(out_port_name).token_list[0],
         port=execute_step.get_output_port(out_port_name),
         context=context,
-        expected_dependee=list(job_token.value.inputs.values()) + [job_token],
+        expected_dependee=[*job_token.value.inputs.values(), job_token],
     )
 
 

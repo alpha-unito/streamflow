@@ -62,7 +62,7 @@ def _get_streamflow_config() -> MutableMapping[str, Any]:
 def _get_workflow_config(streamflow_config) -> WorkflowConfig:
     SfValidator().validate(streamflow_config)
     return WorkflowConfig(
-        list(streamflow_config["workflows"].keys())[0], streamflow_config
+        next(iter(streamflow_config["workflows"].keys())), streamflow_config
     )
 
 

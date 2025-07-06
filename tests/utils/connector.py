@@ -9,7 +9,8 @@ from asyncssh import SSHClient, SSHClientConnection
 
 from streamflow.core.data import StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.hardware import Hardware
+from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.connector import LocalConnector, SSHConnector
 from streamflow.deployment.connector.ssh import (
     SSHConfig,

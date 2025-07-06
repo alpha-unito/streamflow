@@ -955,6 +955,22 @@ def _get_hardware_requirement(
                 else hardware_requirement.outdir
             )
         )
+    if "CUDARequirement" in requirements:
+        cuda_requirement = requirements["CUDARequirement"]
+        hardware_requirement.gpus = (
+            cuda_requirement.cudaDeviceCountMin
+            if cuda_requirement.cudaDeviceCountMin is not None
+            else (
+                cuda_requirement.cudaDeviceCountMax
+                if cuda_requirement.cudaDeviceCountMax is not None
+                else hardware_requirement.gpus
+            )
+        )
+        hardware_requirement.cuda_version = (
+            float(cuda_requirement.cudaVersionMin)
+            if cuda_requirement.cudaVersionMin is not None
+            else None
+        )
     return hardware_requirement
 
 

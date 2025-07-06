@@ -15,8 +15,14 @@ import psutil
 
 from streamflow.core import utils
 from streamflow.core.deployment import Connector, ExecutionLocation
-from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
-from streamflow.deployment.connector.base import FS_TYPES_TO_SKIP, BaseConnector
+from streamflow.core.hardware import Hardware, Storage
+from streamflow.core.scheduling import AvailableLocation
+from streamflow.deployment.connector.base import (
+    FS_TYPES_TO_SKIP,
+    BaseConnector,
+    get_nvidia_smi_command,
+    parse_nvidia_smi,
+)
 from streamflow.log_handler import logger
 
 
@@ -42,26 +48,46 @@ class LocalConnector(BaseConnector):
         self, deployment_name: str, config_dir: str, transferBufferSize: int = 2**16
     ):
         super().__init__(deployment_name, config_dir, transferBufferSize)
-        storage = {}
-        for disk in psutil.disk_partitions(all=True):
-            if disk.fstype not in FS_TYPES_TO_SKIP and os.access(
-                disk.mountpoint, os.R_OK
-            ):
-                try:
-                    storage[disk.mountpoint] = Storage(
-                        mount_point=disk.mountpoint,
-                        size=shutil.disk_usage(disk.mountpoint).free / 2**20,
-                    )
-                except (PermissionError, TimeoutError) as e:
-                    logger.warning(
-                        f"Skipping Storage on partition {disk.device} on {disk.mountpoint} "
-                        f"for deployment {self.deployment_name}: {e}"
-                    )
-        self._hardware: Hardware = Hardware(
-            cores=float(psutil.cpu_count()),
-            memory=float(psutil.virtual_memory().total / 2**20),
-            storage=storage,
-        )
+        self._hardware: Hardware | None = None
+
+    async def _get_hardware(self) -> Hardware:
+        if self._hardware is None:
+            # Get storage
+            storage = {}
+            for disk in psutil.disk_partitions(all=True):
+                if disk.fstype not in FS_TYPES_TO_SKIP and os.access(
+                    disk.mountpoint, os.R_OK
+                ):
+                    try:
+                        storage[disk.mountpoint] = Storage(
+                            mount_point=disk.mountpoint,
+                            size=shutil.disk_usage(disk.mountpoint).free / 2**20,
+                        )
+                    except (PermissionError, TimeoutError) as e:
+                        logger.warning(
+                            f"Skipping Storage on partition {disk.device} on {disk.mountpoint} "
+                            f"for deployment {self.deployment_name}: {e}"
+                        )
+            # Get GPUs
+            devices = []
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *get_nvidia_smi_command(),
+                    stderr=asyncio.subprocess.STDOUT,
+                )
+                stdout, _ = await proc.communicate()
+                devices.extend(parse_nvidia_smi(stdout.decode().strip()))
+            except Exception:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug("No NVIDIA GPU found locally")
+            # Build hardware
+            self._hardware: Hardware = Hardware(
+                cores=float(psutil.cpu_count()),
+                memory=float(psutil.virtual_memory().total / 2**20),
+                storage=storage,
+                devices=devices,
+            )
+        return self._hardware
 
     def _get_shell(self) -> str:
         if sys.platform == "win32":
@@ -134,7 +160,7 @@ class LocalConnector(BaseConnector):
                 hostname="localhost",
                 local=True,
                 slots=1,
-                hardware=self._hardware,
+                hardware=await self._get_hardware(),
             )
         }
 

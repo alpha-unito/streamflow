@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
     from streamflow.core.deployment import Connector, ExecutionLocation
-    from streamflow.core.scheduling import Hardware
+    from streamflow.core.hardware import Hardware
 
 
 def _check_status(

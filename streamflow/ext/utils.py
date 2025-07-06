@@ -102,7 +102,7 @@ def _get_type_repr(
                     type_ = f"Union[{', '.join(types)}]"
                 else:
                     type_ = _get_type_repr(
-                        list(obj["patternProperties"].values())[0], refs
+                        next(iter(obj["patternProperties"].values())), refs
                     )
                 return f"Map[str, {type_}]"
             elif "title" in obj:

@@ -47,8 +47,8 @@ async def test_single_workflow_single_execution(
                     "--outdir",
                     tmpdir,
                     "--format",
+                    *digests.keys(),
                 ]
-                + list(digests.keys())
             ),
         )
         for fmt in digests.keys():
@@ -76,8 +76,8 @@ async def test_single_workflow_group_by_step(
                     tmpdir,
                     "--group-by-step",
                     "--format",
+                    *digests.keys(),
                 ]
-                + list(digests.keys())
             ),
         )
         for fmt in digests.keys():
@@ -103,8 +103,8 @@ async def test_single_workflow_all_instances(context: StreamFlowContext) -> None
                     tmpdir,
                     "--all",
                     "--format",
+                    *digests.keys(),
                 ]
-                + list(digests.keys())
             ),
         )
         for fmt in digests.keys():
@@ -129,8 +129,8 @@ async def test_multiple_workflows(context: StreamFlowContext) -> None:
                     "--outdir",
                     tmpdir,
                     "--format",
+                    *digests.keys(),
                 ]
-                + list(digests.keys())
             ),
         )
         for fmt in digests.keys():

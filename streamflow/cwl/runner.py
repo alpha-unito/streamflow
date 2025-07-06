@@ -63,7 +63,7 @@ async def _async_main(args: argparse.Namespace):
             streamflow_config = validator.yaml.load(f)
         workflows = streamflow_config.get("workflows", {})
         if len(workflows) == 1:
-            workflow_name = list(workflows.keys())[0]
+            workflow_name = next(iter(workflows.keys()))
         elif len(workflows) == 0:
             workflow_name = "cwl-workflow"
             streamflow_config.setdefault("workflows", {})[workflow_name] = {}

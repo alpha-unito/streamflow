@@ -17,7 +17,7 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Hardware, Storage
+from streamflow.core.hardware import Hardware, Storage
 from streamflow.core.workflow import Job, Status
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.data import utils

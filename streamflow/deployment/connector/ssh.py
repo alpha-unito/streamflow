@@ -15,12 +15,15 @@ from streamflow.core import utils
 from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
+from streamflow.core.hardware import Hardware, Storage
+from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.connector.base import (
     FS_TYPES_TO_SKIP,
     BaseConnector,
     copy_remote_to_remote,
     copy_same_connector,
+    get_nvidia_smi_command,
+    parse_nvidia_smi,
 )
 from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.deployment.template import CommandTemplateMap
@@ -502,6 +505,16 @@ class SSHConnector(BaseConnector):
                             )
                 else:
                     raise WorkflowExecutionException(result.returncode)
+        async with self._get_ssh_client_process(
+            location=location,
+            command=" ".join(get_nvidia_smi_command()),
+            stderr=asyncio.subprocess.STDOUT,
+        ) as proc:
+            result = await proc.wait()
+            if result.returncode == 0:
+                self.hardware[location].devices.extend(parse_nvidia_smi(result.stdout))
+            elif logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"No NVIDIA GPU found on location {location}")
         return self.hardware[location]
 
     def _get_command(

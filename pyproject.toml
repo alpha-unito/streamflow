@@ -54,6 +54,7 @@ packages = [
     "streamflow.deployment.connector",
     "streamflow.deployment.filter",
     "streamflow.ext",
+    "streamflow.hardware",
     "streamflow.persistence",
     "streamflow.provenance",
     "streamflow.recovery",

@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Hardware, Storage
+from streamflow.core.hardware import Hardware, Storage
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 

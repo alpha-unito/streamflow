@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Hardware, JobAllocation, Policy
+from streamflow.core.hardware import Hardware
+from streamflow.core.scheduling import JobAllocation, Policy
 from streamflow.workflow.token import FileToken
 
 if TYPE_CHECKING:

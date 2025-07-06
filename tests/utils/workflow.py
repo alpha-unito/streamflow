@@ -16,9 +16,9 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.hardware import HardwareRequirement
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.recovery import RetryRequest
-from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import flatten_list, get_job_tag, get_tag
 from streamflow.core.workflow import (
     Command,
