@@ -176,9 +176,7 @@ async def test_initial_workdir(
         await workflow.save(context)
         executor = StreamFlowExecutor(workflow)
         await executor.run()
-        token = next(
-            iter(next(iter(execute_step.get_output_ports().values())).token_list)
-        )
+        token = next(iter(execute_step.get_output_port(out_port_name).token_list))
         job = get_job_token(
             posixpath.join(execute_step.name, "0"),
             schedule_step.get_output_port().token_list,

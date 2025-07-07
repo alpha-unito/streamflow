@@ -89,10 +89,10 @@ def _adjust_input(
     dst_path: str,
 ) -> bool:
     """
-    Adjusts the input if it contains a file with the specified `src_path`.
+    Adjust the input if it contains a file with the specified `src_path`.
 
     :param input_: The input to process. It can be of any type, including
-                   lists, file objects, or objects (e.g., records in CWL).
+                           lists, objects (e.g., CWL records), files, and directories.
     :param path_processor: A module used to process and manipulate paths (e.g., posixpath).
     :param src_path: The source path to search for within the input values.
     :param dst_path: The destination path that will replace `src_path` in the input values.
@@ -120,12 +120,12 @@ def _adjust_input(
                 _adjust_inputs(input_["listing"], path_processor, src_path, dst_path)
                 return True
         else:
-            for i in input_.values():
-                if _adjust_input(i, path_processor, src_path, dst_path):
+            for inp in input_.values():
+                if _adjust_input(inp, path_processor, src_path, dst_path):
                     return True
     elif isinstance(input_, MutableSequence):
-        for i in input_:
-            if _adjust_input(i, path_processor, src_path, dst_path):
+        for inp in input_:
+            if _adjust_input(inp, path_processor, src_path, dst_path):
                 return True
     return False
 
