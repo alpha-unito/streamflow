@@ -38,6 +38,7 @@ extensions = [
     'sphinx.ext.autosectionlabel',
     'sphinx.ext.extlinks',
     'sphinx-jsonschema',
+    'sphinx_llms_txt',
     'sphinx_rtd_theme'
 ]
 
@@ -81,6 +82,14 @@ extlinks = {
                       '/streamflow/config/schemas/v1.0/%s', 'GH#'),
     'repo': ('https://github.com/alpha-unito/streamflow/tree/' + release + '/%s', 'GH#')
 }
+
+# The summary file can include a custom description of the project
+llms_txt_summary = (
+    "The StreamFlow framework is a container-native Workflow Management System written in Python 3 "
+    "and based on the Common Workflow Language (CWL) standard. StreamFlow orchestrates large-scale executions of "
+    "hybrid scientific workflows on top of multi-container environments and heterogeneous computing infrastructures "
+    "(multi-cloud, HPC, quantum machines, and any combination of them)."
+)
 
 # JSONSchema extensions
 sjs = importlib.import_module("sphinx-jsonschema")
