@@ -542,8 +542,8 @@ class Token(PersistableEntity):
     async def is_available(self, context: StreamFlowContext) -> bool:
         return self.recoverable
 
-    def retag(self, tag: str, recoverable: bool = False) -> Token:
-        return self.__class__(tag=tag, value=self.value, recoverable=recoverable)
+    def retag(self, tag: str) -> Token:
+        return self.__class__(tag=tag, value=self.value, recoverable=self.recoverable)
 
     async def save(
         self, context: StreamFlowContext, port_id: int | None = None
