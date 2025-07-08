@@ -226,9 +226,7 @@ class DefaultTransformer(ManyToOneTransformer):
                     await self._get_inputs({"__default__": self.default_port})
                 )["__default__"]
             return {
-                self.get_output_name(): self.default_token.retag(
-                    primary_token.tag, recoverable=True
-                )
+                self.get_output_name(): self.default_token.retag(primary_token.tag)
             }
 
 
@@ -245,7 +243,7 @@ class DefaultRetagTransformer(DefaultTransformer):
             self.default_token = (
                 await self._get_inputs({"__default__": self.default_port})
             )["__default__"]
-        return {self.get_output_name(): self.default_token.retag(tag, recoverable=True)}
+        return {self.get_output_name(): self.default_token.retag(tag)}
 
 
 class DotProductSizeTransformer(ManyToOneTransformer):
