@@ -23,6 +23,7 @@ from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
     WorkflowException,
+    WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
@@ -1474,8 +1475,8 @@ class ScheduleStep(BaseStep):
                     )
                 )
         await asyncio.gather(*create_tasks)
-        job.input_directory, job.output_directory, job.tmp_directory = (
-            str(p)
+        input_directory, output_directory, tmp_directory = (
+            str(p) if p else None
             for p in await asyncio.gather(
                 *(
                     asyncio.create_task(
@@ -1493,6 +1494,21 @@ class ScheduleStep(BaseStep):
                 )
             )
         )
+        if input_directory is None:
+            raise WorkflowExecutionException(
+                f"Job {self.name} cannot resolve input directory: {job.input_directory}"
+            )
+        if output_directory is None:
+            raise WorkflowExecutionException(
+                f"Job {self.name} cannot resolve output directory: {job.output_directory}"
+            )
+        if tmp_directory is None:
+            raise WorkflowExecutionException(
+                f"Job {self.name} cannot resolve tmp directory: {job.tmp_directory}"
+            )
+        job.input_directory = input_directory
+        job.output_directory = output_directory
+        job.tmp_directory = tmp_directory
 
     def get_output_port(self, name: str | None = None) -> JobPort:
         return cast(JobPort, super().get_output_port(name))
