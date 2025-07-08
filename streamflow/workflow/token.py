@@ -57,7 +57,7 @@ class IterationTerminationToken(Token):
     def get_weight(self, context: StreamFlowContext) -> int:
         return 0
 
-    def update(self, value: Any) -> Token:
+    def update(self, value: Any, recoverable: bool = False) -> Token:
         return self.__class__(tag=self.tag)
 
     def retag(self, tag: str) -> Token:
@@ -198,10 +198,10 @@ class ObjectToken(Token):
     __slots__ = ()
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
-        # Token is recoverable and all inner tokens are not saved in the database,
+        # Token is recoverable, and all inner tokens are not saved in the database,
         # propagate the recoverable
         if recoverable and not all(t.persistent_id for t in value.values()):
-            # Detect erroneous case where some tokens have a `persistent_id` and others do not.
+            # Detect an erroneous case where some tokens have a `persistent_id` and others do not.
             if any(t.persistent_id for t in value.values()):
                 raise WorkflowExecutionException(
                     "Impossible save the `ObjectToken` because it has some inner tokens already saved in the database"
@@ -215,6 +215,10 @@ class ObjectToken(Token):
     @property
     def recoverable(self) -> bool:
         return all(t.recoverable for t in self.value.values())
+
+    @recoverable.setter
+    def recoverable(self, value):
+        pass
 
     @classmethod
     async def _load(
