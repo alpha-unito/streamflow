@@ -677,6 +677,31 @@ class ExecuteStep(BaseStep):
                 job_token,
             )
 
+    @recoverable.step
+    async def _run_command(self, job: Job, connectors: MutableMapping[str, Connector]):
+        command_output = await self.command.execute(job)
+        if command_output.status == Status.FAILED:
+            logger.error(f"FAILED Job {job.name} with error:\n\t{command_output.value}")
+            raise WorkflowExecutionException(
+                f"FAILED Job {job.name} with error:\n\t{command_output.value}"
+            )
+        # Retrieve output tokens
+        if not self.terminated:
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        self._retrieve_output(
+                            job=job,
+                            output_name=output_name,
+                            output_port=self.workflow.ports[output_port],
+                            command_output=command_output,
+                            connector=connectors.get(output_name),
+                        )
+                    )
+                    for output_name, output_port in self.output_ports.items()
+                )
+            )
+
     async def _run_job(
         self,
         job: Job,
@@ -694,8 +719,7 @@ class ExecuteStep(BaseStep):
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Job {job.name} started")
-        # Initialise command output with default values
-        command_output = CommandOutput(value=None, status=Status.FAILED)
+        job_status = Status.FAILED
         # TODO: Trigger location deployment in case of lazy environments
         try:
             # Execute job
@@ -704,63 +728,27 @@ class ExecuteStep(BaseStep):
             await self.workflow.context.scheduler.notify_status(
                 job.name, Status.RUNNING
             )
-            command_output = await self.command.execute(job)
-            if command_output.status == Status.FAILED:
-                logger.error(
-                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
-                )
-                await self.workflow.context.failure_manager.handle_failure(
-                    job, self, command_output
-                )
-                command_output.status = Status.COMPLETED
-            elif command_output.status != Status.CANCELLED:
-                # Retrieve output tokens
-                if not self.terminated:
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(
-                                self._retrieve_output(
-                                    job=job,
-                                    output_name=output_name,
-                                    output_port=self.workflow.ports[output_port],
-                                    command_output=command_output,
-                                    connector=connectors.get(output_name),
-                                )
-                            )
-                            for output_name, output_port in self.output_ports.items()
-                        )
-                    )
+            await self._run_command(job, connectors)
+            job_status = Status.COMPLETED
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
         # When receiving a CancelledError, mark the step as Cancelled
         except asyncio.CancelledError:
-            command_output.status = Status.CANCELLED
+            job_status = Status.CANCELLED
         # When receiving a FailureHandling exception, mark the step as Failed
         except FailureHandlingException:
-            command_output.status = Status.FAILED
+            job_status = Status.FAILED
         # When receiving a generic exception, try to handle it
-        except Exception as e:
-            logger.exception(e)
-            try:
-                await self.workflow.context.failure_manager.handle_exception(
-                    job, self, e
-                )
-                command_output.status = Status.COMPLETED
-            # If failure cannot be recovered, simply fail
-            except Exception as ie:
-                if ie != e:
-                    logger.exception(ie)
-                command_output.status = Status.FAILED
+        except Exception:
+            job_status = Status.FAILED
         finally:
             # Notify completion to scheduler
-            await self.workflow.context.scheduler.notify_status(
-                job.name, command_output.status
-            )
+            await self.workflow.context.scheduler.notify_status(job.name, job_status)
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"{command_output.status.name} Job {job.name} terminated")
-        return command_output.status
+            logger.debug(f"{job_status.name} Job {job.name} terminated")
+        return job_status
 
     async def _save_additional_params(
         self, context: StreamFlowContext

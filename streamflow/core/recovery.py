@@ -16,7 +16,7 @@ from streamflow.workflow.token import JobToken
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Token, Workflow
+    from streamflow.core.workflow import Token, Workflow
 
 
 async def _recoverable(func, *args, **kwargs):
@@ -47,9 +47,7 @@ async def _recoverable(func, *args, **kwargs):
     except Exception as e:
         logger.exception(e)
         try:
-            await step.workflow.context.failure_manager.handle_exception(
-                job, step, e
-            )
+            await step.workflow.context.failure_manager.recover(job, step, e)
         # If failure cannot be recovered, fail
         except Exception as ie:
             if ie != e:
@@ -90,14 +88,7 @@ class FailureManager(SchemaEntity):
     def get_request(self, job_name: str) -> RetryRequest: ...
 
     @abstractmethod
-    async def handle_exception(
-        self, job: Job, step: Step, exception: BaseException
-    ) -> None: ...
-
-    @abstractmethod
-    async def handle_failure(
-        self, job: Job, step: Step, command_output: CommandOutput
-    ) -> None: ...
+    async def recover(self, job: Job, step: Step, exception: BaseException) -> None: ...
 
     @abstractmethod
     async def is_recovered(self, job_name: str) -> TokenAvailability: ...
