@@ -9,24 +9,31 @@ from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
 from streamflow.core.exception import FailureHandlingException
+from streamflow.core.workflow import Job, Step
 from streamflow.log_handler import logger
 from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step, Token, Workflow
+    from streamflow.core.workflow import CommandOutput, Token, Workflow
 
 
-@functools.wraps
-async def _recoverable(self, context, *args, **kwargs):
-    if job := next((arg for arg in args if isinstance(arg, Job)), None) is None:
-        if job := next((arg for arg in args if isinstance(arg, Job)), None) is None:
+async def _recoverable(func, *args, **kwargs):
+    step = args[0]
+    if not isinstance(step, Step):
+        raise TypeError(
+            "The `recoverable.step` decorator must be used with `Step` methods"
+        )
+    if (job := next((arg for arg in args if isinstance(arg, Job)), None)) is None:
+        if (
+            job := next((arg for arg in kwargs.values() if isinstance(arg, Job)), None)
+        ) is None:
             raise ValueError(
                 "The wrapped function must take a `Job` object as argument"
             )
     try:
-        await self.method(*args, **kwargs)
+        await func(*args, **kwargs)
     # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
     except KeyboardInterrupt:
         raise
@@ -40,8 +47,8 @@ async def _recoverable(self, context, *args, **kwargs):
     except Exception as e:
         logger.exception(e)
         try:
-            await context.failure_manager.handle_exception(
-                job, self, e
+            await step.workflow.context.failure_manager.handle_exception(
+                job, step, e
             )
         # If failure cannot be recovered, fail
         except Exception as ie:
@@ -53,10 +60,12 @@ async def _recoverable(self, context, *args, **kwargs):
 class recoverable:
 
     @staticmethod
-    def step(self, *args, **kwargs):
-        if not isinstance(self, Step):
-            raise TypeError("The `recoverable.step` decorator must be used with `Step` methods")
-        return _recoverable(self, self.workflow.context, *args, **kwargs)
+    def step(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            return await _recoverable(func, *args, **kwargs)
+
+        return wrapper
 
 
 class CheckpointManager(SchemaEntity):

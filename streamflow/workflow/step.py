@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import asyncio
@@ -144,7 +142,6 @@ class BaseStep(Step, ABC):
                 inputs=input_token_ids, token=token.persistent_id
             )
         return token
-
 
     async def terminate(self, status: Status):
         if not self.terminated:
@@ -1790,7 +1787,8 @@ class TransferStep(BaseStep, ABC):
                                     job=job,
                                     inputs=inputs,
                                     port_name=port_name,
-                                    token=token)
+                                    token=token,
+                                )
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
