@@ -1,18 +1,62 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 from abc import abstractmethod
 from collections.abc import MutableMapping
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
+from streamflow.core.exception import FailureHandlingException
+from streamflow.log_handler import logger
 from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
     from streamflow.core.workflow import CommandOutput, Job, Step, Token, Workflow
+
+
+@functools.wraps
+async def _recoverable(self, context, *args, **kwargs):
+    if job := next((arg for arg in args if isinstance(arg, Job)), None) is None:
+        if job := next((arg for arg in args if isinstance(arg, Job)), None) is None:
+            raise ValueError(
+                "The wrapped function must take a `Job` object as argument"
+            )
+    try:
+        await self.method(*args, **kwargs)
+    # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+    except KeyboardInterrupt:
+        raise
+    # When receiving a CancelledError, mark the step as Cancelled
+    except asyncio.CancelledError:
+        raise
+    # When receiving a FailureHandling exception, mark the step as Failed
+    except FailureHandlingException:
+        raise
+    # When receiving a generic exception, try to handle it
+    except Exception as e:
+        logger.exception(e)
+        try:
+            await context.failure_manager.handle_exception(
+                job, self, e
+            )
+        # If failure cannot be recovered, fail
+        except Exception as ie:
+            if ie != e:
+                logger.exception(ie)
+            raise
+
+
+class recoverable:
+
+    @staticmethod
+    def step(self, *args, **kwargs):
+        if not isinstance(self, Step):
+            raise TypeError("The `recoverable.step` decorator must be used with `Step` methods")
+        return _recoverable(self, self.workflow.context, *args, **kwargs)
 
 
 class CheckpointManager(SchemaEntity):

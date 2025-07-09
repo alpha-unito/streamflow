@@ -9,7 +9,6 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import (
     AsyncIterable,
-    Coroutine,
     MutableMapping,
     MutableSequence,
     MutableSet,
@@ -33,6 +32,7 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import get_entity_ids
 from streamflow.core.workflow import (
@@ -145,30 +145,6 @@ class BaseStep(Step, ABC):
             )
         return token
 
-    async def _recoverable_task(self, job: Job, exception_thrower: Coroutine) -> None:
-        try:
-            await exception_thrower
-        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-        except KeyboardInterrupt:
-            raise
-        # When receiving a CancelledError, mark the step as Cancelled
-        except asyncio.CancelledError:
-            raise
-        # When receiving a FailureHandling exception, mark the step as Failed
-        except FailureHandlingException:
-            raise
-        # When receiving a generic exception, try to handle it
-        except Exception as e:
-            logger.exception(e)
-            try:
-                await self.workflow.context.failure_manager.handle_exception(
-                    job, self, e
-                )
-            # If failure cannot be recovered, simply fail
-            except Exception as ie:
-                if ie != e:
-                    logger.exception(ie)
-                raise
 
     async def terminate(self, status: Status):
         if not self.terminated:
@@ -1420,6 +1396,7 @@ class ScheduleStep(BaseStep):
             )
         return params
 
+    @recoverable.step
     async def _schedule(
         self,
         job: Job,
@@ -1600,10 +1577,7 @@ class ScheduleStep(BaseStep):
                                 tmp_directory=self.tmp_directory,
                             )
                             # Schedule
-                            await self._recoverable_task(
-                                job,
-                                self._schedule(job=job),
-                            )
+                            await self._schedule(job=job)
             else:
                 # Create Job
                 job = Job(
@@ -1615,10 +1589,7 @@ class ScheduleStep(BaseStep):
                     tmp_directory=self.tmp_directory,
                 )
                 # Schedule
-                await self._recoverable_task(
-                    job,
-                    self._schedule(job=job),
-                )
+                await self._schedule(job=job)
                 status = Status.COMPLETED
             await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
@@ -1758,6 +1729,7 @@ class TransferStep(BaseStep, ABC):
             ),
         )
 
+    @recoverable.step
     async def _run_transfer(
         self, job: Job, inputs: MutableMapping[str, Token], port_name: str, token: Token
     ) -> None:
@@ -1814,10 +1786,11 @@ class TransferStep(BaseStep, ABC):
                         if len(inputs_map[tag]) == len(input_ports):
                             inputs = inputs_map.pop(tag)
                             for port_name, token in inputs.items():
-                                await self._recoverable_task(
-                                    job,
-                                    self._run_transfer(job, inputs, port_name, token),
-                                )
+                                await self._run_transfer(
+                                    job=job,
+                                    inputs=inputs,
+                                    port_name=port_name,
+                                    token=token)
             # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
             except KeyboardInterrupt:
                 raise
