@@ -8,7 +8,7 @@ from importlib.resources import files
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, WorkflowException
 from streamflow.core.recovery import FailureManager, RetryRequest, TokenAvailability
-from streamflow.core.workflow import CommandOutput, Job, Status, Step, Token
+from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
 from streamflow.workflow.token import JobToken
@@ -41,7 +41,7 @@ class DefaultFailureManager(FailureManager):
         # Recovery exceptions
         except WorkflowException as e:
             logger.exception(e)
-            await self.handle_exception(job, step, e)
+            await self.recover(job, step, e)
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
@@ -67,21 +67,11 @@ class DefaultFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
-    async def handle_exception(
-        self, job: Job, step: Step, exception: BaseException
-    ) -> None:
+    async def recover(self, job: Job, step: Step, exception: BaseException) -> None:
         if logger.isEnabledFor(logging.INFO):
             logger.info(
                 f"Handling {type(exception).__name__} failure for job {job.name}"
             )
-        await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
-        await self._do_handle_failure(job, step)
-
-    async def handle_failure(
-        self, job: Job, step: Step, command_output: CommandOutput
-    ) -> None:
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f"Handling command failure for job {job.name}")
         await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)
 
@@ -155,25 +145,12 @@ class DummyFailureManager(FailureManager):
     def get_request(self, job_name: str) -> RetryRequest:
         pass
 
-    async def handle_exception(
-        self, job: Job, step: Step, exception: BaseException
-    ) -> None:
+    async def recover(self, job: Job, step: Step, exception: BaseException) -> None:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
                 f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
             )
         raise exception
-
-    async def handle_failure(
-        self, job: Job, step: Step, command_output: CommandOutput
-    ) -> None:
-        if logger.isEnabledFor(logging.WARNING):
-            logger.warning(
-                f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
-            )
-        raise FailureHandlingException(
-            f"FAILED Job {job.name} with error:\n\t{command_output.value}"
-        )
 
     async def is_recovered(self, job_name: str) -> TokenAvailability:
         return TokenAvailability.Unavailable

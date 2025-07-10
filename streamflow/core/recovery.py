@@ -1,18 +1,68 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 from abc import abstractmethod
 from collections.abc import MutableMapping
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
+from streamflow.core.exception import FailureHandlingException
+from streamflow.core.workflow import Job, Step
+from streamflow.log_handler import logger
 from streamflow.workflow.token import JobToken
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
-    from streamflow.core.workflow import CommandOutput, Job, Step, Token, Workflow
+    from streamflow.core.workflow import Token, Workflow
+
+
+def recoverable(func):
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        if (step := next((arg for arg in args if isinstance(arg, Step)), None)) is None:
+            if (
+                step := next(
+                    (arg for arg in kwargs.values() if isinstance(arg, Step)), None
+                )
+            ) is None:
+                raise ValueError(
+                    "The wrapped function must take a `Step` object as argument"
+                )
+        if (job := next((arg for arg in args if isinstance(arg, Job)), None)) is None:
+            if (
+                job := next(
+                    (arg for arg in kwargs.values() if isinstance(arg, Job)), None
+                )
+            ) is None:
+                raise ValueError(
+                    "The wrapped function must take a `Job` object as argument"
+                )
+        try:
+            await func(*args, **kwargs)
+        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+        except KeyboardInterrupt:
+            raise
+        # When receiving a CancelledError, mark the step as Cancelled
+        except asyncio.CancelledError:
+            raise
+        # When receiving a FailureHandling exception, mark the step as Failed
+        except FailureHandlingException:
+            raise
+        # When receiving a generic exception, try to handle it
+        except Exception as e:
+            logger.exception(e)
+            try:
+                await step.workflow.context.failure_manager.recover(job, step, e)
+            # If failure cannot be recovered, fail
+            except Exception as ie:
+                if ie != e:
+                    logger.exception(ie)
+                raise
+
+    return wrapper
 
 
 class CheckpointManager(SchemaEntity):
@@ -37,14 +87,7 @@ class FailureManager(SchemaEntity):
     def get_request(self, job_name: str) -> RetryRequest: ...
 
     @abstractmethod
-    async def handle_exception(
-        self, job: Job, step: Step, exception: BaseException
-    ) -> None: ...
-
-    @abstractmethod
-    async def handle_failure(
-        self, job: Job, step: Step, command_output: CommandOutput
-    ) -> None: ...
+    async def recover(self, job: Job, step: Step, exception: BaseException) -> None: ...
 
     @abstractmethod
     async def is_recovered(self, job_name: str) -> TokenAvailability: ...

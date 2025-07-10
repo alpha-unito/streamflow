@@ -160,8 +160,8 @@ async def test_schedule_step(context: StreamFlowContext):
     nof_deployments = 2
     step = create_schedule_step(
         workflow,
-        [deploy_step for _ in range(nof_deployments)],
-        BindingConfig(
+        deploy_steps=[deploy_step for _ in range(nof_deployments)],
+        binding_config=BindingConfig(
             targets=[LocalTarget() for _ in range(nof_deployments)],
             filters=[
                 FilterConfig(config={}, name=utils.random_name(), type="shuffle")

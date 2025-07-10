@@ -5,7 +5,12 @@ import logging
 import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import AsyncIterable, MutableMapping, MutableSequence, MutableSet
+from collections.abc import (
+    AsyncIterable,
+    MutableMapping,
+    MutableSequence,
+    MutableSet,
+)
 from types import ModuleType
 from typing import Any, cast
 
@@ -22,10 +27,10 @@ from streamflow.core.deployment import (
 from streamflow.core.exception import (
     FailureHandlingException,
     WorkflowDefinitionException,
-    WorkflowException,
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import get_entity_ids
 from streamflow.core.workflow import (
@@ -672,6 +677,34 @@ class ExecuteStep(BaseStep):
                 job_token,
             )
 
+    @recoverable
+    async def _execute_command(
+        self, job: Job, connectors: MutableMapping[str, Connector]
+    ):
+        command_output = await self.command.execute(job)
+        if command_output.status == Status.FAILED:
+            logger.error(f"FAILED Job {job.name} with error:\n\t{command_output.value}")
+            raise WorkflowExecutionException(
+                f"FAILED Job {job.name} with error:\n\t{command_output.value}"
+            )
+        elif command_output.status != Status.CANCELLED:
+            # Retrieve output tokens
+            if not self.terminated:
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self._retrieve_output(
+                                job=job,
+                                output_name=output_name,
+                                output_port=self.workflow.ports[output_port],
+                                command_output=command_output,
+                                connector=connectors.get(output_name),
+                            )
+                        )
+                        for output_name, output_port in self.output_ports.items()
+                    )
+                )
+
     async def _run_job(
         self,
         job: Job,
@@ -689,8 +722,7 @@ class ExecuteStep(BaseStep):
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Job {job.name} started")
-        # Initialise command output with default values
-        command_output = CommandOutput(value=None, status=Status.FAILED)
+        job_status = Status.FAILED
         # TODO: Trigger location deployment in case of lazy environments
         try:
             # Execute job
@@ -699,63 +731,27 @@ class ExecuteStep(BaseStep):
             await self.workflow.context.scheduler.notify_status(
                 job.name, Status.RUNNING
             )
-            command_output = await self.command.execute(job)
-            if command_output.status == Status.FAILED:
-                logger.error(
-                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
-                )
-                await self.workflow.context.failure_manager.handle_failure(
-                    job, self, command_output
-                )
-                command_output.status = Status.COMPLETED
-            elif command_output.status != Status.CANCELLED:
-                # Retrieve output tokens
-                if not self.terminated:
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(
-                                self._retrieve_output(
-                                    job=job,
-                                    output_name=output_name,
-                                    output_port=self.workflow.ports[output_port],
-                                    command_output=command_output,
-                                    connector=connectors.get(output_name),
-                                )
-                            )
-                            for output_name, output_port in self.output_ports.items()
-                        )
-                    )
+            await self._execute_command(job, connectors)
+            job_status = Status.COMPLETED
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
             raise
         # When receiving a CancelledError, mark the step as Cancelled
         except asyncio.CancelledError:
-            command_output.status = Status.CANCELLED
+            job_status = Status.CANCELLED
         # When receiving a FailureHandling exception, mark the step as Failed
         except FailureHandlingException:
-            command_output.status = Status.FAILED
+            job_status = Status.FAILED
         # When receiving a generic exception, try to handle it
-        except Exception as e:
-            logger.exception(e)
-            try:
-                await self.workflow.context.failure_manager.handle_exception(
-                    job, self, e
-                )
-                command_output.status = Status.COMPLETED
-            # If failure cannot be recovered, simply fail
-            except Exception as ie:
-                if ie != e:
-                    logger.exception(ie)
-                command_output.status = Status.FAILED
+        except Exception:
+            job_status = Status.FAILED
         finally:
             # Notify completion to scheduler
-            await self.workflow.context.scheduler.notify_status(
-                job.name, command_output.status
-            )
+            await self.workflow.context.scheduler.notify_status(job.name, job_status)
         # Return job status
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"{command_output.status.name} Job {job.name} terminated")
-        return command_output.status
+            logger.debug(f"{job_status.name} Job {job.name} terminated")
+        return job_status
 
     async def _save_additional_params(
         self, context: StreamFlowContext
@@ -1363,12 +1359,45 @@ class ScheduleStep(BaseStep):
             tmp_directory=params["tmp_directory"],
         )
 
-    async def _propagate_job(
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        await self.get_output_port("__job__").save(context)
+        params = cast(
+            dict[str, Any], await super()._save_additional_params(context)
+        ) | {
+            "connector_ports": {
+                name: self.get_input_port(name).persistent_id
+                for name in self.input_ports
+                if name.startswith("__connector__")
+            },
+            "job_port": self.get_output_port("__job__").persistent_id,
+            "binding_config": await self.binding_config.save(context),
+            "job_prefix": self.job_prefix,
+            "input_directory": self.input_directory,
+            "output_directory": self.output_directory,
+            "tmp_directory": self.tmp_directory,
+        }
+        if self.hardware_requirement:
+            params["hardware_requirement"] = await self.hardware_requirement.save(
+                context
+            )
+        return params
+
+    @recoverable
+    async def _schedule(
         self,
-        connector: Connector,
-        locations: MutableSequence[ExecutionLocation],
         job: Job,
     ):
+        await self.workflow.context.scheduler.schedule(
+            job,
+            self.binding_config,
+            self.hardware_requirement,
+        )
+
+        connector = self.workflow.context.scheduler.get_connector(job.name)
+        locations = self.workflow.context.scheduler.get_locations(job.name)
+
         await self._set_job_directories(connector, locations, job)
 
         # Register paths
@@ -1416,31 +1445,6 @@ class ScheduleStep(BaseStep):
                 input_token_ids=get_entity_ids(token_inputs),
             )
         )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        await self.get_output_port("__job__").save(context)
-        params = cast(
-            dict[str, Any], await super()._save_additional_params(context)
-        ) | {
-            "connector_ports": {
-                name: self.get_input_port(name).persistent_id
-                for name in self.input_ports
-                if name.startswith("__connector__")
-            },
-            "job_port": self.get_output_port("__job__").persistent_id,
-            "binding_config": await self.binding_config.save(context),
-            "job_prefix": self.job_prefix,
-            "input_directory": self.input_directory,
-            "output_directory": self.output_directory,
-            "tmp_directory": self.tmp_directory,
-        }
-        if self.hardware_requirement:
-            params["hardware_requirement"] = await self.hardware_requirement.save(
-                context
-            )
-        return params
 
     async def _set_job_directories(
         self,
@@ -1561,18 +1565,7 @@ class ScheduleStep(BaseStep):
                                 tmp_directory=self.tmp_directory,
                             )
                             # Schedule
-                            await self.workflow.context.scheduler.schedule(
-                                job, self.binding_config, self.hardware_requirement
-                            )
-                            await self._propagate_job(
-                                connector=self.workflow.context.scheduler.get_connector(
-                                    job.name
-                                ),
-                                locations=self.workflow.context.scheduler.get_locations(
-                                    job.name
-                                ),
-                                job=job,
-                            )
+                            await self._schedule(job=job)
             else:
                 # Create Job
                 job = Job(
@@ -1584,16 +1577,7 @@ class ScheduleStep(BaseStep):
                     tmp_directory=self.tmp_directory,
                 )
                 # Schedule
-                await self.workflow.context.scheduler.schedule(
-                    job,
-                    self.binding_config,
-                    self.hardware_requirement,
-                )
-                await self._propagate_job(
-                    connector=self.workflow.context.scheduler.get_connector(job.name),
-                    locations=self.workflow.context.scheduler.get_locations(job.name),
-                    job=job,
-                )
+                await self._schedule(job=job)
                 status = Status.COMPLETED
             await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
@@ -1733,45 +1717,25 @@ class TransferStep(BaseStep, ABC):
             ),
         )
 
+    @recoverable
     async def _run_transfer(
-        self, job: Job, inputs: MutableMapping[str, Token]
-    ) -> Status:
-        try:
-            for port_name, token in inputs.items():
-                try:
-                    self.get_output_port(port_name).put(
-                        await self._persist_token(
-                            token=await self.transfer(job, token),
-                            port=self.get_output_port(port_name),
-                            input_token_ids=get_entity_ids(
-                                [
-                                    get_job_token(
-                                        job.name,
-                                        self.get_input_port("__job__").token_list,
-                                    ),
-                                    *inputs.values(),
-                                ]
-                            ),
-                        )
-                    )
-                except WorkflowException as err:
-                    logger.exception(err)
-                    await self.workflow.context.failure_manager.handle_exception(
-                        job, self, err
-                    )
-            status = Status.COMPLETED
-        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-        except KeyboardInterrupt:
-            raise
-        # When receiving a CancelledError, mark the step as Cancelled
-        except asyncio.CancelledError:
-            await self.terminate(Status.CANCELLED)
-            status = Status.CANCELLED
-        except Exception as e:
-            logger.exception(e)
-            await self.terminate(Status.FAILED)
-            status = Status.FAILED
-        return status
+        self, job: Job, inputs: MutableMapping[str, Token], port_name: str, token: Token
+    ) -> None:
+        self.get_output_port(port_name).put(
+            await self._persist_token(
+                token=await self.transfer(job, token),
+                port=self.get_output_port(port_name),
+                input_token_ids=get_entity_ids(
+                    [
+                        get_job_token(
+                            job.name,
+                            self.get_input_port("__job__").token_list,
+                        ),
+                        *inputs.values(),
+                    ]
+                ),
+            )
+        )
 
     async def _save_additional_params(
         self, context: StreamFlowContext
@@ -1789,30 +1753,42 @@ class TransferStep(BaseStep, ABC):
         }
         if input_ports:
             inputs_map = {}
-            while status not in (Status.FAILED, Status.CANCELLED):
-                # Retrieve input tokens
-                inputs = await self._get_inputs(input_ports)
-                # Retrieve job
-                job = await cast(JobPort, self.get_input_port("__job__")).get_job(
-                    self.name
-                )
-                # Check for termination
-                if check_termination(inputs.values()) or job is None:
-                    status = _reduce_statuses(
-                        [status, *(t.value for t in inputs.values())]
+            try:
+                while True:
+                    # Retrieve input tokens
+                    inputs = await self._get_inputs(input_ports)
+                    # Retrieve job
+                    job = await cast(JobPort, self.get_input_port("__job__")).get_job(
+                        self.name
                     )
-                    break
-                # Group inputs by tag
-                _group_by_tag(inputs, inputs_map)
-                # Process tags
-                for tag in list(inputs_map.keys()):
-                    if len(inputs_map[tag]) == len(input_ports):
-                        inputs = inputs_map.pop(tag)
-                        if (status := await self._run_transfer(job, inputs)) in (
-                            Status.FAILED,
-                            Status.CANCELLED,
-                        ):
-                            break
+                    # Check for termination
+                    if check_termination(inputs.values()) or job is None:
+                        status = _reduce_statuses(
+                            [status, *(t.value for t in inputs.values())]
+                        )
+                        break
+                    # Group inputs by tag
+                    _group_by_tag(inputs, inputs_map)
+                    # Process tags
+                    for tag in list(inputs_map.keys()):
+                        if len(inputs_map[tag]) == len(input_ports):
+                            inputs = inputs_map.pop(tag)
+                            for port_name, token in inputs.items():
+                                await self._run_transfer(
+                                    job=job,
+                                    inputs=inputs,
+                                    port_name=port_name,
+                                    token=token,
+                                )
+            # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+            except KeyboardInterrupt:
+                raise
+            # When receiving a CancelledError, mark the step as Cancelled
+            except asyncio.CancelledError:
+                await self.terminate(Status.CANCELLED)
+            except Exception as e:
+                logger.exception(e)
+                await self.terminate(Status.FAILED)
         # Terminate step
         await self.terminate(self._get_status(status))
 

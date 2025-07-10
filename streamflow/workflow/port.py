@@ -62,3 +62,7 @@ class InterWorkflowPort(Port):
                 if border_tag is None or border_tag == token.tag:
                     port.put(token)
         super().put(token)
+
+
+class InterWorkflowJobPort(InterWorkflowPort, JobPort):
+    pass

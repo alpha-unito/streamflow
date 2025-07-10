@@ -9,7 +9,7 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.hardware import CWLHardwareRequirement
-from streamflow.cwl.step import CWLExecuteStep, CWLInputInjectorStep
+from streamflow.cwl.step import CWLExecuteStep, CWLInputInjectorStep, CWLScheduleStep
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.translator import create_command_output_processor_base
 from streamflow.cwl.workflow import CWLWorkflow
@@ -56,8 +56,10 @@ async def test_initial_workdir(
     )
     injector_schedule_step = create_schedule_step(
         workflow,
-        [deploy_step],
+        cls=CWLScheduleStep,
+        deploy_steps=[deploy_step],
         name_prefix=step_name + "-injector/__schedule__",
+        hardware_requirement=CWLHardwareRequirement(cwl_version=CWL_VERSION),
     )
     injector = workflow.create_step(
         cls=CWLInputInjectorStep,
@@ -68,7 +70,8 @@ async def test_initial_workdir(
     injector.add_output_port(in_port_name, workflow.create_port())
     schedule_step = create_schedule_step(
         workflow,
-        [deploy_step],
+        cls=CWLScheduleStep,
+        deploy_steps=[deploy_step],
         name_prefix=step_name,
         hardware_requirement=CWLHardwareRequirement(cwl_version=CWL_VERSION),
     )
