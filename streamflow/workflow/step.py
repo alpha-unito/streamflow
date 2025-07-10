@@ -677,30 +677,33 @@ class ExecuteStep(BaseStep):
                 job_token,
             )
 
-    @recoverable.step
-    async def _run_command(self, job: Job, connectors: MutableMapping[str, Connector]):
+    @recoverable
+    async def _execute_command(
+        self, job: Job, connectors: MutableMapping[str, Connector]
+    ):
         command_output = await self.command.execute(job)
         if command_output.status == Status.FAILED:
             logger.error(f"FAILED Job {job.name} with error:\n\t{command_output.value}")
             raise WorkflowExecutionException(
                 f"FAILED Job {job.name} with error:\n\t{command_output.value}"
             )
-        # Retrieve output tokens
-        if not self.terminated:
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        self._retrieve_output(
-                            job=job,
-                            output_name=output_name,
-                            output_port=self.workflow.ports[output_port],
-                            command_output=command_output,
-                            connector=connectors.get(output_name),
+        elif command_output.status != Status.CANCELLED:
+            # Retrieve output tokens
+            if not self.terminated:
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self._retrieve_output(
+                                job=job,
+                                output_name=output_name,
+                                output_port=self.workflow.ports[output_port],
+                                command_output=command_output,
+                                connector=connectors.get(output_name),
+                            )
                         )
+                        for output_name, output_port in self.output_ports.items()
                     )
-                    for output_name, output_port in self.output_ports.items()
                 )
-            )
 
     async def _run_job(
         self,
@@ -728,7 +731,7 @@ class ExecuteStep(BaseStep):
             await self.workflow.context.scheduler.notify_status(
                 job.name, Status.RUNNING
             )
-            await self._run_command(job, connectors)
+            await self._execute_command(job, connectors)
             job_status = Status.COMPLETED
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
         except KeyboardInterrupt:
@@ -1381,7 +1384,7 @@ class ScheduleStep(BaseStep):
             )
         return params
 
-    @recoverable.step
+    @recoverable
     async def _schedule(
         self,
         job: Job,
@@ -1714,7 +1717,7 @@ class TransferStep(BaseStep, ABC):
             ),
         )
 
-    @recoverable.step
+    @recoverable
     async def _run_transfer(
         self, job: Job, inputs: MutableMapping[str, Token], port_name: str, token: Token
     ) -> None:

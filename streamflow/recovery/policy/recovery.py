@@ -159,24 +159,28 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         # Retrieve tokens
         provenance = ProvenanceGraph(workflow.context)
-        inputs = []
-        if job_port := failed_step.get_input_port("__job__"):
-            inputs.append(get_job_token(failed_job.name, job_port.token_list))
-        if conn_tokens := [
-            failed_step.get_input_port(name).token_list[0]
-            for name in failed_step.input_ports.keys()
-            if name.startswith("__connector__")
-        ]:
-            inputs.extend(conn_tokens)
-        inputs.extend(failed_job.inputs.values())
-        await provenance.build_graph(inputs=inputs)
+        await provenance.build_graph(
+            inputs=[
+                *failed_job.inputs.values(),
+                *(
+                    p.token_list[0]
+                    for p in failed_step.get_input_ports().values()
+                    if isinstance(p, ConnectorPort)
+                ),
+                *(
+                    get_job_token(failed_job.name, p.token_list)
+                    for p in failed_step.get_input_ports().values()
+                    if isinstance(p, JobPort)
+                ),
+            ]
+        )
         mapper = await create_graph_mapper(self.context, provenance)
         # Synchronize across multiple recovery workflows
         job_tokens = list(
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
         await self._sync_workflows(
-            {t.value.name for t in job_tokens} | {failed_job.name},
+            {*(t.value.name for t in job_tokens), failed_job.name},
             job_tokens,
             mapper,
             new_workflow,

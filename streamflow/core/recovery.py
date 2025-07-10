@@ -19,51 +19,50 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Token, Workflow
 
 
-async def _recoverable(func, *args, **kwargs):
-    step = args[0]
-    if not isinstance(step, Step):
-        raise TypeError(
-            "The `recoverable.step` decorator must be used with `Step` methods"
-        )
-    if (job := next((arg for arg in args if isinstance(arg, Job)), None)) is None:
-        if (
-            job := next((arg for arg in kwargs.values() if isinstance(arg, Job)), None)
-        ) is None:
-            raise ValueError(
-                "The wrapped function must take a `Job` object as argument"
-            )
-    try:
-        await func(*args, **kwargs)
-    # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-    except KeyboardInterrupt:
-        raise
-    # When receiving a CancelledError, mark the step as Cancelled
-    except asyncio.CancelledError:
-        raise
-    # When receiving a FailureHandling exception, mark the step as Failed
-    except FailureHandlingException:
-        raise
-    # When receiving a generic exception, try to handle it
-    except Exception as e:
-        logger.exception(e)
+def recoverable(func):
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        if (step := next((arg for arg in args if isinstance(arg, Step)), None)) is None:
+            if (
+                step := next(
+                    (arg for arg in kwargs.values() if isinstance(arg, Step)), None
+                )
+            ) is None:
+                raise ValueError(
+                    "The wrapped function must take a `Step` object as argument"
+                )
+        if (job := next((arg for arg in args if isinstance(arg, Job)), None)) is None:
+            if (
+                job := next(
+                    (arg for arg in kwargs.values() if isinstance(arg, Job)), None
+                )
+            ) is None:
+                raise ValueError(
+                    "The wrapped function must take a `Job` object as argument"
+                )
         try:
-            await step.workflow.context.failure_manager.recover(job, step, e)
-        # If failure cannot be recovered, fail
-        except Exception as ie:
-            if ie != e:
-                logger.exception(ie)
+            await func(*args, **kwargs)
+        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
+        except KeyboardInterrupt:
             raise
+        # When receiving a CancelledError, mark the step as Cancelled
+        except asyncio.CancelledError:
+            raise
+        # When receiving a FailureHandling exception, mark the step as Failed
+        except FailureHandlingException:
+            raise
+        # When receiving a generic exception, try to handle it
+        except Exception as e:
+            logger.exception(e)
+            try:
+                await step.workflow.context.failure_manager.recover(job, step, e)
+            # If failure cannot be recovered, fail
+            except Exception as ie:
+                if ie != e:
+                    logger.exception(ie)
+                raise
 
-
-class recoverable:
-
-    @staticmethod
-    def step(func):
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
-            return await _recoverable(func, *args, **kwargs)
-
-        return wrapper
+    return wrapper
 
 
 class CheckpointManager(SchemaEntity):
