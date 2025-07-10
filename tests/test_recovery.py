@@ -3,7 +3,7 @@ import os
 import posixpath
 import tempfile
 from collections.abc import AsyncGenerator
-from typing import Any, cast
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -14,7 +14,6 @@ from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.workflow import Token
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.main import build_context
-from streamflow.recovery.failure_manager import DefaultFailureManager
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import GatherStep, ScatterStep
 from streamflow.workflow.token import (
@@ -31,7 +30,7 @@ from tests.utils.workflow import (
     create_workflow,
 )
 
-FAILURE_STEP = ["execute", "transfer"]
+FAILURE_STEP = ["execute", "transfer", "schedule"]
 NUM_STEPS = {"single_step": 1, "pipeline": 4}
 NUM_FAILURES = {"one_failure": 1, "two_failures_in_row": 2}
 ERROR_TYPE = [InjectorFailureCommand.SOFT_ERROR, InjectorFailureCommand.FAIL_STOP]
@@ -123,6 +122,7 @@ async def test_execute(
             location=location,
         )
         await path.write_text("StreamFlow fault tolerance")
+        path = await path.resolve()
         token_value = {
             "basename": os.path.basename(path),
             "checksum": f"sha1${await path.checksum()}",
@@ -179,15 +179,6 @@ async def test_execute(
                 step.get_input_port("__job__").token_list,
             ),
         ):
-            assert (
-                job_name
-                in cast(
-                    DefaultFailureManager, fault_tolerant_context.failure_manager
-                )._retry_requests
-            )
-            retry_request = cast(
-                DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests[job_name]
             expected_failures = num_of_failures
             if error_type == InjectorFailureCommand.FAIL_STOP:
                 if token_type != "primitive":
@@ -197,11 +188,12 @@ async def test_execute(
                             num_of_steps - int(step.name.split(os.sep)[1])
                         ) * 2
                     else:
-                        # The failure of a step involves to all the previous steps
+                        # The failure of a step involves all the previous steps
                         expected_failures *= num_of_steps - int(
                             step.name.split(os.sep)[1]
                         )
             # Version starts from 1
+            retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             assert retry_request.version == expected_failures + 1
 
 
@@ -225,6 +217,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
             location=location,
         )
         await path.write_text("StreamFlow fault tolerance" + utils.random_name())
+        path = await path.resolve()
         files.append({"class": "File", "path": str(path)})
         files[-1]["basename"] = os.path.basename(path)
         files[-1]["checksum"] = f"sha1${await path.checksum()}"
@@ -293,20 +286,14 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     )
     assert isinstance(result_token[1], TerminationToken)
 
-    for job in (
-        t.value
-        for t in step.get_input_port("__job__").token_list
-        if isinstance(t, JobToken)
+    for job_name in map(
+        lambda t: t.value.name,
+        filter(
+            lambda t: isinstance(t, JobToken),
+            step.get_input_port("__job__").token_list,
+        ),
     ):
-        assert (
-            job.name
-            in cast(
-                DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests
-        )
-        retry_request = cast(
-            DefaultFailureManager, fault_tolerant_context.failure_manager
-        )._retry_requests[job.name]
+        retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
         assert retry_request.version == num_of_failures + 1
 
 
@@ -334,6 +321,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
             location=location,
         )
         await path.write_text("StreamFlow fault tolerance")
+        path = await path.resolve()
         token_value = {
             "basename": os.path.basename(path),
             "checksum": f"sha1${await path.checksum()}",
@@ -380,19 +368,13 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
         )
         assert isinstance(result_token[1], TerminationToken)
 
-        for job in (
-            t.value
-            for t in step.get_input_port("__job__").token_list
-            if isinstance(t, JobToken)
+        for job_name in map(
+            lambda t: t.value.name,
+            filter(
+                lambda t: isinstance(t, JobToken),
+                step.get_input_port("__job__").token_list,
+            ),
         ):
-            assert (
-                job.name
-                in cast(
-                    DefaultFailureManager, fault_tolerant_context.failure_manager
-                )._retry_requests
-            )
-            retry_request = cast(
-                DefaultFailureManager, fault_tolerant_context.failure_manager
-            )._retry_requests[job.name]
+            retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             # The job is not restarted, so it has number of version = 1
             assert retry_request.version == 1

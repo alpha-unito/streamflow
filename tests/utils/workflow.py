@@ -34,8 +34,6 @@ from streamflow.core.workflow import (
     Token,
     Workflow,
 )
-from streamflow.cwl.hardware import CWLHardwareRequirement
-from streamflow.cwl.step import CWLScheduleStep
 from streamflow.cwl.utils import get_token_class, search_in_parent_locations
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
@@ -151,10 +149,18 @@ def create_deploy_step(
 def create_schedule_step(
     workflow: Workflow,
     deploy_steps: MutableSequence[DeployStep],
+    cls: type[ScheduleStep] | None = None,
     binding_config: BindingConfig = None,
     hardware_requirement: HardwareRequirement = None,
     name_prefix: str | None = None,
+    **arguments,
 ) -> ScheduleStep:
+    if cls is None:
+        cls = ScheduleStep
+    elif not issubclass(cls, ScheduleStep):
+        raise ValueError(
+            f"The input class must be a subclass of ScheduleStep. Got: {cls.__name__}"
+        )
     # It is necessary to pass in the correct order biding_config.targets and deploy_steps for the mapping
     if not binding_config:
         binding_config = BindingConfig(
@@ -167,11 +173,7 @@ def create_schedule_step(
         )
     name_prefix = name_prefix or utils.random_name()
     return workflow.create_step(
-        cls=(
-            CWLScheduleStep
-            if isinstance(hardware_requirement, CWLHardwareRequirement)
-            else ScheduleStep
-        ),
+        cls=cls,
         name=posixpath.join(name_prefix, "__schedule__"),
         job_prefix=name_prefix,
         connector_ports={
@@ -180,6 +182,7 @@ def create_schedule_step(
         },
         binding_config=binding_config,
         hardware_requirement=hardware_requirement,
+        **arguments,
     )
 
 
@@ -507,6 +510,116 @@ class InjectorFailureCommand(Command):
         )
 
 
+class InjectorFailureScheduleStep(ScheduleStep):
+    def __init__(
+        self,
+        name: str,
+        workflow: Workflow,
+        binding_config: BindingConfig,
+        connector_ports: MutableMapping[str, ConnectorPort],
+        failure_tags: MutableMapping[str, int] | None = None,
+        failure_type: str | None = None,
+        job_port: JobPort | None = None,
+        job_prefix: str | None = None,
+        hardware_requirement: HardwareRequirement | None = None,
+        input_directory: str | None = None,
+        output_directory: str | None = None,
+        tmp_directory: str | None = None,
+    ):
+        super().__init__(
+            name=name,
+            workflow=workflow,
+            binding_config=binding_config,
+            connector_ports=connector_ports,
+            job_port=job_port,
+            job_prefix=job_prefix,
+            hardware_requirement=hardware_requirement,
+            input_directory=input_directory,
+            output_directory=output_directory,
+            tmp_directory=tmp_directory,
+        )
+        self.failure_tags: MutableMapping[str, int] = failure_tags or {}
+        self.failure_type: str | None = failure_type
+        if self.failure_tags and self.failure_type is None:
+            raise WorkflowDefinitionException(
+                f"Failure type does not defined. "
+                f"Impossible to inject failures to the tags: {list(self.failure_tags.keys())}"
+            )
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> InjectorFailureScheduleStep:
+        params = row["params"]
+        if hardware_requirement := params.get("hardware_requirement"):
+            hardware_requirement = await HardwareRequirement.load(
+                context, hardware_requirement, loading_context
+            )
+        return cls(
+            name=row["name"],
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            binding_config=await BindingConfig.load(
+                context, params["binding_config"], loading_context
+            ),
+            connector_ports={
+                k: cast(ConnectorPort, await loading_context.load_port(context, v))
+                for k, v in params["connector_ports"].items()
+            },
+            job_port=cast(
+                JobPort, await loading_context.load_port(context, params["job_port"])
+            ),
+            job_prefix=params["job_prefix"],
+            hardware_requirement=hardware_requirement,
+            input_directory=params["input_directory"],
+            output_directory=params["output_directory"],
+            tmp_directory=params["tmp_directory"],
+            failure_tags=json.loads(params["failure_tags"]),
+            failure_type=params["failure_type"],
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "failure_tags": json.dumps(self.failure_tags),
+            "failure_type": self.failure_type,
+        }
+
+    async def _set_job_directories(
+        self,
+        connector: Connector,
+        locations: MutableSequence[ExecutionLocation],
+        job: Job,
+    ):
+        # Counts the number of step rollbacks
+        loading_context = DefaultDatabaseLoadingContext()
+        workflows = await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    Workflow.load(
+                        context=self.workflow.context,
+                        persistent_id=w["id"],
+                        loading_context=loading_context,
+                    )
+                )
+                for w in await self.workflow.context.database.get_workflows_by_name(
+                    self.workflow.name
+                )
+            )
+        )
+        if len(
+            [w.steps[self.name] for w in workflows if self.name in w.steps]
+        ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
+            if self.failure_type == InjectorFailureCommand.FAIL_STOP:
+                for t in job.inputs.values():
+                    await _invalidate_token(self.workflow.context, job, t)
+            raise WorkflowExecutionException(f"Injected error into {self.name} step")
+        await super()._set_job_directories(connector, locations, job)
+
+
 class InjectorFailureTransferStep(TransferStep):
     def __init__(
         self,
@@ -568,7 +681,7 @@ class InjectorFailureTransferStep(TransferStep):
         return dst_path
 
     async def transfer(self, job: Job, token: Token) -> Token:
-        # Counts the number of rollback of the workflow
+        # Counts the number of step rollbacks
         loading_context = DefaultDatabaseLoadingContext()
         workflows = await asyncio.gather(
             *(
@@ -637,10 +750,12 @@ class RecoveryTranslator:
 
     def _get_schedule_step(
         self,
+        cls: type[ScheduleStep],
         binding_config: BindingConfig,
         deployment_names: MutableSequence[str],
         step_name: str,
         workflow: Workflow,
+        **arguments,
     ) -> ScheduleStep:
         deploy_steps = {
             deployment: self._get_deploy_step(deployment)
@@ -648,9 +763,11 @@ class RecoveryTranslator:
         }
         return create_schedule_step(
             workflow=workflow,
+            cls=cls,
             deploy_steps=[d for d in deploy_steps.values()],
             binding_config=binding_config,
             name_prefix=step_name,
+            **arguments,
         )
 
     def get_base_injector_step(
@@ -663,7 +780,11 @@ class RecoveryTranslator:
     ) -> InputInjectorStep:
         step_name = f"{step_name}-injector"
         schedule_step = self._get_schedule_step(
-            binding_config, deployment_names, step_name, workflow
+            cls=ScheduleStep,
+            binding_config=binding_config,
+            deployment_names=deployment_names,
+            step_name=step_name,
+            workflow=workflow,
         )
         step = workflow.create_step(
             cls=BaseInputInjectorStep,
@@ -688,7 +809,13 @@ class RecoveryTranslator:
         failure_tags: MutableMapping[str, int] | None = None,
     ) -> ExecuteStep:
         schedule_step = self._get_schedule_step(
-            binding_config, deployment_names, step_name, workflow
+            cls=InjectorFailureScheduleStep,
+            binding_config=binding_config,
+            deployment_names=deployment_names,
+            step_name=step_name,
+            workflow=workflow,
+            failure_tags=failure_tags if failure_step == "schedule" else None,
+            failure_type=failure_type if failure_step == "schedule" else None,
         )
         execute_step = workflow.create_step(
             ExecuteStep, name=step_name, job_port=schedule_step.get_output_port()

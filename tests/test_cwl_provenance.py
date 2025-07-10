@@ -21,6 +21,7 @@ from streamflow.cwl.step import (
     CWLLoopConditionalStep,
     CWLLoopOutputAllStep,
     CWLLoopOutputLastStep,
+    CWLScheduleStep,
     CWLTransferStep,
 )
 from streamflow.cwl.transformer import (
@@ -212,7 +213,8 @@ async def test_cwl_execute_step(context: StreamFlowContext):
     deploy_step = create_deploy_step(workflow)
     schedule_step = create_schedule_step(
         workflow,
-        [deploy_step],
+        cls=CWLScheduleStep,
+        deploy_steps=[deploy_step],
         hardware_requirement=CWLHardwareRequirement(cwl_version=CWL_VERSION),
     )
     in_port_name = "in-1"
@@ -309,7 +311,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
     """Test token provenance for ValueFromTransformer"""
     workflow, (in_port, out_port) = await create_workflow(context)
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, [deploy_step])
+    schedule_step = create_schedule_step(workflow, deploy_steps=[deploy_step])
     port_name = "test"
     token_list = [Token(10)]
     transformer = await create_and_run_step(
@@ -560,7 +562,7 @@ async def test_cwl_transfer_step(context: StreamFlowContext):
     """Test token provenance for CWLTransferStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, [deploy_step])
+    schedule_step = create_schedule_step(workflow, deploy_steps=[deploy_step])
     port_name = "test"
     token_list = [Token("a")]
     transfer_step = await create_and_run_step(
@@ -594,7 +596,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext):
     """Test token provenance for CWLInputInjectorStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, [deploy_step])
+    schedule_step = create_schedule_step(workflow, deploy_steps=[deploy_step])
     token_list = [Token("a")]
     injector = await create_and_run_step(
         context=context,
@@ -691,7 +693,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     """Test token provenance for LoopValueFromTransformer"""
     workflow, (in_port, out_port) = await create_workflow(context)
     deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, [deploy_step])
+    schedule_step = create_schedule_step(workflow, deploy_steps=[deploy_step])
     name = utils.random_name()
     port_name = "test"
     transformer = workflow.create_step(
