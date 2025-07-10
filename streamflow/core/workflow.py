@@ -496,17 +496,9 @@ class Token(PersistableEntity):
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
-        self.recoverable: bool = recoverable
-        if (
-            isinstance(value, Token)
-            and value.persistent_id is not None
-            and self.recoverable
-        ):
-            new_value = value.update(value=value.value, recoverable=self.recoverable)
-        else:
-            new_value = value
-        self.value: Any = new_value
+        self.value: Any = value
         self.tag: str = tag
+        self.recoverable: bool = recoverable
 
     @classmethod
     async def _load(
@@ -561,8 +553,12 @@ class Token(PersistableEntity):
                 except TypeError as e:
                     raise WorkflowExecutionException from e
 
-    def update(self, value: Any, recoverable: bool = False) -> Token:
-        return self.__class__(tag=self.tag, value=value, recoverable=recoverable)
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
+        return self.__class__(
+            tag=self.tag,
+            value=value,
+            recoverable=recoverable if recoverable is not None else self.recoverable,
+        )
 
 
 if TYPE_CHECKING:
