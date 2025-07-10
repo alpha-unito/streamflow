@@ -55,7 +55,7 @@ class IterationTerminationToken(Token):
     def get_weight(self, context: StreamFlowContext):
         return 0
 
-    def update(self, value: Any, recoverable: bool = False) -> Token:
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
         return self.__class__(tag=self.tag)
 
     def retag(self, tag: str) -> Token:
@@ -130,29 +130,6 @@ class JobToken(Token):
 class ListToken(Token):
     __slots__ = ()
 
-    def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
-        # Token is recoverable and all inner tokens are not saved in the database,
-        # propagate the recoverable value
-        if recoverable and not all(t.persistent_id for t in value):
-            # Detect erroneous case where some tokens have a `persistent_id` and others do not.
-            if any(t.persistent_id for t in value):
-                raise WorkflowExecutionException(
-                    "Impossible save the `ListToken` because it has some inner tokens already saved in the database"
-                )
-            new_value = [t.update(t.value, recoverable) for t in value]
-        else:
-            new_value = value
-        # The recoverable value is not passed to the inner constructor because `ListToken` has the property.
-        super().__init__(value=new_value, tag=tag)
-
-    @property
-    def recoverable(self) -> bool:
-        return all(t.recoverable for t in self.value)
-
-    @recoverable.setter
-    def recoverable(self, value):
-        pass
-
     @classmethod
     async def _load(
         cls,
@@ -194,29 +171,6 @@ class ListToken(Token):
 
 class ObjectToken(Token):
     __slots__ = ()
-
-    def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
-        # Token is recoverable, and all inner tokens are not saved in the database,
-        # propagate the recoverable
-        if recoverable and not all(t.persistent_id for t in value.values()):
-            # Detect an erroneous case where some tokens have a `persistent_id` and others do not.
-            if any(t.persistent_id for t in value.values()):
-                raise WorkflowExecutionException(
-                    "Impossible save the `ObjectToken` because it has some inner tokens already saved in the database"
-                )
-            new_value = {k: t.update(t.value, recoverable) for k, t in value.items()}
-        else:
-            new_value = value
-        # The recoverable value is not passed to the inner constructor because `ObjectToken` has the property.
-        super().__init__(value=new_value, tag=tag)
-
-    @property
-    def recoverable(self) -> bool:
-        return all(t.recoverable for t in self.value.values())
-
-    @recoverable.setter
-    def recoverable(self, value):
-        pass
 
     @classmethod
     async def _load(
@@ -283,7 +237,7 @@ class TerminationToken(Token):
     def get_weight(self, context: StreamFlowContext):
         return 0
 
-    def update(self, value: Any, recoverable: bool = False) -> Token:
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
         raise NotImplementedError
 
     def retag(self, tag: str) -> Token:
