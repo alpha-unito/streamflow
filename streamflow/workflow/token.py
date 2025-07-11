@@ -132,6 +132,14 @@ class JobToken(Token):
 class ListToken(Token):
     __slots__ = ()
 
+    @property
+    def recoverable(self):
+        return all(t.recoverable for t in self.value)
+
+    @recoverable.setter
+    def recoverable(self, value: bool):
+        pass
+
     @classmethod
     async def _load(
         cls,
@@ -173,6 +181,17 @@ class ListToken(Token):
 
 class ObjectToken(Token):
     __slots__ = ()
+
+    @property
+    def recoverable(self):
+        for t in self.value.values():
+            if not t.recoverable:
+                return False
+        return all(t.recoverable for t in self.value.values())
+
+    @recoverable.setter
+    def recoverable(self, value: bool):
+        pass
 
     @classmethod
     async def _load(
