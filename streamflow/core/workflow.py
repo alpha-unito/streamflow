@@ -146,6 +146,7 @@ class CommandOutputProcessor(ABC):
         job: Job,
         command_output: CommandOutput,
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None: ...
 
     async def save(self, context: StreamFlowContext):
@@ -620,8 +621,8 @@ class Token(PersistableEntity):
         else:
             return self.recoverable
 
-    def retag(self, tag: str, recoverable: bool = False) -> Token:
-        return self.__class__(tag=tag, value=self.value, recoverable=recoverable)
+    def retag(self, tag: str) -> Token:
+        return self.__class__(tag=tag, value=self.value, recoverable=self.recoverable)
 
     async def save(self, context: StreamFlowContext, port_id: int | None = None):
         async with self.persistence_lock:
@@ -637,8 +638,12 @@ class Token(PersistableEntity):
                 except TypeError as e:
                     raise WorkflowExecutionException from e
 
-    def update(self, value: Any, recoverable: bool = False) -> Token:
-        return self.__class__(tag=self.tag, value=value, recoverable=recoverable)
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
+        return self.__class__(
+            tag=self.tag,
+            value=value,
+            recoverable=recoverable if recoverable is not None else self.recoverable,
+        )
 
 
 class TokenProcessor(ABC):

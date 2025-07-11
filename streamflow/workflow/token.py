@@ -55,7 +55,7 @@ class IterationTerminationToken(Token):
     def get_weight(self, context: StreamFlowContext):
         return 0
 
-    def update(self, value: Any) -> Token:
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
         return self.__class__(tag=self.tag)
 
     def retag(self, tag: str) -> Token:
@@ -130,6 +130,14 @@ class JobToken(Token):
 class ListToken(Token):
     __slots__ = ()
 
+    @property
+    def recoverable(self):
+        return all(t.recoverable for t in self.value)
+
+    @recoverable.setter
+    def recoverable(self, value: bool):
+        pass
+
     @classmethod
     async def _load(
         cls,
@@ -171,6 +179,17 @@ class ListToken(Token):
 
 class ObjectToken(Token):
     __slots__ = ()
+
+    @property
+    def recoverable(self):
+        for t in self.value.values():
+            if not t.recoverable:
+                return False
+        return all(t.recoverable for t in self.value.values())
+
+    @recoverable.setter
+    def recoverable(self, value: bool):
+        pass
 
     @classmethod
     async def _load(
@@ -237,7 +256,7 @@ class TerminationToken(Token):
     def get_weight(self, context: StreamFlowContext):
         return 0
 
-    def update(self, value: Any) -> Token:
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
         raise NotImplementedError
 
     def retag(self, tag: str) -> Token:
