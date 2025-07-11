@@ -146,6 +146,7 @@ class CommandOutputProcessor(ABC):
         job: Job,
         command_output: CommandOutput,
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None: ...
 
     async def save(self, context: StreamFlowContext):
@@ -570,9 +571,9 @@ class Token(PersistableEntity):
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
+        self.recoverable: bool = recoverable
         self.value: Any = value
         self.tag: str = tag
-        self.recoverable: bool = recoverable
 
     @classmethod
     async def _load(
