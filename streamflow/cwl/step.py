@@ -151,7 +151,11 @@ async def _process_file_token(
 
 
 async def build_token(
-    job: Job, token_value: Any, cwl_version: str, streamflow_context: StreamFlowContext
+    job: Job,
+    token_value: Any,
+    cwl_version: str,
+    streamflow_context: StreamFlowContext,
+    recoverable: bool = False,
 ) -> Token:
     if isinstance(token_value, MutableSequence):
         return ListToken(
@@ -159,7 +163,13 @@ async def build_token(
             value=await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        build_token(job, v, cwl_version, streamflow_context)
+                        build_token(
+                            job,
+                            v,
+                            cwl_version,
+                            streamflow_context,
+                            recoverable=recoverable,
+                        )
                     )
                     for v in token_value
                 )
@@ -176,11 +186,14 @@ async def build_token(
                     streamflow_context,
                     check_contents=True,
                 ),
+                recoverable=recoverable,
             )
         else:
             token_tasks = {
                 k: asyncio.create_task(
-                    build_token(job, v, cwl_version, streamflow_context)
+                    build_token(
+                        job, v, cwl_version, streamflow_context, recoverable=recoverable
+                    )
                 )
                 for k, v in token_value.items()
             }
@@ -198,7 +211,9 @@ async def build_token(
             tag=get_tag(job.inputs.values()), recoverable=token_value.recoverable
         )
     else:
-        return Token(tag=get_tag(job.inputs.values()), value=token_value)
+        return Token(
+            tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
+        )
 
 
 class CWLBaseConditionalStep(ConditionalStep, ABC):
@@ -458,9 +473,10 @@ class CWLExecuteStep(ExecuteStep):
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> None:
+        recoverable = self._is_recoverable(job)
         if (
             token := await self.output_processors[output_name].process(
-                job, command_output, connector
+                job, command_output, connector, recoverable
             )
         ) is not None:
             job_token = get_job_token(
@@ -468,9 +484,7 @@ class CWLExecuteStep(ExecuteStep):
             )
             output_port.put(
                 await self._persist_token(
-                    token=token.update(
-                        token.value, recoverable=self._is_recoverable(job)
-                    ),
+                    token=token.update(token.value, recoverable=recoverable),
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
@@ -543,6 +557,7 @@ class CWLInputInjectorStep(InputInjectorStep):
             token_value=token_value,
             cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
             streamflow_context=self.workflow.context,
+            recoverable=True,
         )
 
 
