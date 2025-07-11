@@ -313,11 +313,15 @@ def random_job_name(step_name: str | None = None):
     return os.path.join(posixpath.sep, step_name, "0.0")
 
 
-async def build_token(job: Job, token_value: Any, context: StreamFlowContext) -> Token:
+async def build_token(
+    job: Job, token_value: Any, context: StreamFlowContext, recoverable: bool = False
+) -> Token:
     if isinstance(token_value, MutableSequence):
         return ListToken(
             tag=get_tag(job.inputs.values()),
-            value=[await build_token(job, v, context) for v in token_value],
+            value=[
+                await build_token(job, v, context, recoverable) for v in token_value
+            ],
         )
     elif isinstance(token_value, MutableMapping):
         if get_token_class(token_value) in ["File", "Directory"]:
@@ -331,22 +335,26 @@ async def build_token(job: Job, token_value: Any, context: StreamFlowContext) ->
                 token_value["path"],
             )
             return BaseFileToken(
-                tag=get_tag(job.inputs.values()), value=token_value["path"]
+                tag=get_tag(job.inputs.values()),
+                value=token_value["path"],
+                recoverable=recoverable,
             )
         else:
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
                 value={
-                    k: await build_token(job, v, context)
+                    k: await build_token(job, v, context, recoverable)
                     for k, v in token_value.items()
                 },
             )
     elif isinstance(token_value, FileToken):
-        return token_value.update(token_value.value)
+        return token_value.update(token_value.value, recoverable=recoverable)
     elif isinstance(token_value, Token):
-        return token_value.update(token_value.value)
+        return token_value.update(token_value.value, recoverable=recoverable)
     else:
-        return Token(tag=get_tag(job.inputs.values()), value=token_value)
+        return Token(
+            tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
+        )
 
 
 class BaseFileToken(FileToken):
@@ -409,6 +417,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
         job: Job,
         command_output: CommandOutput,
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         context = self.workflow.context
         value = command_output.value
@@ -417,19 +426,29 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
             await _register_path(
                 context, connector, next(iter(locations)), value, value
             )
-            return BaseFileToken(tag=get_tag(job.inputs.values()), value=value)
+            return BaseFileToken(
+                tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
+            )
         elif self.value_type == "list":
             return ListToken(
                 tag=get_tag(job.inputs.values()),
-                value=[await build_token(job, v, context) for v in value],
+                value=[
+                    await build_token(job, v, context, recoverable=recoverable)
+                    for v in value
+                ],
             )
         elif self.value_type == "dict":
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
-                value={k: await build_token(job, v, context) for k, v in value.items()},
+                value={
+                    k: await build_token(job, v, context, recoverable=recoverable)
+                    for k, v in value.items()
+                },
             )
         else:
-            return Token(tag=get_tag(job.inputs.values()), value=value)
+            return Token(
+                tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
+            )
 
 
 class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
