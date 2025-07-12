@@ -961,17 +961,12 @@ class CWLObjectTokenProcessor(TokenProcessor):
             dict(
                 zip(
                     token.value,
-                    [
-                        t.value
-                        for t in await asyncio.gather(
-                            *(
-                                asyncio.create_task(
-                                    self.processors[k].process(inputs, token.update(v))
-                                )
-                                for k, v in token.value.items()
-                            )
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(self.processors[k].process(inputs, v))
+                            for k, v in token.value.items()
                         )
-                    ],
+                    ),
                 )
             )
         )
