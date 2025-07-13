@@ -13,7 +13,7 @@ from importlib.resources import files
 from math import ceil, floor
 from pathlib import Path
 from shutil import which
-from typing import Any, cast
+from typing import Any, AsyncContextManager, cast
 
 import yaml
 from cachetools import Cache, TTLCache
@@ -29,7 +29,7 @@ from kubernetes_asyncio.utils import create_from_yaml
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
-from streamflow.core.data import StreamWrapperContextManager
+from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
@@ -133,7 +133,7 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
         await self.stream.send_bytes(payload)
 
 
-class KubernetesResponseWrapperContextManager(StreamWrapperContextManager):
+class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]):
     def __init__(self, coro: Coroutine):
         self.coro: Coroutine = coro
         self.response: KubernetesResponseWrapper | None = None
@@ -378,7 +378,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
 
     async def get_stream_reader(
         self, command: MutableSequence[int], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         pod, container = location.name.split(":")
         return KubernetesResponseWrapperContextManager(
             coro=cast(
@@ -399,7 +399,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         pod, container = location.name.split(":")
         return KubernetesResponseWrapperContextManager(
             coro=cast(

@@ -4,15 +4,13 @@ import asyncio
 import logging
 from abc import ABCMeta
 from collections.abc import MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, Any
+from typing import Any, AsyncContextManager
 
+from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
-
-if TYPE_CHECKING:
-    from streamflow.core.data import StreamWrapperContextManager
 
 
 class FutureConnector(Connector):
@@ -150,7 +148,7 @@ class FutureConnector(Connector):
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         if self._connector is None:
             if not self.deploying:
                 self.deploying = True
@@ -161,7 +159,7 @@ class FutureConnector(Connector):
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         if self._connector is None:
             if not self.deploying:
                 self.deploying = True

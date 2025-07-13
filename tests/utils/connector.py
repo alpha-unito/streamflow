@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any, cast
+from typing import Any, AsyncContextManager, cast
 
 import asyncssh
 from asyncssh import SSHClient, SSHClientConnection
 
-from streamflow.core.data import StreamWrapperContextManager
+from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector import LocalConnector, SSHConnector
@@ -88,12 +88,12 @@ class FailureConnector(Connector):
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         raise FailureConnectorException("FailureConnector get_stream_reader")
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         raise FailureConnectorException("FailureConnector get_stream_writer")
 
 

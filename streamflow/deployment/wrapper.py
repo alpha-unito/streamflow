@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any
+from typing import Any, AsyncContextManager
 
-from streamflow.core.data import StreamWrapperContextManager
+from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
@@ -99,12 +99,12 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         return await self.connector.get_stream_reader(command, location)
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         return await self.connector.get_stream_writer(command, location)
 
     async def run(

@@ -124,11 +124,3 @@ class StreamWrapper(ABC):
 
     @abstractmethod
     async def write(self, data: Any): ...
-
-
-class StreamWrapperContextManager(ABC):
-    @abstractmethod
-    async def __aenter__(self) -> StreamWrapper: ...
-
-    @abstractmethod
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None: ...

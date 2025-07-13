@@ -6,13 +6,13 @@ import os
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
-from typing import Any
+from typing import Any, AsyncContextManager
 
 import asyncssh
 from asyncssh import ChannelOpenError, ConnectionLost, DisconnectError
 
 from streamflow.core import utils
-from streamflow.core.data import StreamWrapper, StreamWrapperContextManager
+from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
@@ -294,7 +294,7 @@ class SSHContextFactory:
         )
 
 
-class SSHStreamWrapperContextManager(StreamWrapperContextManager, ABC):
+class SSHStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
     def __init__(
         self,
         command: MutableSequence[str],
@@ -646,7 +646,7 @@ class SSHConnector(BaseConnector):
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         return SSHStreamReaderWrapperContextManager(
             command=command,
             environment=location.environment,
@@ -655,7 +655,7 @@ class SSHConnector(BaseConnector):
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         return SSHStreamWriterWrapperContextManager(
             command=command,
             environment=location.environment,

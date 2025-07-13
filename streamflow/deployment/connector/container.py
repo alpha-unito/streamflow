@@ -10,12 +10,12 @@ from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 from shutil import which
-from typing import Any, cast
+from typing import Any, AsyncContextManager, cast
 
 import psutil
 
 from streamflow.core import utils
-from streamflow.core.data import StreamWrapperContextManager
+from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
@@ -552,7 +552,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         return await self.connector.get_stream_reader(
             command=self._get_run_command(
                 command=utils.encode_command(" ".join(command), "sh"),
@@ -564,7 +564,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         encoded_command = base64.b64encode(" ".join(command).encode("utf-8")).decode(
             "utf-8"
         )
