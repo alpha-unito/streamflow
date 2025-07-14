@@ -52,14 +52,14 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
         self,
         command: MutableSequence[str],
         location: ExecutionLocation,
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         ...
 
     async def get_stream_writer(
         self,
         command: MutableSequence[str],
         location: ExecutionLocation,
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         ...
 
     async def run(
@@ -88,7 +88,7 @@ The ``undeploy`` method destroys the remote execution environment, potentially c
 
 The ``get_available_locations`` method is used in the scheduling phase to obtain the locations available for job execution, identified by their unique name (see :ref:`here <Scheduling>`). The method receives an optional input parameter to filter valid locations. The ``service`` parameter specifies a specific set of locations in a deployment, and its precise meaning differs for each deployment type (see :ref:`here <Binding steps and deployments>`).
 
-The ``get_stream_reader`` and ``get_stream_writer`` methods return a ``StreamWrapperContextManager`` instance, obtained by executing the ``command`` on the ``location``, to read or write data using a stream (see :ref:`here <Streaming>`). The streams must be read and written respecting the size of the available buffer, which is defined by the ``transferBufferSize`` attribute of the ``Connector`` instance. These methods improve performance of data copies between pairs of remote locations.
+The ``get_stream_reader`` and ``get_stream_writer`` methods return an `Asynchronous Context Manager <https://docs.python.org/3/reference/datamodel.html#async-context-managers>`_ wrapping a ``StreamWrapper`` instance, allowing it to be used inside ``async with`` statements. The ``StreamWrapper`` instance is obtained by executing the ``command`` on the ``location``, and can be used to read or write data using a stream (see :ref:`here <Streaming>`). The streams must be read and written respecting the size of the available buffer, which is defined by the ``transferBufferSize`` attribute of the ``Connector`` instance. These methods improve performance of data copies between pairs of remote locations.
 
 The ``copy`` methods perform a data transfer from a ``src`` path to a ``dst`` path in one or more destination ``locations`` in the execution environment controlled by the ``Connector``. The ``read_only`` parameter notifies the ``Connector`` if the destination files will be modified in place or not. This parameter prevents unattended side effects (e.g., symlink optimizations on the remote locations). The ``copy_remote_to_remote`` method accepts two additional parameters: a ``source_location`` and an optional ``source_connector``. The latter identifies the ``Connector`` instance that controls the ``source_location`` and defaults to ``self`` when not specified.
 
@@ -150,8 +150,6 @@ The ``StreamWrapper`` interface is straightforward. It is reported below:
 The constructor receives an internal ``stream`` object, which can be of ``Any`` type. The ``read``, ``write``, and ``close`` methods wrap the APIs of the native ``stream`` object to provide a unified API to interact with streams. In particular, the ``read`` method reads up to ``size`` bytes from the internal ``stream``. The ``write`` method writes the content of the ``data`` parameter into the internal ``stream``. The ``close`` method closes the inner ``stream``.
 
 Each ``Connector`` instance can implement its own ``StreamWrapper`` classes by extending the ``BaseStreamWrapper`` class. In particular, it can be helpful to specialize further the ``StreamWrapper`` interface to implement unidirectional streams. This can be achieved by extending the ``StreamReaderWrapper`` and ``StreamWriterWrapper`` base classes, which raise a ``NotImplementedError`` if the stream is used in the wrong direction.
-
-The ``StreamWrapperContextManager`` interface provides the `Asynchronous Context Manager <https://docs.python.org/3/reference/datamodel.html#async-context-managers>`_ primitives for the ``StreamWrapper`` object, allowing it to be used inside ``async with`` statements.
 
 
 

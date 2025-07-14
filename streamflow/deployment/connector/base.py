@@ -9,10 +9,10 @@ import shlex
 import tarfile
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any
+from typing import Any, AsyncContextManager
 
 from streamflow.core import utils
-from streamflow.core.data import StreamWrapperContextManager
+from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.utils import get_local_to_remote_destination
@@ -334,7 +334,7 @@ class BaseConnector(Connector, FutureAware, ABC):
         self,
         command: MutableSequence[str],
         location: ExecutionLocation,
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         return SubprocessStreamReaderWrapperContextManager(
             coro=asyncio.create_subprocess_exec(
                 *shlex.split(" ".join(command)),
@@ -346,7 +346,7 @@ class BaseConnector(Connector, FutureAware, ABC):
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager:
+    ) -> AsyncContextManager[StreamWrapper]:
         return SubprocessStreamWriterWrapperContextManager(
             coro=asyncio.create_subprocess_exec(
                 *shlex.split(" ".join(command)),

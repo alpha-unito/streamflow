@@ -6,7 +6,7 @@ import posixpath
 import tempfile
 from abc import abstractmethod
 from collections.abc import MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, AsyncContextManager, cast
 
 from streamflow.core import utils
 from streamflow.core.config import Config
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from typing import Any
 
     from streamflow.core.context import StreamFlowContext
-    from streamflow.core.data import StreamWrapperContextManager
+    from streamflow.core.data import StreamWrapper
     from streamflow.core.scheduling import AvailableLocation
     from streamflow.core.workflow import Job
 
@@ -135,12 +135,12 @@ class Connector(SchemaEntity):
     @abstractmethod
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager: ...
+    ) -> AsyncContextManager[StreamWrapper]: ...
 
     @abstractmethod
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
-    ) -> StreamWrapperContextManager: ...
+    ) -> AsyncContextManager[StreamWrapper]: ...
 
 
 class DeploymentManager(SchemaEntity):
