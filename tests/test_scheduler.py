@@ -532,7 +532,11 @@ async def test_single_env_few_resources(context: StreamFlowContext):
         for t in task_completed:
             assert t.result() is None
         assert context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
-        assert context.scheduler.get_allocation(jobs[1].name) is None
+        with pytest.raises(
+            WorkflowExecutionException,
+            match=f"Could not retrieve allocation for job {jobs[1].name}",
+        ):
+            context.scheduler.get_allocation(jobs[1].name)
 
         # First job changes status to RUNNING and continue to keep all resources
         # Testing that second job is not scheduled (timeout parameter necessary)
@@ -541,7 +545,11 @@ async def test_single_env_few_resources(context: StreamFlowContext):
 
         assert len(task_pending) == 1
         assert context.scheduler.get_allocation(jobs[0].name).status == Status.RUNNING
-        assert context.scheduler.get_allocation(jobs[1].name) is None
+        with pytest.raises(
+            WorkflowExecutionException,
+            match=f"Could not retrieve allocation for job {jobs[1].name}",
+        ):
+            context.scheduler.get_allocation(jobs[1].name)
 
         # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
         await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)

@@ -319,22 +319,27 @@ class Scheduler(SchemaEntity):
     @abstractmethod
     async def close(self) -> None: ...
 
-    def get_allocation(self, job_name: str) -> JobAllocation | None:
-        return self.job_allocations.get(job_name)
+    def get_allocation(self, job_name: str) -> JobAllocation:
+        if (allocation := self.job_allocations.get(job_name)) is None:
+            raise WorkflowExecutionException(
+                f"Could not retrieve allocation for job {job_name}"
+            )
+        return allocation
 
-    def get_hardware(self, job_name: str) -> Hardware | None:
-        allocation = self.get_allocation(job_name)
-        return allocation.hardware if allocation else None
+    def get_hardware(self, job_name: str) -> Hardware:
+        return self.get_allocation(job_name).hardware
 
-    def get_connector(self, job_name: str) -> Connector | None:
+    def get_connector(self, job_name: str) -> Connector:
         allocation = self.get_allocation(job_name)
-        return (
-            self.context.deployment_manager.get_connector(
+        if (
+            connector := self.context.deployment_manager.get_connector(
                 allocation.target.deployment.name
             )
-            if allocation
-            else None
-        )
+        ) is None:
+            raise WorkflowExecutionException(
+                f"Could not retrieve connector for job {job_name}"
+            )
+        return connector
 
     def get_locations(
         self, job_name: str, statuses: MutableSequence[Status] | None = None
@@ -342,14 +347,12 @@ class Scheduler(SchemaEntity):
         allocation = self.get_allocation(job_name)
         return (
             allocation.locations
-            if allocation is not None
-            and (statuses is None or allocation.status in statuses)
+            if statuses is None or allocation.status in statuses
             else []
         )
 
     def get_service(self, job_name: str) -> str | None:
-        allocation = self.get_allocation(job_name)
-        return allocation.target.service if allocation else None
+        return self.get_allocation(job_name).target.service
 
     @abstractmethod
     async def notify_status(self, job_name: str, status: Status) -> None: ...

@@ -491,7 +491,7 @@ class DefaultScheduler(Scheduler):
     async def notify_status(self, job_name: str, status: Status) -> None:
         if (
             connector := self.get_connector(job_name)
-        ) and connector.deployment_name in self.wait_queues:
+        ).deployment_name in self.wait_queues:
             async with self.wait_queues[connector.deployment_name]:
                 if job_allocation := self.job_allocations.get(job_name):
                     if status != (previous_status := job_allocation.status):
