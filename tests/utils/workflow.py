@@ -6,6 +6,7 @@ import os
 import posixpath
 from collections.abc import MutableMapping, MutableSequence
 from collections.abc import Iterable, MutableMapping, MutableSequence
+from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import Self
@@ -74,8 +75,14 @@ CWL_VERSION = "v1.2"
 async def _invalidate_token(context: StreamFlowContext, job: Job, token: Token) -> None:
     if isinstance(token, FileToken):
         for loc in context.scheduler.get_locations(job.name):
-            for path in await token.get_paths(context):
-                context.data_manager.invalidate_location(loc, path)
+            await StreamFlowPath(
+                os.path.dirname(job.output_directory), context=context, location=loc
+            ).rmtree()
+            context.data_manager.invalidate_location(
+                loc, os.path.dirname(job.output_directory)
+            )
+            # for path in await token.get_paths(context):
+            #     context.data_manager.invalidate_location(loc, path)
     elif isinstance(token, ListToken):
         for t in token.value:
             await _invalidate_token(context, job, t)
@@ -327,12 +334,18 @@ async def build_token(
         if get_token_class(token_value) in ["File", "Directory"]:
             connector = context.scheduler.get_connector(job.name)
             locations = context.scheduler.get_locations(job.name)
+            relpath = (
+                os.path.relpath(token_value["path"], job.output_directory)
+                if job.output_directory
+                and token_value["path"].startswith(job.output_directory)
+                else os.path.basename(token_value["path"])
+            )
             await _register_path(
                 context,
                 connector,
                 next(iter(locations)),
                 token_value["path"],
-                token_value["path"],
+                relpath,
             )
             return BaseFileToken(
                 tag=get_tag(job.inputs.values()),
@@ -371,6 +384,7 @@ class BaseInputInjectorStep(InputInjectorStep):
             job=job,
             token_value=token_value,
             context=self.workflow.context,
+            recoverable=True,
         )
 
 
@@ -423,8 +437,19 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
         value = command_output.value
         if self.value_type == "file":
             locations = context.scheduler.get_locations(job.name)
+            connector = connector or context.scheduler.get_connector(job.name)
+            if not await StreamFlowPath(
+                value, context=context, location=locations[0]
+            ).exists():
+                raise WorkflowExecutionException(
+                    f"Job {job.name} output does not exist: File {value}"
+                )
             await _register_path(
-                context, connector, next(iter(locations)), value, value
+                context,
+                connector,
+                next(iter(locations)),
+                value,
+                os.path.relpath(value, job.output_directory),
             )
             return BaseFileToken(
                 tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
@@ -597,7 +622,37 @@ class InjectorFailureCommand(Command):
                 operation, input_value_type, input_value = eval(self.command)(
                     job.inputs
                 )
-                cmd_out = CommandOutput(input_value, Status.COMPLETED)
+                if operation == "copy":
+                    if input_value_type == "file":
+                        connector = context.scheduler.get_connector(job.name)
+                        locations = context.scheduler.get_locations(job.name)
+                        if not await StreamFlowPath(
+                            input_value, context=context, location=locations[0]
+                        ).exists():
+                            raise WorkflowExecutionException(
+                                f"Job {job.name} input does not exist: File {input_value}"
+                            )
+                        output = f"result-{PurePath(job.name).parts[1]}"
+                        await StreamFlowPath(
+                            job.output_directory, context=context, location=locations[0]
+                        ).mkdir(parents=True, exist_ok=True)
+                        await connector.run(
+                            location=locations[0],
+                            command=["cp", "-r", input_value, output],
+                            workdir=job.output_directory,
+                        )
+                        output = os.path.join(job.output_directory, output)
+                        if not await StreamFlowPath(
+                            output, context=context, location=locations[0]
+                        ).exists():
+                            raise WorkflowExecutionException(
+                                f"CMD Job {job.name} output does not exist: File {output}"
+                            )
+                    else:
+                        output = input_value
+                else:
+                    raise NotImplementedError("Operation not supported", operation)
+                cmd_out = CommandOutput(output, Status.COMPLETED)
             except Exception as err:
                 logger.error(f"Failed command evaluation: {err}")
                 raise FailureHandlingException(err)
@@ -612,6 +667,7 @@ class InjectorFailureCommand(Command):
                 "status": cmd_out.status,
             },
         )
+        logger.info(f"Job result {job.name}: {cmd_out.value}")
         return cmd_out
 
     async def _save_additional_params(
@@ -836,13 +892,14 @@ class InjectorFailureTransferStep(TransferStep):
         # Execute the transfer
         if isinstance(token, ListToken):
             return token.update(
-                await asyncio.gather(
+                value=await asyncio.gather(
                     *(asyncio.create_task(self.transfer(job, t)) for t in token.value)
-                )
+                ),
+                recoverable=False,
             )
         elif isinstance(token, ObjectToken):
             return token.update(
-                {
+                value={
                     k: v
                     for k, v in zip(
                         token.value.keys(),
@@ -853,12 +910,15 @@ class InjectorFailureTransferStep(TransferStep):
                             )
                         ),
                     )
-                }
+                },
+                recoverable=False,
             )
         elif isinstance(token, FileToken):
-            return token.update(await self._transfer_path(job, token.value))
+            return token.update(
+                await self._transfer_path(job, token.value), recoverable=False
+            )
         else:
-            return token.update(token.value)
+            return token.update(token.value, recoverable=False)
 
 
 class RecoveryTranslator:
