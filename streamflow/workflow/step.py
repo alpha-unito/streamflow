@@ -884,13 +884,16 @@ class GatherStep(BaseStep):
         return next(n for n in self.input_ports if n != "__size__")
 
     async def _gather(self, key: str) -> None:
-        input_tokens = [self.size_map[key]]
-        input_tokens.extend(self.token_map[key])
+        input_tokens = [self.size_map[key], *self.token_map[key]]
         output_port = self.get_output_port()
         output_port.put(
             await self._persist_token(
                 token=ListToken(
-                    tag=key, value=sorted(self.token_map[key], key=lambda cur: cur.tag)
+                    tag=key,
+                    value=sorted(
+                        self.token_map[key],
+                        key=lambda cur: [int(v) for v in cur.tag.split(".")],
+                    ),
                 ),
                 port=output_port,
                 input_token_ids=get_entity_ids(input_tokens),
