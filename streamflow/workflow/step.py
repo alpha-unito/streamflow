@@ -890,7 +890,11 @@ class GatherStep(BaseStep):
         output_port.put(
             await self._persist_token(
                 token=ListToken(
-                    tag=key, value=sorted(self.token_map[key], key=lambda cur: cur.tag)
+                    tag=key,
+                    value=sorted(
+                        self.token_map[key],
+                        key=lambda cur: [int(v) for v in cur.tag.split(".")],
+                    ),
                 ),
                 port=output_port,
                 input_token_ids=get_entity_ids(input_tokens),
