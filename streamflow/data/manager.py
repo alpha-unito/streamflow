@@ -441,6 +441,7 @@ class DefaultDataManager(DataManager):
                     data_location.path,
                     context=self.context,
                     location=data_location.location,
+                    is_available=True,
                 )
                 data_location.data_type = (
                     DataType.SYMBOLIC_LINK
