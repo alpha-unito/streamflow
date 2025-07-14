@@ -138,7 +138,8 @@ class ListToken(Token):
 
     @recoverable.setter
     def recoverable(self, value: bool):
-        pass
+        for t in self.value:
+            t.recoverable = value
 
     @classmethod
     async def _load(
@@ -191,7 +192,8 @@ class ObjectToken(Token):
 
     @recoverable.setter
     def recoverable(self, value: bool):
-        pass
+        for t in self.value.values():
+            t.recoverable = value
 
     @classmethod
     async def _load(
