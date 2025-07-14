@@ -496,9 +496,9 @@ class Token(PersistableEntity):
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
-        self.recoverable: bool = recoverable
         self.value: Any = value
         self.tag: str = tag
+        self.recoverable: bool = recoverable
 
     @classmethod
     async def _load(

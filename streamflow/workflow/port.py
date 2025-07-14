@@ -57,6 +57,8 @@ class InterWorkflowPort(Port):
 
     def add_inter_port(self, port: Port, border_tag: str | None = None) -> None:
         self.inter_ports.append((port, border_tag))
+        if self.token_list:
+            raise Exception(f"Port {port.name} has tokens", self.token_list)
 
     def put(self, token: Token) -> None:
         if not isinstance(token, TerminationToken):

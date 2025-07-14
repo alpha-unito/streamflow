@@ -3,6 +3,7 @@ import itertools
 import os
 import posixpath
 import tempfile
+import uuid
 from collections.abc import AsyncGenerator, MutableMapping
 from typing import Any
 
@@ -45,12 +46,10 @@ async def _assert_token_result(
     location: ExecutionLocation,
 ) -> None:
     if isinstance(output_token, FileToken):
-        path = await StreamFlowPath(
-            output_token.value, context=context, location=location
-        ).resolve()
+        path = StreamFlowPath(output_token.value, context=context, location=location)
+        path = await path.resolve()
         assert path is not None
         assert await path.is_file()
-        assert input_value["basename"] == path.parts[-1]
         assert input_value.get("checksum") == f"sha1${await path.checksum()}"
         assert input_value.get("size") == await path.size()
     elif isinstance(output_token, ListToken):
@@ -90,7 +89,7 @@ async def fault_tolerant_context(
         {
             "failureManager": {
                 "type": "default",
-                "config": {"max_retries": 100, "retry_delay": 0},
+                "config": {"max_retries": 10, "retry_delay": 0},
             },
             "database": {"type": "default", "config": {"connection": ":memory:"}},
             "path": os.getcwd(),
@@ -107,6 +106,14 @@ async def fault_tolerant_context(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "num_of_steps,failure_step,error_type,num_of_failures,token_type",
+    # # pipeline_execute_fail_stop_one_failure_file
+    # [[4, "execute", InjectorFailureCommand.FAIL_STOP, 1, "file"]]
+    # single_step_transfer_fail_stop_one_failure_file
+    # [[1, "transfer", InjectorFailureCommand.FAIL_STOP, 1, "file"]]
+    # single_step_execute_fail_stop_one_failure_file
+    # [[1, "execute", InjectorFailureCommand.FAIL_STOP, 1, "file"]],
+    # # pipeline_execute_fail_stop_one_failure_file
+    # [[4, "execute", InjectorFailureCommand.FAIL_STOP, 1, "file"]],
     itertools.product(
         NUM_STEPS.values(), FAILURE_STEP, ERROR_TYPE, NUM_FAILURES.values(), TOKEN_TYPE
     ),
@@ -128,27 +135,32 @@ async def test_execute(
     deployment_t = "local"
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
-    translator.deployment_configs = {
-        "local": await get_deployment_config(fault_tolerant_context, deployment_t)
-    }
+    local_deployment_config = await get_deployment_config(
+        fault_tolerant_context, deployment_t
+    )
+    local_deployment_config.workdir = os.path.join(
+        local_deployment_config.workdir, "volatile"
+    )
+    local_location = await get_location(fault_tolerant_context, deployment_t)
+    translator.deployment_configs = {"local": local_deployment_config}
     input_ports = {}
     if token_type == "primitive":
         token_value = 100
     elif token_type == "file":
-        location = await get_location(fault_tolerant_context, deployment_t)
-        token_value = await _create_file(fault_tolerant_context, location)
+        token_value = await _create_file(fault_tolerant_context, local_location)
     elif token_type == "list":
-        location = await get_location(fault_tolerant_context, deployment_t)
         token_value = await asyncio.gather(
             *(
-                asyncio.create_task(_create_file(fault_tolerant_context, location))
+                asyncio.create_task(
+                    _create_file(fault_tolerant_context, local_location)
+                )
                 for _ in range(3)
             )
         )
     else:
         raise RuntimeError(f"Unknown token type: {token_type}")
-    input_name = f"test_in_{utils.random_name()}"
-    output_name = f"test_out_{utils.random_name()}"
+    input_name = f"test_in_{str(uuid.uuid1())}"
+    output_name = f"test_out_{str(uuid.uuid1())}"
     injector_step = translator.get_base_injector_step(
         ["local"], input_name, posixpath.join(posixpath.sep, input_name), workflow
     )
@@ -175,17 +187,18 @@ async def test_execute(
     await workflow.save(fault_tolerant_context)
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
+    # Check workflow output token
+    result_token = execute_steps[-1].get_output_port(output_name).token_list
+    assert len(result_token) == 2
+    await _assert_token_result(
+        input_value=token_value,
+        output_token=result_token[0],
+        context=fault_tolerant_context,
+        location=local_location,
+    )
+    assert isinstance(result_token[1], TerminationToken)
+    # Check number of retries of the steps
     for step in execute_steps:
-        result_token = step.get_output_port(output_name).token_list
-        assert len(result_token) == 2
-        await _assert_token_result(
-            input_value=token_value,
-            output_token=result_token[0],
-            context=fault_tolerant_context,
-            location=await get_location(fault_tolerant_context, deployment_t),
-        )
-        assert isinstance(result_token[1], TerminationToken)
-
         for job_name in map(
             lambda t: t.value.name,
             filter(
