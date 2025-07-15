@@ -1,6 +1,7 @@
 import json
 import os
 import posixpath
+import random
 import tempfile
 from collections.abc import MutableMapping
 from pathlib import PurePosixPath
@@ -18,6 +19,8 @@ from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.utils import compare_tags
+from streamflow.core.workflow import Token
 from streamflow.cwl.runner import main
 from streamflow.cwl.step import CWLTransferStep
 from streamflow.cwl.token import CWLFileToken
@@ -27,14 +30,15 @@ from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_binding_config
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import JobPort
-from streamflow.workflow.step import DeployStep, ScheduleStep
-from streamflow.workflow.token import TerminationToken
+from streamflow.workflow.step import DeployStep, GatherStep, ScatterStep, ScheduleStep
+from streamflow.workflow.token import ListToken, TerminationToken
 from tests.utils.deployment import (
+    get_deployment_config,
     get_docker_deployment_config,
     get_location,
     get_service,
 )
-from tests.utils.workflow import CWL_VERSION
+from tests.utils.workflow import CWL_VERSION, RecoveryTranslator, create_workflow
 
 
 def _create_file(content: MutableMapping[Any, Any]) -> str:
@@ -290,6 +294,65 @@ def test_recursive_deployments(stack: str) -> None:
         "The deployment `handsome` leads to a circular reference: Recursive deployment definitions are not allowed."
         == str(err.value)
     )
+
+
+@pytest.mark.asyncio
+async def test_gather_order(context: StreamFlowContext) -> None:
+    """Test the output order of the gathered values, which in the ListToken must be sorted by tag."""
+    step_name = posixpath.join(posixpath.sep, utils.random_name())
+    local_deployment_t = "local"
+    list_size = 101
+    values = list(range(list_size))
+    random.Random(42).shuffle(values)
+    value_type = "primitive"
+    output_name = "test_out"
+    workflow, (input_port, output_port) = await create_workflow(
+        context, type_="default", num_port=2
+    )
+    translator = RecoveryTranslator(workflow)
+    translator.deployment_configs = {
+        local_deployment_t: await get_deployment_config(context, local_deployment_t)
+    }
+    # ScatterStep
+    scatter_step = workflow.create_step(cls=ScatterStep, name=step_name + "-scatter")
+    input_port.put(ListToken([Token(value=v) for v in values]))
+    input_port.put(TerminationToken())
+    scatter_step.add_input_port(output_name, input_port)
+    scatter_step.add_output_port(output_name, workflow.create_port())
+    # ExecuteStep
+    step = translator.get_execute_pipeline(
+        command=f"lambda x : ('copy', '{value_type}', x['{output_name}'].value)",
+        deployment_names=["local"],
+        input_ports={output_name: scatter_step.get_output_port(output_name)},
+        outputs={output_name: value_type},
+        step_name=step_name,
+        workflow=workflow,
+    )
+    # GatherStep
+    gather_step = workflow.create_step(
+        cls=GatherStep,
+        name=step_name + "-gather",
+        size_port=scatter_step.get_size_port(),
+    )
+    gather_step.add_input_port(output_name, step.get_output_port(output_name))
+    gather_step.add_output_port(output_name, output_port)
+    # Execute the workflow
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    _ = await executor.run()
+    # Check results
+    assert len(output_port.token_list) == 2
+    assert isinstance(output_port.token_list[0], ListToken)
+    assert isinstance(output_port.token_list[1], TerminationToken)
+    assert len(output_port.token_list[0].value) == list_size
+    prev_tag = None
+    for token, i in zip(output_port.token_list[0].value, values):
+        assert token.value == i
+        if prev_tag is None:
+            assert token.tag == "0.0"
+        else:
+            assert compare_tags(token.tag, prev_tag) > 0
+        prev_tag = token.tag
 
 
 def test_workdir_inheritance() -> None:
