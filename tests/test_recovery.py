@@ -13,7 +13,7 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ExecutionLocation
-from streamflow.core.workflow import Token
+from streamflow.core.workflow import Job, Token
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.main import build_context
 from streamflow.workflow.executor import StreamFlowExecutor
@@ -27,16 +27,18 @@ from streamflow.workflow.token import (
 )
 from tests.utils.deployment import get_deployment_config, get_location
 from tests.utils.workflow import (
+    BaseFileToken,
     InjectorFailureCommand,
     RecoveryTranslator,
     create_workflow,
+    random_job_name,
 )
 
 FAILURE_STEP = ["execute", "transfer", "schedule"]
 NUM_STEPS = {"single_step": 1, "pipeline": 4}
 NUM_FAILURES = {"one_failure": 1, "two_failures_in_row": 2}
 ERROR_TYPE = [InjectorFailureCommand.SOFT_ERROR, InjectorFailureCommand.FAIL_STOP]
-TOKEN_TYPE = ["primitive", "file", "list"]  # object
+TOKEN_TYPE = ["primitive", "file", "list", "object"]
 
 
 async def _assert_token_result(
@@ -46,8 +48,7 @@ async def _assert_token_result(
     location: ExecutionLocation,
 ) -> None:
     if isinstance(output_token, FileToken):
-        path = StreamFlowPath(output_token.value, context=context, location=location)
-        path = await path.resolve()
+        path = await StreamFlowPath(output_token.value, context=context, location=location).resolve()
         assert path is not None
         assert await path.is_file()
         assert input_value.get("checksum") == f"sha1${await path.checksum()}"
@@ -56,7 +57,11 @@ async def _assert_token_result(
         for inner_value, inner_token in zip(input_value, output_token.value):
             await _assert_token_result(inner_value, inner_token, context, location)
     elif isinstance(output_token, ObjectToken):
-        raise NotImplementedError
+        assert set(input_value.keys()) == set(output_token.value.keys())
+        for key in input_value.keys():
+            await _assert_token_result(
+                input_value[key], output_token.value[key], context, location
+            )
     else:
         assert input_value == output_token.value
 
@@ -105,15 +110,59 @@ async def fault_tolerant_context(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "value_type", ["primitive", "file", "list", "object", "token", "job"]
+)
+async def test_token_recoverable(value_type: str) -> None:
+    """Test recoverable property of tokens."""
+    if value_type == "primitive":
+        token_cls = Token
+        value = 101
+    elif value_type == "file":
+        token_cls = BaseFileToken
+        value = "/path1"
+    elif value_type == "list":
+        token_cls = ListToken
+        value = [
+            Token(value=101, recoverable=True),
+            Token(value=102, recoverable=True),
+            Token(value=103, recoverable=True),
+        ]
+    elif value_type == "object":
+        token_cls = ObjectToken
+        value = {
+            "key1": Token(value=101, recoverable=True),
+            "key2": Token(value=102, recoverable=True),
+            "key3": Token(value=103, recoverable=True),
+        }
+    elif value_type == "token":
+        token_cls = Token
+        value = Token(value=101, recoverable=True)
+    elif value_type == "job":
+        token_cls = JobToken
+        value = Job(
+            name=random_job_name(),
+            workflow_id=1,
+            inputs={},
+            input_directory=None,
+            tmp_directory=None,
+            output_directory=None,
+        )
+    else:
+        raise NotImplementedError
+    token = token_cls(value=value, tag="0.0", recoverable=True)
+    token = token.update(value=value)
+    assert token.recoverable
+    token.retag("0.1")
+    assert token.recoverable
+    token = token.update(value=value, recoverable=False)
+    assert not token.recoverable
+    token = token.update(value=value, recoverable=True)
+    assert token.recoverable
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     "num_of_steps,failure_step,error_type,num_of_failures,token_type",
-    # # pipeline_execute_fail_stop_one_failure_file
-    # [[4, "execute", InjectorFailureCommand.FAIL_STOP, 1, "file"]]
-    # single_step_transfer_fail_stop_one_failure_file
-    # [[1, "transfer", InjectorFailureCommand.FAIL_STOP, 1, "file"]]
-    # single_step_execute_fail_stop_one_failure_file
-    # [[1, "execute", InjectorFailureCommand.FAIL_STOP, 1, "file"]],
-    # # pipeline_execute_fail_stop_one_failure_file
-    # [[4, "execute", InjectorFailureCommand.FAIL_STOP, 1, "file"]],
     itertools.product(
         NUM_STEPS.values(), FAILURE_STEP, ERROR_TYPE, NUM_FAILURES.values(), TOKEN_TYPE
     ),
@@ -139,10 +188,10 @@ async def test_execute(
         fault_tolerant_context, deployment_t
     )
     local_deployment_config.workdir = os.path.join(
-        local_deployment_config.workdir, "volatile"
+        local_deployment_config.workdir, "test-fs-volatile"
     )
     local_location = await get_location(fault_tolerant_context, deployment_t)
-    translator.deployment_configs = {"local": local_deployment_config}
+    translator.deployment_configs = {deployment_t: local_deployment_config}
     input_ports = {}
     if token_type == "primitive":
         token_value = 100
@@ -157,12 +206,27 @@ async def test_execute(
                 for _ in range(3)
             )
         )
+    elif token_type == "object":
+        token_value = dict(
+            zip(
+                ("a", "b", "c"),
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            _create_file(fault_tolerant_context, local_location)
+                        )
+                        for _ in range(3)
+                    )
+                ),
+            )
+        )
+
     else:
         raise RuntimeError(f"Unknown token type: {token_type}")
     input_name = f"test_in_{str(uuid.uuid1())}"
     output_name = f"test_out_{str(uuid.uuid1())}"
     injector_step = translator.get_base_injector_step(
-        ["local"], input_name, posixpath.join(posixpath.sep, input_name), workflow
+        [deployment_t], input_name, posixpath.join(posixpath.sep, input_name), workflow
     )
     input_ports[input_name] = injector_step.get_output_port(input_name)
     injector_step.get_input_port(input_name).put(Token(token_value, recoverable=True))
@@ -173,7 +237,7 @@ async def test_execute(
         execute_steps.append(
             translator.get_execute_pipeline(
                 command=f"lambda x : ('copy', '{token_type}', x['{input_port}'].value)",
-                deployment_names=["local"],
+                deployment_names=[deployment_t],
                 input_ports=input_ports,
                 outputs={output_name: token_type},
                 step_name=os.path.join(posixpath.sep, str(i), utils.random_name()),
@@ -251,14 +315,14 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     input_name = f"test_in_{utils.random_name()}"
     output_name = f"test_out_{utils.random_name()}"
     injector_step = translator.get_base_injector_step(
-        ["local"], input_name, posixpath.join(posixpath.sep, input_name), workflow
+        [deployment_t], input_name, posixpath.join(posixpath.sep, input_name), workflow
     )
     injector_step.get_input_port(input_name).put(Token(files, recoverable=True))
     injector_step.get_input_port(input_name).put(TerminationToken())
     # ExecuteStep
     step = translator.get_execute_pipeline(
         command=f"lambda x : ('copy', 'list', x['{input_name}'].value)",
-        deployment_names=["local"],
+        deployment_names=[deployment_t],
         input_ports={input_name: injector_step.get_output_port(input_name)},
         outputs={output_name: "list"},
         step_name=os.path.join(posixpath.sep, utils.random_name()),
@@ -273,7 +337,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     # ExecuteStep
     step = translator.get_execute_pipeline(
         command=f"lambda x : ('copy', 'list', x['{output_name}'].value)",
-        deployment_names=["local"],
+        deployment_names=[deployment_t],
         input_ports={output_name: scatter_step.get_output_port(output_name)},
         outputs={output_name: "file"},
         step_name=os.path.join(posixpath.sep, utils.random_name()),
@@ -290,7 +354,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     # ExecuteStep
     step = translator.get_execute_pipeline(
         command=f"lambda x : ('copy', 'list', x['{output_name}'].value)",
-        deployment_names=["local"],
+        deployment_names=[deployment_t],
         input_ports=gather_step.get_output_ports(),
         outputs={output_name: "list"},
         step_name=os.path.join(posixpath.sep, utils.random_name()),
@@ -334,7 +398,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
     translator.deployment_configs = {
-        "local": await get_deployment_config(fault_tolerant_context, deployment_t)
+        deployment_t: await get_deployment_config(fault_tolerant_context, deployment_t)
     }
     input_ports = {}
     if token_t == "default":
@@ -361,7 +425,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
     input_name = f"test_in_{utils.random_name()}"
     output_name = f"test_out_{utils.random_name()}"
     injector_step = translator.get_base_injector_step(
-        ["local"], input_name, posixpath.join(posixpath.sep, input_name), workflow
+        [deployment_t], input_name, posixpath.join(posixpath.sep, input_name), workflow
     )
     input_ports[input_name] = injector_step.get_output_port(input_name)
     injector_step.get_input_port(input_name).put(Token(token_value, recoverable=True))
@@ -371,7 +435,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
         execute_steps.append(
             translator.get_execute_pipeline(
                 command=f"lambda x : ('copy', 'file', x['{input_name}'].value)",
-                deployment_names=["local"],
+                deployment_names=[deployment_t],
                 input_ports=input_ports,
                 outputs={output_name: token_t},
                 step_name=os.path.join(posixpath.sep, utils.random_name()),

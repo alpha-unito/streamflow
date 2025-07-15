@@ -72,23 +72,21 @@ if TYPE_CHECKING:
 CWL_VERSION = "v1.2"
 
 
-async def _invalidate_token(context: StreamFlowContext, job: Job, token: Token) -> None:
-    if isinstance(token, FileToken):
-        for loc in context.scheduler.get_locations(job.name):
-            await StreamFlowPath(
-                os.path.dirname(job.output_directory), context=context, location=loc
-            ).rmtree()
-            context.data_manager.invalidate_location(
-                loc, os.path.dirname(job.output_directory)
-            )
-            # for path in await token.get_paths(context):
-            #     context.data_manager.invalidate_location(loc, path)
-    elif isinstance(token, ListToken):
-        for t in token.value:
-            await _invalidate_token(context, job, t)
-    elif isinstance(token, ObjectToken):
-        for t in token.value.value():
-            await _invalidate_token(context, job, t)
+async def _delete_job_workdir(context: StreamFlowContext, job: Job) -> None:
+    """
+    Delete workdir of the workflow.
+    Use carefully because it will delete the parent directory of the job output directory.
+    """
+    workdir = (
+        os.path.dirname(job.output_directory)
+        if job.output_directory
+        else context.scheduler.get_allocation(job.name).target.workdir
+    )
+    if os.path.basename(workdir) != "test-fs-volatile":
+        raise Exception(f"Invalid workdir to delete: {workdir}")
+    for loc in context.scheduler.get_locations(job.name):
+        await StreamFlowPath(workdir, context=context, location=loc).rmtree()
+        context.data_manager.invalidate_location(loc, workdir)
 
 
 async def _register_path(
@@ -462,7 +460,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
                     for v in value
                 ],
             )
-        elif self.value_type == "dict":
+        elif self.value_type == "object":
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
                 value={
@@ -614,8 +612,7 @@ class InjectorFailureCommand(Command):
                     for k, t in job.inputs.items()
                 }
             elif self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(context, job, t)
+                await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
             try:
@@ -799,8 +796,7 @@ class InjectorFailureScheduleStep(ScheduleStep):
             [w.steps[self.name] for w in workflows if self.name in w.steps]
         ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
             if self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(self.workflow.context, job, t)
+                await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         await super()._set_job_directories(connector, locations, job)
 
@@ -886,8 +882,7 @@ class InjectorFailureTransferStep(TransferStep):
             [w.steps[self.name] for w in workflows if self.name in w.steps]
         ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
             if self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(self.workflow.context, job, t)
+                await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         # Execute the transfer
         if isinstance(token, ListToken):
