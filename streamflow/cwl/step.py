@@ -473,10 +473,9 @@ class CWLExecuteStep(ExecuteStep):
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> None:
-        recoverable = self._is_recoverable(job)
         if (
             token := await self.output_processors[output_name].process(
-                job, command_output, connector, recoverable
+                job, command_output, connector, self._is_recoverable(job)
             )
         ) is not None:
             job_token = get_job_token(
@@ -484,7 +483,7 @@ class CWLExecuteStep(ExecuteStep):
             )
             output_port.put(
                 await self._persist_token(
-                    token=token.update(token.value, recoverable=recoverable),
+                    token=token.update(token.value),
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
