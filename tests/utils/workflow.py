@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import posixpath
-from collections.abc import MutableMapping, MutableSequence
 from collections.abc import Iterable, MutableMapping, MutableSequence
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, cast
@@ -86,7 +85,6 @@ async def _delete_job_workdir(context: StreamFlowContext, job: Job) -> None:
         raise Exception(f"Invalid workdir to delete: {workdir}")
     for loc in context.scheduler.get_locations(job.name):
         await StreamFlowPath(workdir, context=context, location=loc).rmtree()
-        context.data_manager.invalidate_location(loc, workdir)
 
 
 async def _register_path(
@@ -403,13 +401,13 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> EvalCommandOutputProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             value_type=row["value_type"],
             target=(
-                (await loading_context.load_target(context, row["workflow"]))
+                await loading_context.load_target(context, row["target"])
                 if row["target"]
                 else None
             ),
@@ -849,16 +847,23 @@ class InjectorFailureTransferStep(TransferStep):
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_path_processor = get_path_processor(dst_connector)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
-        source_location = await self.workflow.context.data_manager.get_source_location(
+        if source_location := await self.workflow.context.data_manager.get_source_location(
             path=path, dst_deployment=dst_connector.deployment_name
-        )
-        dst_path = dst_path_processor.join(job.input_directory, source_location.relpath)
-        await self.workflow.context.data_manager.transfer_data(
-            src_location=source_location.location,
-            src_path=source_location.path,
-            dst_locations=dst_locations,
-            dst_path=dst_path,
-        )
+        ):
+            dst_path = dst_path_processor.join(
+                job.input_directory, source_location.relpath
+            )
+            await self.workflow.context.data_manager.transfer_data(
+                src_location=source_location.location,
+                src_path=source_location.path,
+                dst_locations=dst_locations,
+                dst_path=dst_path,
+                writable=True,  # To avoid symbolic links, as recovery could be as simple as creating a new one.
+            )
+        else:
+            raise WorkflowExecutionException(
+                f"Job {job.name} input does not exist: File {path}"
+            )
         return dst_path
 
     async def transfer(self, job: Job, token: Token) -> Token:
