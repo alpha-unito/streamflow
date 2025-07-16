@@ -533,10 +533,16 @@ async def test_list_merge_combinator(context: StreamFlowContext):
     """Test saving and loading CombinatorStep with ListMergeCombinator from database"""
     workflow, (port,) = await create_workflow(context=context, num_port=1)
     name = utils.random_name()
-    step = get_full_instantiation(
-        cls_=CombinatorStep,
-        name=name + "-combinator",
-        combinator=get_full_instantiation(
+    combinator = get_full_instantiation(
+        cls_=ListMergeCombinator,
+        name=utils.random_name(),
+        workflow=cast(CWLWorkflow, workflow),
+        input_names=[port.name],
+        output_name=name,
+        flatten=True,
+    )
+    combinator.add_combinator(
+        get_full_instantiation(
             cls_=ListMergeCombinator,
             name=utils.random_name(),
             workflow=cast(CWLWorkflow, workflow),
@@ -544,6 +550,12 @@ async def test_list_merge_combinator(context: StreamFlowContext):
             output_name=name,
             flatten=True,
         ),
+        {"item_test"},
+    )
+    step = get_full_instantiation(
+        cls_=CombinatorStep,
+        name=name + "-combinator",
+        combinator=combinator,
         workflow=workflow,
     )
     workflow.steps[step.name] = step
