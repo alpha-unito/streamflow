@@ -138,8 +138,7 @@ class ListToken(Token):
 
     @recoverable.setter
     def recoverable(self, value: bool):
-        for t in self.value:
-            t.recoverable = value
+        pass
 
     @classmethod
     async def _load(
@@ -147,7 +146,9 @@ class ListToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Self:
+    ) -> Token:
+        # The `recoverable` attribute is computed based on the
+        # inner tokens, so it is not necessary to pass it
         return cls(
             tag=row["tag"],
             value=await asyncio.gather(
@@ -156,7 +157,6 @@ class ListToken(Token):
                     for t in row["value"]
                 )
             ),
-            recoverable=row["recoverable"],
         )
 
     async def _save_value(self, context: StreamFlowContext):
@@ -179,6 +179,19 @@ class ListToken(Token):
             )
         )
 
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
+        token = self.__class__(tag=self.tag, value=value)
+        token.value = [
+            t.update(
+                value=t.value,
+                recoverable=(
+                    recoverable if recoverable is not None else self.recoverable
+                ),
+            )
+            for t in token.value
+        ]
+        return token
+
 
 class ObjectToken(Token):
     __slots__ = ()
@@ -192,8 +205,7 @@ class ObjectToken(Token):
 
     @recoverable.setter
     def recoverable(self, value: bool):
-        for t in self.value.values():
-            t.recoverable = value
+        pass
 
     @classmethod
     async def _load(
@@ -203,6 +215,8 @@ class ObjectToken(Token):
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         value = row["value"]
+        # The `recoverable` attribute is computed based on the
+        # inner tokens, so it is not necessary to pass it
         return cls(
             tag=row["tag"],
             value={
@@ -217,7 +231,6 @@ class ObjectToken(Token):
                     ),
                 )
             },
-            recoverable=row["recoverable"],
         )
 
     async def _save_value(self, context: StreamFlowContext):
@@ -246,6 +259,24 @@ class ObjectToken(Token):
             )
         )
 
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
+        token = self.__class__(tag=self.tag, value=value)
+        token.value = dict(
+            zip(
+                token.value.keys(),
+                (
+                    t.update(
+                        value=t.value,
+                        recoverable=(
+                            recoverable if recoverable is not None else self.recoverable
+                        ),
+                    )
+                    for t in token.value.values()
+                ),
+            )
+        )
+        return token
+
 
 class TerminationToken(Token):
     __slots__ = ()
@@ -263,7 +294,7 @@ class TerminationToken(Token):
     def update(self, value: Any, recoverable: bool | None = None) -> Token:
         raise NotImplementedError
 
-    def retag(self, tag: str, recoverable: bool = False) -> Token:
+    def retag(self, tag: str) -> Token:
         raise NotImplementedError
 
     async def _save_value(self, context: StreamFlowContext):
