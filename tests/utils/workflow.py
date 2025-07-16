@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import posixpath
-from collections.abc import MutableMapping, MutableSequence
 from collections.abc import Iterable, MutableMapping, MutableSequence
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, cast
