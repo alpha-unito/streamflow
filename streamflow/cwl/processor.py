@@ -831,7 +831,7 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
                 context, row["processor"], loading_context
             ),
             target=(
-                (await loading_context.load_target(context, row["workflow"]))
+                await loading_context.load_target(context, row["target"])
                 if row["target"]
                 else None
             ),
