@@ -48,7 +48,9 @@ async def _assert_token_result(
     location: ExecutionLocation,
 ) -> None:
     if isinstance(output_token, FileToken):
-        path = await StreamFlowPath(output_token.value, context=context, location=location).resolve()
+        path = await StreamFlowPath(
+            output_token.value, context=context, location=location
+        ).resolve()
         assert path is not None
         assert await path.is_file()
         assert input_value.get("checksum") == f"sha1${await path.checksum()}"
@@ -100,7 +102,11 @@ async def fault_tolerant_context(
             "path": os.getcwd(),
         },
     )
-    for deployment_t in (*chosen_deployment_types, "parameterizable_hardware"):
+    for deployment_t in (
+        *chosen_deployment_types,
+        "parameterizable_hardware",
+        "local-fs-volatile",
+    ):
         config = await get_deployment_config(_context, deployment_t)
         await _context.deployment_manager.deploy(config)
     yield _context
@@ -181,27 +187,24 @@ async def test_execute(
     num_of_steps: int,
     token_type: str,
 ):
-    deployment_t = "local"
+    deployment_t = "local-fs-volatile"
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
-    local_deployment_config = await get_deployment_config(
+    deployment_config = await get_deployment_config(
         fault_tolerant_context, deployment_t
     )
-    local_deployment_config.workdir = os.path.join(
-        local_deployment_config.workdir, "test-fs-volatile"
-    )
-    local_location = await get_location(fault_tolerant_context, deployment_t)
-    translator.deployment_configs = {deployment_t: local_deployment_config}
+    execution_location = await get_location(fault_tolerant_context, deployment_t)
+    translator.deployment_configs = {deployment_config.name: deployment_config}
     input_ports = {}
     if token_type == "primitive":
         token_value = 100
     elif token_type == "file":
-        token_value = await _create_file(fault_tolerant_context, local_location)
+        token_value = await _create_file(fault_tolerant_context, execution_location)
     elif token_type == "list":
         token_value = await asyncio.gather(
             *(
                 asyncio.create_task(
-                    _create_file(fault_tolerant_context, local_location)
+                    _create_file(fault_tolerant_context, execution_location)
                 )
                 for _ in range(3)
             )
@@ -213,7 +216,7 @@ async def test_execute(
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            _create_file(fault_tolerant_context, local_location)
+                            _create_file(fault_tolerant_context, execution_location)
                         )
                         for _ in range(3)
                     )
@@ -226,7 +229,10 @@ async def test_execute(
     input_name = f"test_in_{str(uuid.uuid1())}"
     output_name = f"test_out_{str(uuid.uuid1())}"
     injector_step = translator.get_base_injector_step(
-        [deployment_t], input_name, posixpath.join(posixpath.sep, input_name), workflow
+        [deployment_config.name],
+        input_name,
+        posixpath.join(posixpath.sep, input_name),
+        workflow,
     )
     input_ports[input_name] = injector_step.get_output_port(input_name)
     injector_step.get_input_port(input_name).put(Token(token_value, recoverable=True))
@@ -237,7 +243,7 @@ async def test_execute(
         execute_steps.append(
             translator.get_execute_pipeline(
                 command=f"lambda x : ('copy', '{token_type}', x['{input_port}'].value)",
-                deployment_names=[deployment_t],
+                deployment_names=[deployment_config.name],
                 input_ports=input_ports,
                 outputs={output_name: token_type},
                 step_name=os.path.join(posixpath.sep, str(i), utils.random_name()),
@@ -258,7 +264,7 @@ async def test_execute(
         input_value=token_value,
         output_token=result_token[0],
         context=fault_tolerant_context,
-        location=local_location,
+        location=execution_location,
     )
     assert isinstance(result_token[1], TerminationToken)
     # Check number of retries of the steps
@@ -283,6 +289,19 @@ async def test_execute(
                         expected_failures *= num_of_steps - int(
                             step.name.split(os.sep)[1]
                         )
+                    if (
+                        num_of_steps > 1
+                        and failure_step == "schedule"
+                        and step.name.split(os.sep)[1] != "0"
+                    ):
+                        # ExecuteStepA -> ScheduleStepB
+                        # ExecuteStepA -> TransferStepB
+                        # When the ScheduleStepB fails and the data are lost, the recover
+                        # will roll back ExecuteStepA and re-execute ScheduleStepB,
+                        # so a new token of ExecuteStepA is created. However, TransferStepB
+                        # receives the old token. The transfer step fails and retries using
+                        # the token generated by rollback of ExecuteStepA
+                        expected_failures += 1
             # Version starts from 1
             retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             assert retry_request.version == expected_failures + 1
