@@ -15,6 +15,8 @@ from functools import cmp_to_key
 from types import ModuleType
 from typing import Any, cast
 
+from typing_extensions import Self
+
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
@@ -57,7 +59,9 @@ from streamflow.workflow.utils import (
 )
 
 
-def _get_directory(path_processor: ModuleType, directory: str | None, target: Target):
+def _get_directory(
+    path_processor: ModuleType, directory: str | None, target: Target
+) -> str:
     return directory or path_processor.join(target.workdir, utils.random_name())
 
 
@@ -76,7 +80,7 @@ def _is_parent_tag(tag: str, parent: str) -> bool:
     return tag.split(".")[: len(parent_idx)] == parent_idx
 
 
-def _reduce_statuses(statuses: MutableSequence[Status]):
+def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
     num_skipped = 0
     for status in statuses:
         if status == Status.FAILED:
@@ -122,7 +126,7 @@ class BaseStep(Step, ABC):
                 )
         return inputs
 
-    def _get_status(self, status: Status):
+    def _get_status(self, status: Status) -> Status:
         if status == Status.FAILED:
             return status
         elif any(p.empty() for p in self.get_output_ports().values()):
@@ -144,7 +148,7 @@ class BaseStep(Step, ABC):
             )
         return token
 
-    async def terminate(self, status: Status):
+    async def terminate(self, status: Status) -> None:
         if not self.terminated:
             self.terminated = True
             # If not explicitly cancelled, close input ports
@@ -179,7 +183,7 @@ class Combinator(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Combinator:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -236,8 +240,8 @@ class Combinator(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Combinator:
-        type_ = cast(type[Combinator], utils.get_class_from_name(row["type"]))
+    ) -> Self:
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         combinator = await type_._load(context, row["params"], loading_context)
         combinator.items = row["params"]["items"]
         combinator.combinators_map = row["params"]["combinators_map"]
@@ -248,7 +252,7 @@ class Combinator(ABC):
             )
         return combinator
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
             "type": utils.get_class_fullname(type(self)),
             "params": await self._save_additional_params(context),
@@ -259,7 +263,7 @@ class Combinator(ABC):
         token: Token | MutableMapping[str, Token],
         port_name: str,
         depth: int = 0,
-    ):
+    ) -> None:
         tag = (
             utils.get_tag([t["token"] for t in token.values()])
             if isinstance(token, MutableMapping)
@@ -287,7 +291,7 @@ class Combinator(ABC):
         token: Token | MutableMapping[str, Token],
         tag_values: MutableMapping[str, MutableSequence[Any]],
         port_name: str,
-    ):
+    ) -> None:
         if port_name not in tag_values:
             tag_values[port_name] = deque()
         tag_values[port_name].append(token)
@@ -304,7 +308,7 @@ class CombinatorStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CombinatorStep:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -320,7 +324,7 @@ class CombinatorStep(BaseStep):
             "combinator": await self.combinator.save(context)
         }
 
-    async def run(self):
+    async def run(self) -> None:
         # Set default status to SKIPPED
         status = Status.SKIPPED
         if self.input_ports:
@@ -338,7 +342,7 @@ class CombinatorStep(BaseStep):
                 )
                 input_tasks = list(unfinished)
                 for task in finished:
-                    task_name = cast(asyncio.Task, task).get_name()
+                    task_name = task.get_name()
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
@@ -388,15 +392,15 @@ class ConditionalStep(BaseStep):
         super().__init__(name, workflow)
 
     @abstractmethod
-    async def _eval(self, inputs: MutableMapping[str, Token]): ...
+    async def _eval(self, inputs: MutableMapping[str, Token]) -> bool: ...
 
     @abstractmethod
-    async def _on_true(self, inputs: MutableMapping[str, Token]): ...
+    async def _on_true(self, inputs: MutableMapping[str, Token]) -> None: ...
 
     @abstractmethod
-    async def _on_false(self, inputs: MutableMapping[str, Token]): ...
+    async def _on_false(self, inputs: MutableMapping[str, Token]) -> None: ...
 
-    async def run(self):
+    async def run(self) -> None:
         try:
             if self.input_ports:
                 inputs_map = {}
@@ -470,7 +474,7 @@ class DeployStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> DeployStep:
+    ) -> Self:
         params = row["params"]
         return cls(
             name=row["name"],
@@ -506,7 +510,7 @@ class DeployStep(BaseStep):
     def get_output_port(self, name: str | None = None) -> ConnectorPort:
         return cast(ConnectorPort, super().get_output_port(name))
 
-    async def run(self):
+    async def run(self) -> None:
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
                 "Scatter step must contain a single output port."
@@ -585,7 +589,7 @@ class ExecuteStep(BaseStep):
         input_ports: MutableMapping[str, Port],
         inputs_map: MutableMapping[str, MutableMapping[str, Token]],
         connectors: MutableMapping[str, Connector],
-        unfinished: MutableSet[asyncio.Task],
+        unfinished: MutableSet[asyncio.Task[MutableMapping[str, Token]]],
     ) -> None:
         if (
             job := await cast(JobPort, self.get_input_port("__job__")).get_job(
@@ -619,7 +623,7 @@ class ExecuteStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> ExecuteStep:
+    ) -> Self:
         params = row["params"]
         step = cls(
             name=row["name"],
@@ -776,7 +780,10 @@ class ExecuteStep(BaseStep):
         }
 
     def add_output_port(
-        self, name: str, port: Port, output_processor: CommandOutputProcessor = None
+        self,
+        name: str,
+        port: Port,
+        output_processor: CommandOutputProcessor | None = None,
     ) -> None:
         super().add_output_port(name, port)
         self.output_processors[name] = (
@@ -826,7 +833,7 @@ class ExecuteStep(BaseStep):
                 for task in finished:
                     if task.cancelled():
                         continue
-                    if cast(asyncio.Task, task).get_name() == "retrieve_inputs":
+                    if task.get_name() == "retrieve_inputs":
                         inputs = task.result()
                         # Check for termination
                         if check_termination(inputs.values()):
@@ -908,7 +915,7 @@ class GatherStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> GatherStep:
+    ) -> Self:
         params = row["params"]
         return cls(
             name=row["name"],
@@ -950,7 +957,7 @@ class GatherStep(BaseStep):
             self._get_input_port_name() if name is None else name
         )
 
-    async def run(self):
+    async def run(self) -> None:
         if len(self.input_ports) != 2:
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a single input port."
@@ -979,7 +986,7 @@ class GatherStep(BaseStep):
             for task in finished:
                 if task.cancelled():
                     continue
-                task_name = cast(asyncio.Task, task).get_name()
+                task_name = task.get_name()
                 token = task.result()
                 if check_termination(token):
                     status = _reduce_statuses([status, token.value])
@@ -1041,7 +1048,7 @@ class InputInjectorStep(BaseStep, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> InputInjectorStep:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -1069,7 +1076,7 @@ class InputInjectorStep(BaseStep, ABC):
     @abstractmethod
     async def process_input(self, job: Job, token_value: Any) -> Token: ...
 
-    async def run(self):
+    async def run(self) -> None:
         input_ports = {
             k: v for k, v in self.get_input_ports().items() if k != "__job__"
         }
@@ -1135,7 +1142,7 @@ class LoopCombinatorStep(CombinatorStep):
         super().__init__(name, workflow, combinator)
         self.iteration_termination_checklist: MutableMapping[str, set[str]] = {}
 
-    async def run(self):
+    async def run(self) -> None:
         # Set default status to SKIPPED
         status = Status.SKIPPED
         if self.input_ports:
@@ -1154,7 +1161,7 @@ class LoopCombinatorStep(CombinatorStep):
                 )
                 input_tasks = list(unfinished)
                 for task in finished:
-                    task_name = cast(asyncio.Task, task).get_name()
+                    task_name = task.get_name()
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
@@ -1192,10 +1199,7 @@ class LoopCombinatorStep(CombinatorStep):
                                 token.tag
                             )
 
-                        async for schema in cast(
-                            AsyncIterable,
-                            self.combinator.combine(task_name, token),
-                        ):
+                        async for schema in self.combinator.combine(task_name, token):
                             ins = [id for t in schema.values() for id in t["input_ids"]]
                             for port_name, token in schema.items():
                                 self.get_output_port(port_name).put(
@@ -1248,7 +1252,7 @@ class LoopOutputStep(BaseStep, ABC):
                 f"{self.name} step must contain a single output port."
             )
 
-    async def run(self):
+    async def run(self) -> None:
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a single input port."
@@ -1338,7 +1342,7 @@ class ScheduleStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> ScheduleStep:
+    ) -> Self:
         params = row["params"]
         if hardware_requirement := params.get("hardware_requirement"):
             hardware_requirement = await HardwareRequirement.load(
@@ -1456,8 +1460,11 @@ class ScheduleStep(BaseStep):
         connector: Connector,
         locations: MutableSequence[ExecutionLocation],
         job: Job,
-    ):
-        allocation = self.workflow.context.scheduler.get_allocation(job.name)
+    ) -> None:
+        if (
+            allocation := self.workflow.context.scheduler.get_allocation(job.name)
+        ) is None:
+            raise WorkflowExecutionException(f"No allocation found for job {job.name}")
         path_processor = get_path_processor(connector)
         job.input_directory = _get_directory(
             path_processor, job.input_directory, allocation.target
@@ -1522,7 +1529,7 @@ class ScheduleStep(BaseStep):
     def get_output_port(self, name: str | None = None) -> JobPort:
         return cast(JobPort, super().get_output_port(name))
 
-    async def run(self):
+    async def run(self) -> None:
         try:
             # Retrieve connector
             connector_ports = cast(
@@ -1601,7 +1608,7 @@ class ScatterStep(BaseStep):
         super().__init__(name, workflow)
         self.add_output_port("__size__", size_port or workflow.create_port())
 
-    def get_input_port_name(self):
+    def get_input_port_name(self) -> str:
         return next(n for n in self.input_ports)
 
     def _get_output_port_name(self) -> str:
@@ -1613,7 +1620,7 @@ class ScatterStep(BaseStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> ScatterStep:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -1630,7 +1637,7 @@ class ScatterStep(BaseStep):
             "size_port": self.get_size_port().persistent_id
         }
 
-    async def _scatter(self, token: Token):
+    async def _scatter(self, token: Token) -> Token:
         if isinstance(token.value, Token):
             await self._scatter(token.value)
         elif isinstance(token, ListToken):
@@ -1678,7 +1685,7 @@ class ScatterStep(BaseStep):
     def get_size_port(self) -> Port:
         return self.get_output_port("__size__")
 
-    async def run(self):
+    async def run(self) -> None:
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
                 "Scatter step must contain a single input port."
@@ -1712,7 +1719,7 @@ class TransferStep(BaseStep, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> TransferStep:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -1749,7 +1756,7 @@ class TransferStep(BaseStep, ABC):
             "job_port": self.get_input_port("__job__").persistent_id
         }
 
-    async def run(self):
+    async def run(self) -> None:
         # Set default status as SKIPPED
         status = Status.SKIPPED
         # Retrieve input ports
@@ -1805,7 +1812,7 @@ class Transformer(BaseStep, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
 
-    async def run(self):
+    async def run(self) -> None:
         try:
             if self.input_ports:
                 inputs_map = {}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Workflow
 
 
-class ProvenanceManager:
+class ProvenanceManager(ABC):
     def __init__(
         self,
         context: StreamFlowContext,
@@ -30,4 +30,4 @@ class ProvenanceManager:
         config: str | None,
         additional_files: MutableSequence[MutableMapping[str, str]] | None,
         additional_properties: MutableSequence[MutableMapping[str, str]] | None,
-    ): ...
+    ) -> None: ...

@@ -9,7 +9,6 @@ import sys
 import tempfile
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
-from typing import Any
 
 import psutil
 
@@ -20,7 +19,7 @@ from streamflow.deployment.connector.base import FS_TYPES_TO_SKIP, BaseConnector
 from streamflow.log_handler import logger
 
 
-def _local_copy(src: str, dst: str, read_only: bool):
+def _local_copy(src: str, dst: str, read_only: bool) -> None:
     if read_only:
         if os.path.isdir(dst):
             dst = os.path.join(dst, os.path.basename(src))
@@ -142,7 +141,7 @@ class LocalConnector(BaseConnector):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -150,7 +149,7 @@ class LocalConnector(BaseConnector):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         command = utils.create_command(
             self.__class__.__name__,
             command,

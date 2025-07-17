@@ -11,7 +11,7 @@ import re
 import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Container, MutableMapping, MutableSequence
 from typing import Any, cast, get_args
 from zipfile import ZipFile
 
@@ -57,7 +57,7 @@ def _has_type(obj: MutableMapping[str, Any], _type: str) -> bool:
         return False
     elif isinstance(obj["@type"], str):
         return obj["@type"] == _type
-    elif isinstance(obj["@type"], MutableSequence):
+    elif isinstance(obj["@type"], Container):
         return _type in obj["@type"]
     else:
         raise WorkflowProvenanceException(
@@ -85,7 +85,13 @@ def _get_cwl_entity_id(entity_id: str) -> str:
 
 
 def _get_cwl_param(
-    cwl_param: cwl_utils.parser.InputParameter > cwl_utils.parser.OutputParameter,
+    cwl_param: (
+        cwl_utils.parser.CommandInputParameter
+        | cwl_utils.parser.WorkflowInputParameter
+        | cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.ExpressionToolOutputParameter
+        | cwl_utils.parser.WorkflowOutputParameter
+    ),
 ) -> MutableMapping[str, Any]:
     name = "#".join(cwl_param.id.split("#")[1:])
     jsonld_param = {
@@ -95,11 +101,9 @@ def _get_cwl_param(
         "name": name,
         "conformsTo": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE/",
     }
-    if getattr(cwl_param, "default", None) is not None:
-        jsonld_param["defaultValue"] = str(cwl_param.default)
-    if getattr(cwl_param, "doc", None) is not None:
+    if cwl_param.doc is not None:
         jsonld_param["description"] = cwl_param.doc
-    if getattr(cwl_param, "format", None) is not None:
+    if cwl_param.format is not None:
         jsonld_param["encodingFormat"] = cwl_param.format
     _process_cwl_type(cwl_param.type_, jsonld_param, cwl_param)
     if len(jsonld_param["additionalType"]) == 1:
@@ -179,7 +183,13 @@ def _process_cwl_type(
         | cwl_utils.parser.RecordSchema
     ),
     jsonld_param: MutableMapping[str, Any],
-    cwl_param: MutableMapping[str, Any],
+    cwl_param: (
+        cwl_utils.parser.CommandInputParameter
+        | cwl_utils.parser.WorkflowInputParameter
+        | cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.ExpressionToolOutputParameter
+        | cwl_utils.parser.WorkflowOutputParameter
+    ),
 ) -> None:
     if isinstance(cwl_type, str):
         if cwl_type == "boolean":
@@ -471,7 +481,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         return property_values
 
     async def _list_dir(
-        self, path: str, jsonld_map: [MutableMapping[str, Any]]
+        self, path: str, jsonld_map: MutableMapping[str, Any]
     ) -> MutableSequence[MutableMapping[str, Any]]:
         has_part = []
         if os.path.exists(path):
@@ -700,7 +710,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         config: str | None,
         additional_files: MutableSequence[MutableMapping[str, str]] | None,
         additional_properties: MutableSequence[MutableMapping[str, str]] | None,
-    ):
+    ) -> None:
         # Add main entity
         main_entity = await self.get_main_entity()
         self.step_map[posixpath.sep] = main_entity
@@ -992,6 +1002,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         # Add inputs
         for cwl_input in cwl_element.inputs or []:
             jsonld_param = _get_cwl_param(cwl_input)
+            jsonld_param["defaultValue"] = str(cwl_input.default)
             self.graph[jsonld_param["@id"]] = jsonld_param
             jsonld_element.setdefault("input", []).append({"@id": jsonld_param["@id"]})
             self.param_parent_map[jsonld_param["@id"]] = jsonld_element
@@ -1156,7 +1167,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                     cwl_prefix=cwl_prefix,
                     prefix=prefix,
                     cwl_step=s,
-                    version=cwl_workflow.cwlVersion,
+                    version=cast(str, cwl_workflow.cwlVersion),
                 )
                 for s in cwl_workflow.steps
             ]
@@ -1166,7 +1177,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 jsonld_entity=jsonld_workflow,
                 jsonld_steps=jsonld_steps,
                 cwl_steps=cwl_workflow.steps,
-                version=cwl_workflow.cwlVersion,
+                version=cast(str, cwl_workflow.cwlVersion),
             )
         # Connect output sources
         workflow_inputs = [inp["@id"] for inp in jsonld_workflow.get("output", [])]
@@ -1435,7 +1446,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 )
             )
             value = []
-            for property_value in property_values:
+            for property_value in (k for k in property_values if k is not None):
                 if property_value["@type"] in ["Dataset", "File"]:
                     # Check for duplicate checksums
                     if property_value["@id"] not in self.graph:

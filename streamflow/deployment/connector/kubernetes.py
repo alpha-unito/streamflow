@@ -30,7 +30,7 @@ from kubernetes_asyncio.utils import create_from_yaml
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -48,14 +48,14 @@ from streamflow.log_handler import logger
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
 
 
-def _check_helm_installed():
+def _check_helm_installed() -> None:
     if which("helm") is None:
         raise WorkflowExecutionException(
             "Helm must be installed on the system to use the Helm connector."
         )
 
 
-async def _get_helm_version():
+async def _get_helm_version() -> str:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split("helm version --template '{{.Version}}'"),
         stdout=asyncio.subprocess.PIPE,
@@ -96,7 +96,7 @@ def _selector_from_set(selector: MutableMapping[str, Any]) -> str:
 
 
 class KubernetesResponseWrapper(BaseStreamWrapper):
-    def __init__(self, stream):
+    def __init__(self, stream) -> None:
         super().__init__(stream)
         self.msg: bytes = b""
 
@@ -207,7 +207,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         self.client_ws: client.CoreV1Api | None = None
         self.maxConcurrentConnections: int = maxConcurrentConnections
 
-    def _configure_incluster_namespace(self):
+    def _configure_incluster_namespace(self) -> None:
         if self.namespace is None:
             if not os.path.isfile(SERVICE_NAMESPACE_FILENAME):
                 raise ConfigException("Service namespace file does not exist.")
@@ -223,7 +223,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         dst: str,
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
-    ):
+    ) -> None:
         await super().copy_local_to_remote(
             src=src,
             dst=dst,
@@ -237,7 +237,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         dst: str,
         locations: MutableSequence[ExecutionLocation],
         source_location: ExecutionLocation,
-        source_connector: str | None = None,
+        source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
         source_connector = source_connector or self
@@ -335,7 +335,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
     @abstractmethod
     async def _get_running_pods(self) -> V1PodList: ...
 
-    async def deploy(self, external: bool):
+    async def deploy(self, external: bool) -> None:
         # Init standard client
         configuration = await self._get_configuration()
         configuration.connection_pool_maxsize = self.maxConcurrentConnections
@@ -422,7 +422,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -430,7 +430,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         command = utils.create_command(
             self.__class__.__name__,
             command,
@@ -825,8 +825,8 @@ class Helm3Connector(KubernetesBaseConnector):
         keepHistory: bool = False,
         keyFile: str | None = None,
         keyring: str | None = None,
-        locationsCacheSize: int = None,
-        locationsCacheTTL: int = None,
+        locationsCacheSize: int | None = None,
+        locationsCacheTTL: int | None = None,
         maxConcurrentConnections: int = 4096,
         nameTemplate: str | None = None,
         namespace: str | None = None,
@@ -841,8 +841,8 @@ class Helm3Connector(KubernetesBaseConnector):
         releaseName: str | None = None,
         repositoryCache: str | None = None,
         repositoryConfig: str | None = None,
-        resourcesCacheSize: int = None,
-        resourcesCacheTTL: int = None,
+        resourcesCacheSize: int | None = None,
+        resourcesCacheTTL: int | None = None,
         skipCrds: bool = False,
         timeout: str | None = "1000m",
         transferBufferSize: int = (32 << 20) - 1,

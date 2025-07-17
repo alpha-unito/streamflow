@@ -416,7 +416,7 @@ class OccamConnector(SSHConnector):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -424,7 +424,7 @@ class OccamConnector(SSHConnector):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         command = self._get_command(
             location=location,
             command=command,

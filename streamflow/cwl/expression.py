@@ -4,7 +4,7 @@ from collections.abc import MutableSequence
 from typing import Any
 
 import antlr4
-from cwl_utils.sandboxjs import JSEngine, code_fragment_to_js, segment_re
+from cwl_utils.sandboxjs import code_fragment_to_js, segment_re
 
 from streamflow.core.utils import NamesStack
 from streamflow.cwl.antlr.ECMAScriptLexer import ECMAScriptLexer
@@ -22,7 +22,7 @@ def _extract_key(next_seg: str) -> str | None:
 
 
 class CWLDependencyListener(ECMAScriptListener):
-    def __init__(self):
+    def __init__(self) -> None:
         self.deps: set[str] = set()
         self.names: NamesStack = NamesStack()
         self.names.add_name("inputs")
@@ -39,7 +39,7 @@ class CWLDependencyListener(ECMAScriptListener):
 
     def enterFunctionDeclaration(
         self, ctx: ECMAScriptParser.FunctionDeclarationContext
-    ):
+    ) -> None:
         self.names.add_scope()
         parameters = ctx.formalParameterList()
         if parameters:
@@ -47,12 +47,14 @@ class CWLDependencyListener(ECMAScriptListener):
                 if (name := param.symbol.text) in self.names:
                     self.names.add_name(name)
 
-    def exitFunctionDeclaration(self, ctx: ECMAScriptParser.FunctionDeclarationContext):
+    def exitFunctionDeclaration(
+        self, ctx: ECMAScriptParser.FunctionDeclarationContext
+    ) -> None:
         self.names.delete_scope()
 
     def enterAssignmentExpression(
         self, ctx: ECMAScriptParser.AssignmentExpressionContext
-    ):
+    ) -> None:
         left = ctx.getChild(0)
         right = ctx.getChild(2)
         if isinstance(left, ECMAScriptParser.SingleExpressionContext):
@@ -72,25 +74,25 @@ class CWLDependencyListener(ECMAScriptListener):
 
     def enterMemberDotExpression(
         self, ctx: ECMAScriptParser.MemberDotExpressionContext
-    ):
+    ) -> None:
         if self._get_name(ctx.singleExpression()) in self.names.global_names():
             if dep := self._get_name(ctx.identifierName()):
                 self.deps.add(dep)
 
     def enterMemberIndexExpression(
         self, ctx: ECMAScriptParser.MemberIndexExpressionContext
-    ):
+    ) -> None:
         if self._get_name(ctx.singleExpression()) in self.names.global_names():
             for expr in ctx.expressionSequence().singleExpression():
                 if dep := self._get_index(expr.literal()).strip("'\""):
                     self.deps.add(dep)
 
 
-class DependencyResolver(JSEngine):
-    def __init__(self):
+class DependencyResolver:
+    def __init__(self) -> None:
         self.deps = set()
 
-    def eval(self, scan: str, jslib: str = "", **kwargs: Any) -> Any | None:
+    def eval(self, scan: str, jslib: str = "", **kwargs: Any) -> None:
         code = code_fragment_to_js(scan, jslib)
         lexer = ECMAScriptLexer(antlr4.InputStream(code))
         parser = ECMAScriptParser(antlr4.CommonTokenStream(lexer))
@@ -98,7 +100,6 @@ class DependencyResolver(JSEngine):
         walker = antlr4.ParseTreeWalker()
         walker.walk(listener, parser.program())
         self.deps = listener.deps
-        return None
 
     def regex_eval(
         self,
@@ -106,7 +107,7 @@ class DependencyResolver(JSEngine):
         remaining_string: str,
         current_value: Any,
         **kwargs: Any,
-    ) -> Any | None:
+    ) -> None:
         if parsed_string != "inputs":
             return None
         elif remaining_string:

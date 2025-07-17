@@ -15,6 +15,8 @@ from abc import ABC
 from builtins import open as bltn_open
 from typing import Any, cast
 
+from typing_extensions import Self
+
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper
 
@@ -248,7 +250,7 @@ class FileStreamReaderWrapper(StreamWrapper):
 
 
 class TellableStreamWrapper(BaseStreamWrapper):
-    def __init__(self, stream):
+    def __init__(self, stream) -> None:
         super().__init__(stream)
         self.position: int = 0
 
@@ -555,36 +557,36 @@ class AioTarStream:
         return t
 
     @classmethod
-    def taropen(cls, stream, mode="r", **kwargs):
+    def taropen(cls, stream, mode="r", **kwargs) -> Self:
         if mode not in ("r", "a", "w", "x"):
             raise ValueError("mode must be 'r', 'a', 'w' or 'x'")
         return cls(BaseStreamWrapper(stream), mode, **kwargs)
 
     @classmethod
-    def gzopen(cls, stream, mode="r", compresslevel=9, **kwargs):
+    def gzopen(cls, stream, mode="r", compresslevel=9, **kwargs) -> Self:
         if mode not in ("r", "w", "x"):
             raise ValueError("mode must be 'r', 'w' or 'x'")
         return cls(GZipStreamWrapper(stream, mode, compresslevel), mode, **kwargs)
 
     @classmethod
-    def bz2open(cls, stream, mode="r", compresslevel=9, **kwargs):
+    def bz2open(cls, stream, mode="r", compresslevel=9, **kwargs) -> Self:
         if mode not in ("r", "w", "x"):
             raise ValueError("mode must be 'r', 'w' or 'x'")
         return cls(BZ2StreamWrapper(stream, mode, compresslevel), mode, **kwargs)
 
     @classmethod
-    def xzopen(cls, stream, mode="r", preset=None, **kwargs):
+    def xzopen(cls, stream, mode="r", preset=None, **kwargs) -> Self:
         if mode not in ("r", "w", "x"):
             raise ValueError("mode must be 'r', 'w' or 'x'")
         return cls(LZMAStreamWrapper(stream, mode, preset), mode, **kwargs)
 
-    def _check(self, mode=None):
+    def _check(self, mode=None) -> None:
         if self.closed:
             raise OSError("%s is closed" % self.__class__.__name__)
         if mode is not None and self.mode not in mode:
             raise OSError("bad operation for mode %r" % self.mode)
 
-    def _dbg(self, level, msg):
+    def _dbg(self, level, msg) -> None:
         if level <= self.debug:
             print(msg, file=sys.stderr)
 
@@ -650,14 +652,14 @@ class AioTarStream:
                 return member
         return None
 
-    async def _load(self):
+    async def _load(self) -> None:
         while True:
             tarinfo = await self.next()
             if tarinfo is None:
                 break
         self._loaded = True
 
-    async def add(self, name, arcname=None, recursive=True, *, filter=None):
+    async def add(self, name, arcname=None, recursive=True, *, filter=None) -> None:
         self._check("awx")
         if arcname is None:
             arcname = name

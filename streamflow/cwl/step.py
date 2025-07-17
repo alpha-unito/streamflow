@@ -7,6 +7,8 @@ from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
+from typing_extensions import Self
+
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.deployment import Connector, ExecutionLocation
@@ -230,7 +232,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
 
-    async def _eval(self, inputs: MutableMapping[str, Token]):
+    async def _eval(self, inputs: MutableMapping[str, Token]) -> bool:
         context = utils.build_context(inputs)
         condition = utils.eval_expression(
             expression=self.expression,
@@ -245,7 +247,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                 "Conditional 'when' must evaluate to 'true' or 'false'"
             )
 
-    async def _on_true(self, inputs: MutableMapping[str, Token]):
+    async def _on_true(self, inputs: MutableMapping[str, Token]) -> None:
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
             port.put(
@@ -256,7 +258,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                 )
             )
 
-    async def _on_false(self, inputs: MutableMapping[str, Token]):
+    async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
         # Propagate skip tokens
         for port in self.get_skip_ports().values():
             port.put(
@@ -282,7 +284,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLConditionalStep:
+    ) -> Self:
         params = row["params"]
         step = cls(
             name=row["name"],
@@ -308,7 +310,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
 
 
 class CWLLoopConditionalStep(CWLConditionalStep):
-    async def _eval(self, inputs: MutableMapping[str, Token]):
+    async def _eval(self, inputs: MutableMapping[str, Token]) -> bool:
         context = utils.build_context(inputs)
         condition = utils.eval_expression(
             expression=self.expression,
@@ -355,7 +357,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         super().__init__(name, workflow)
         self.scatter_method: str = scatter_method
 
-    async def _eval(self, inputs: MutableMapping[str, Token]):
+    async def _eval(self, inputs: MutableMapping[str, Token]) -> bool:
         return all(
             isinstance(i, ListToken) and len(i.value) > 0 for i in inputs.values()
         )
@@ -366,7 +368,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLEmptyScatterConditionalStep:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -376,7 +378,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
             scatter_method=row["params"]["scatter_method"],
         )
 
-    async def _on_true(self, inputs: MutableMapping[str, Token]):
+    async def _on_true(self, inputs: MutableMapping[str, Token]) -> None:
         # Propagate output tokens
         for port_name, port in self.get_output_ports().items():
             port.put(
@@ -387,7 +389,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
                 )
             )
 
-    async def _on_false(self, inputs: MutableMapping[str, Token]):
+    async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
         # Get empty scatter return value
         if self.scatter_method == "nested_crossproduct":
             token_value = [
@@ -490,7 +492,7 @@ class CWLExecuteStep(ExecuteStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLExecuteStep:
+    ) -> Self:
         params = row["params"]
         step = cls(
             name=row["name"],
@@ -567,7 +569,7 @@ class CWLScheduleStep(ScheduleStep):
         connector: Connector,
         locations: MutableSequence[ExecutionLocation],
         job: Job,
-    ):
+    ) -> None:
         await super()._set_job_directories(connector, locations, job)
         hardware = self.workflow.context.scheduler.get_hardware(job.name)
         hardware.storage["__outdir__"].paths = {job.output_directory}
@@ -593,7 +595,7 @@ class CWLTransferStep(TransferStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLTransferStep:
+    ) -> Self:
         params = row["params"]
         step = cls(
             name=row["name"],

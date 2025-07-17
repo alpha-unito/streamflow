@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from collections.abc import MutableMapping
+
+from streamflow.core.deployment import Connector
 from streamflow.deployment.connector.container import (
     DockerComposeConnector,
     DockerConnector,
@@ -16,7 +21,7 @@ from streamflow.deployment.connector.queue_manager import (
 )
 from streamflow.deployment.connector.ssh import SSHConnector
 
-connector_classes = {
+connector_classes: MutableMapping[str, type[Connector]] = {
     "docker": DockerConnector,
     "docker-compose": DockerComposeConnector,
     "flux": FluxConnector,

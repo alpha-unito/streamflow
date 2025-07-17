@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import logging
+from typing import Any
 
 dateFormat = "%(asctime)s"
 levelFormat = " %(levelname)-8s"
@@ -53,7 +56,7 @@ class CustomFormatter(logging.Formatter):
         + reset,
     }
 
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
@@ -80,14 +83,14 @@ class HighlitingFilter(logging.Filter):
         "SCHEDULED": 0,
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         record.msg = self.highlight(record.msg)
         return True
 
-    def highlight(self, msg):
+    def highlight(self, msg: str | Any) -> str:
         msg = str(msg)
         msg_tok = msg.split(" ")
         for pattern, category in self.patterns.items():

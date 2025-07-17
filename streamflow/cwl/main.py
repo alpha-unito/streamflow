@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+from collections.abc import MutableSequence
 from pathlib import PurePosixPath
 
 import cwl_utils.parser
@@ -15,7 +16,7 @@ from streamflow.log_handler import logger
 from streamflow.workflow.executor import StreamFlowExecutor
 
 
-def _parse_arg(path: str, context: StreamFlowContext):
+def _parse_arg(path: str, context: StreamFlowContext) -> str:
     if "://" in path:
         return path
     elif not os.path.isabs(path):
@@ -27,7 +28,7 @@ def _parse_arg(path: str, context: StreamFlowContext):
 def _parse_args(
     workflow_config: WorkflowConfig,
     context: StreamFlowContext,
-):
+) -> MutableSequence[str]:
     cwl_config = workflow_config.config
     cwl_config["file"] = _parse_arg(cwl_config["file"], context)
     args = [cwl_config["file"]]
@@ -53,7 +54,7 @@ async def main(
     workflow_config: WorkflowConfig,
     context: StreamFlowContext,
     args: argparse.Namespace,
-):
+) -> None:
     # Parse input arguments
     cwl_args = _parse_args(workflow_config, context)
     # Load CWL workflow definition

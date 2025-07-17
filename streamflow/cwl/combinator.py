@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterable, MutableMapping, MutableSequence
 from typing import Any, cast
 
+from typing_extensions import Self
+
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import get_tag
@@ -42,7 +44,7 @@ class ListMergeCombinator(DotProductCombinator):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> ListMergeCombinator:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(

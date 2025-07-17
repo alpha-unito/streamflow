@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, cast
 
 import aiohttp
 from aiohttp import ClientResponse
+from typing_extensions import Self
 
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
 
 def _check_status(
     command: MutableSequence[str], location: ExecutionLocation, result: str, status: int
-):
+) -> None:
     if status != 0:
         raise WorkflowExecutionException(
             "{} Command '{}' on location {}: {}".format(
@@ -47,7 +48,7 @@ def _file_checksum_local(path: str) -> str:
         return sha1_checksum.hexdigest()
 
 
-def _get_filename_from_response(response: ClientResponse, url: str):
+def _get_filename_from_response(response: ClientResponse, url: str) -> str:
     if cd_header := response.headers.get("Content-Disposition"):
         message = Message()
         message["content-disposition"] = cd_header
@@ -60,7 +61,7 @@ def _get_outer_path(
     context: StreamFlowContext,
     location: ExecutionLocation,
     path: StreamFlowPath,
-):
+) -> StreamFlowPath:
     if (
         isinstance(path, LocalStreamFlowPath)
         and location.local
@@ -147,7 +148,7 @@ def get_inner_path(
 class StreamFlowPath(PurePath, ABC):
     def __new__(
         cls, *args, context: StreamFlowContext, location: ExecutionLocation, **kwargs
-    ):
+    ) -> Self:
         if cls is StreamFlowPath:
             cls = LocalStreamFlowPath if location.local else RemoteStreamFlowPath
         if sys.version_info < (3, 12):
@@ -423,7 +424,7 @@ class LocalStreamFlowPath(
         ):
             yield dirpath, dirnames, filenames
 
-    def with_segments(self, *pathsegments):
+    def with_segments(self, *pathsegments) -> Self:
         return type(self)(*pathsegments, context=self.context)
 
     async def write_text(self, data: str, **kwargs) -> int:
@@ -467,7 +468,7 @@ class RemoteStreamFlowPath(
             )
         )
 
-    async def _get_inner_path(self) -> StreamFlowPath | None:
+    async def _get_inner_path(self) -> StreamFlowPath:
         if self._inner_path is None:
             # Recurse through mount points to find the innermost path (more efficient)
             self._inner_path = get_inner_path(path=self, recursive=True) or self
@@ -774,7 +775,7 @@ class RemoteStreamFlowPath(
                     paths.append((path, dirnames, filenames))
                 paths += [path._make_child_relpath(d) for d in reversed(dirnames)]
 
-    def with_segments(self, *pathsegments):
+    def with_segments(self, *pathsegments) -> Self:
         return type(self)(*pathsegments, context=self.context, location=self.location)
 
     async def write_text(self, data: str, **kwargs) -> int:

@@ -6,7 +6,7 @@ from importlib.resources import files
 from jinja2 import Template
 
 from streamflow.core import utils
-from streamflow.core.deployment import DeploymentConfig, Target
+from streamflow.core.deployment import DeploymentConfig, Target, WrapsConfig
 from streamflow.cwl.requirement.docker.translator import CWLDockerTranslator
 
 
@@ -17,7 +17,7 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
         wrapper: bool,
         template: str | None = None,
         debug: bool = False,
-        inCluster: bool | None = False,
+        inCluster: bool = False,
         kubeconfig: str | None = None,
         kubeContext: str | None = None,
         maxConcurrentConnections: int = 4096,
@@ -31,9 +31,9 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
         super().__init__(config_dir=config_dir, wrapper=wrapper)
         if template is not None:
             with open(template) as t:
-                self.template: Template = Template(t.read())
+                self.template = Template(t.read())
         else:
-            self.template: Template = Template(
+            self.template = Template(
                 files(__package__)
                 .joinpath("schemas")
                 .joinpath("kubernetes.jinja2")
@@ -94,7 +94,13 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
                         "wait": self.wait,
                     },
                     workdir="/tmp/streamflow",  # nosec
-                    wraps=target if self.wrapper else None,
+                    wraps=(
+                        WrapsConfig(
+                            deployment=target.deployment.name, service=target.service
+                        )
+                        if self.wrapper
+                        else None
+                    ),
                 ),
                 service=name,
             )

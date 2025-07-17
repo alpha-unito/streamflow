@@ -182,6 +182,14 @@ class ContainerConnector(ConnectorWrapper, ABC):
         effective_locations.append(location)
         return common_paths, effective_locations
 
+    def _get_inner_location(self) -> ExecutionLocation:
+        if self._inner_location is None:
+            raise ValueError(
+                f"The _inner_location parameter of {self.__class__.__name__} "
+                "should not be null at this time"
+            )
+        return self._inner_location.location
+
     async def _local_copy(
         self, src: str, dst: str, location: ExecutionLocation, read_only: bool
     ) -> None:
@@ -512,10 +520,10 @@ class ContainerConnector(ConnectorWrapper, ABC):
     ) -> MutableSequence[str]: ...
 
     async def _prepare_volumes(
-        self, binds: MutableSequence[str], mounts: MutableSequence[str]
+        self, binds: MutableSequence[str] | None, mounts: MutableSequence[str] | None
     ):
         sources = [b.split(":", 2)[0] for b in binds] if binds is not None else []
-        for m in mounts or []:
+        for m in mounts if mounts is not None else []:
             mount_type = next(
                 part[5:] for part in m.split(",") if part.startswith("type=")
             )
@@ -532,11 +540,16 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 os.makedirs(src, exist_ok=True)
         else:
             await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=["mkdir", "-p"] + sources,
             )
 
     def _wraps_local(self) -> bool:
+        if self._inner_location is None:
+            raise ValueError(
+                f"The _inner_location parameter of {self.__class__.__name__} "
+                "should not be null at this time"
+            )
         return self._inner_location.local
 
     async def deploy(self, external: bool) -> None:
@@ -581,7 +594,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -589,7 +602,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         command = utils.create_command(
             self.__class__.__name__,
             command,
@@ -636,12 +649,12 @@ class DockerBaseConnector(ContainerConnector, ABC):
             transferBufferSize=transferBufferSize,
         )
 
-    async def _check_docker_installed(self):
+    async def _check_docker_installed(self) -> None:
         if self._wraps_local():
             returncode = 0 if which("docker") is not None else 1
         else:
             _, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=["which", "docker"],
                 capture_output=True,
             )
@@ -653,7 +666,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
 
     async def _get_docker_version(self) -> str:
         stdout, _ = await self.connector.run(
-            location=self._inner_location.location,
+            location=self._get_inner_location(),
             command=["docker", "version", "--format", "'{{.Client.Version}}'"],
             capture_output=True,
         )
@@ -678,11 +691,11 @@ class DockerBaseConnector(ContainerConnector, ABC):
             name=name,
             deployment=self.deployment_name,
             stacked=True,
-            wraps=self._inner_location.location,
+            wraps=self._get_inner_location(),
         )
         # Inspect Docker container
         stdout, returncode = await self.connector.run(
-            location=self._inner_location.location,
+            location=self._get_inner_location(),
             command=[
                 "docker",
                 "inspect",
@@ -708,7 +721,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             host_user = os.getuid()
         else:
             stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=["id", "-u"],
                 capture_output=True,
             )
@@ -1060,13 +1073,13 @@ class DockerConnector(DockerBaseConnector):
                 logger.debug(f"Using Docker {await self._get_docker_version()}.")
             # Pull image if it doesn't exist
             _, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=["docker", "image", "inspect", self.image],
                 capture_output=True,
             )
             if returncode != 0:
                 await self.connector.run(
-                    location=self._inner_location.location,
+                    location=self._get_inner_location(),
                     command=["docker", "pull", "--quiet", self.image],
                 )
             # Deploy the Docker container
@@ -1167,7 +1180,7 @@ class DockerConnector(DockerBaseConnector):
                 f"{' '.join(self.command) if self.command else ''}",
             ]
             stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=deploy_command,
                 capture_output=True,
             )
@@ -1189,6 +1202,11 @@ class DockerConnector(DockerBaseConnector):
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
+        if self._inner_location is None:
+            raise ValueError(
+                f"The _inner_location parameter of {self.__class__.__name__} "
+                "should not be null at this time"
+            )
         instance = self._instances[self.containerId]
         return {
             self.containerId: AvailableLocation(
@@ -1217,7 +1235,7 @@ class DockerConnector(DockerBaseConnector):
     async def undeploy(self, external: bool) -> None:
         if not external:
             stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=["docker", "stop", self.containerId],
                 capture_output=True,
             )
@@ -1301,12 +1319,12 @@ class DockerComposeConnector(DockerBaseConnector):
         self._command: list[str] | None = None
         self._instance_lock: asyncio.Lock = asyncio.Lock()
 
-    async def _check_docker_compose_installed(self):
+    async def _check_docker_compose_installed(self) -> None:
         if self._wraps_local():
             returncode = 0 if which("docker-compose") is not None else 1
         else:
             _, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=["which", "docker-compose"],
                 capture_output=True,
             )
@@ -1321,7 +1339,7 @@ class DockerComposeConnector(DockerBaseConnector):
             compose_command = await self._get_docker_compose_command()
             # Get Docker Compose version
             version, _ = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=compose_command + ["version", "--short"],
                 capture_output=True,
             )
@@ -1362,7 +1380,7 @@ class DockerComposeConnector(DockerBaseConnector):
         ]
         # Check if `docker compose` is a valid command
         _, returncode = await self.connector.run(
-            location=self._inner_location.location,
+            location=self._get_inner_location(),
             command=["docker", "compose"],
             capture_output=True,
         )
@@ -1400,7 +1418,7 @@ class DockerComposeConnector(DockerBaseConnector):
                 get_option("wait", self.wait),
             ]
             stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=deploy_command,
                 capture_output=True,
             )
@@ -1413,7 +1431,7 @@ class DockerComposeConnector(DockerBaseConnector):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         output, _ = await self.connector.run(
-            location=self._inner_location.location,
+            location=self._get_inner_location(),
             command=await self._get_base_command()
             + ["ps", "--format", "json", service or ""],
             capture_output=True,
@@ -1471,7 +1489,7 @@ class DockerComposeConnector(DockerBaseConnector):
     async def undeploy(self, external: bool) -> None:
         if not external:
             stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=await self._get_base_command()
                 + ["down", get_option("volumes", self.removeVolumes)],
                 capture_output=True,
@@ -1617,12 +1635,12 @@ class SingularityConnector(ContainerConnector):
         self.writable: bool = writable
         self.writableTmpfs: bool = writableTmpfs
 
-    async def _check_singularity_installed(self):
+    async def _check_singularity_installed(self) -> None:
         if self._wraps_local():
             returncode = 0 if which("singularity") is not None else 1
         else:
             _, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=["which", "singularity"],
                 capture_output=True,
             )
@@ -1647,7 +1665,7 @@ class SingularityConnector(ContainerConnector):
 
     async def _get_singularity_version(self) -> str:
         stdout, _ = await self.connector.run(
-            location=self._inner_location.location,
+            location=self._get_inner_location(),
             command=["singularity", "--version"],
             capture_output=True,
         )
@@ -1667,12 +1685,12 @@ class SingularityConnector(ContainerConnector):
             name=name,
             deployment=self.deployment_name,
             stacked=True,
-            wraps=self._inner_location.location,
+            wraps=self._get_inner_location(),
         )
         # Get IP address
         ip_address = None
         stdout, returncode = await self.connector.run(
-            location=self._inner_location.location,
+            location=self._get_inner_location(),
             command=[
                 "singularity",
                 "instance",
@@ -1741,7 +1759,7 @@ class SingularityConnector(ContainerConnector):
             }
         else:
             stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=[
                     "cat",
                     "/proc/1/mountinfo",
@@ -1893,7 +1911,7 @@ class SingularityConnector(ContainerConnector):
                 " ".join(self.command) if self.command else "",
             ]
             stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=deploy_command,
                 capture_output=True,
             )
@@ -1943,7 +1961,7 @@ class SingularityConnector(ContainerConnector):
     async def undeploy(self, external: bool) -> None:
         if not external:
             stdout, returncode = await self.connector.run(
-                location=self._inner_location.location,
+                location=self._get_inner_location(),
                 command=["singularity", "instance", "stop", self.instanceName],
                 capture_output=True,
             )

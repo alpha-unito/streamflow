@@ -1,6 +1,7 @@
-from collections.abc import MutableMapping
+from collections.abc import Iterable, MutableMapping
 from typing import Any
 
+from jsonschema import ValidationError
 from jsonschema.validators import validator_for
 from ruamel.yaml import YAML
 
@@ -8,9 +9,8 @@ from streamflow.config.schema import SfSchema
 from streamflow.core.exception import WorkflowDefinitionException
 
 
-def handle_errors(errors):
-    errors = list(sorted(errors, key=str))
-    if not errors:
+def handle_errors(errors: Iterable[ValidationError]) -> None:
+    if not (errors := list(sorted(errors, key=str))):
         return
     raise WorkflowDefinitionException(
         "The StreamFlow configuration is invalid because:\n{error_msgs}".format(
@@ -30,13 +30,15 @@ class SfValidator:
             streamflow_config = self.yaml.load(f)
         return self.validate(streamflow_config)
 
-    def validate(self, streamflow_file: MutableMapping[str, Any]):
-        if "version" not in streamflow_file:
+    def validate(
+        self, streamflow_config: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
+        if "version" not in streamflow_config:
             raise WorkflowDefinitionException(
                 "The `version` clause is mandatory and should be equal to `v1.0`."
             )
-        config = self.schema.get_config(streamflow_file["version"]).contents
+        config = self.schema.get_config(streamflow_config["version"]).contents
         cls = validator_for(config)
         validator = cls(config, registry=self.schema.registry)
-        handle_errors(validator.iter_errors(streamflow_file))
-        return streamflow_file
+        handle_errors(validator.iter_errors(streamflow_config))
+        return streamflow_config

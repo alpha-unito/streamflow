@@ -1,6 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
+from importlib.abc import Traversable
 from typing import Any
 
 from streamflow.config import ext_schemas
@@ -21,7 +22,7 @@ from streamflow.recovery import checkpoint_manager_classes, failure_manager_clas
 from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes
 
-extension_points = {
+extension_points: MutableMapping[str, MutableMapping[str, Any]] = {
     "binding_filter": binding_filter_classes,
     "checkpoint_manager": checkpoint_manager_classes,
     "cwl_docker_translator": cwl_docker_translator_classes,
@@ -36,10 +37,10 @@ extension_points = {
 
 
 class StreamFlowPlugin(ABC):
-    def __init__(self):
+    def __init__(self) -> None:
         self.classes_: MutableMapping[str, MutableSequence[Any]] = {}
 
-    def _register(self, name: str, cls: type, extension_point: str):
+    def _register(self, name: str, cls: type, extension_point: str) -> None:
         self.classes_.setdefault(extension_point, []).append(
             {
                 "name": name,
@@ -58,35 +59,41 @@ class StreamFlowPlugin(ABC):
     @abstractmethod
     def register(self) -> None: ...
 
-    def register_binding_filter(self, name: str, cls: type[BindingFilter]):
+    def register_binding_filter(self, name: str, cls: type[BindingFilter]) -> None:
         self._register(name, cls, "binding_filter")
 
-    def register_checkpoint_manager(self, name: str, cls: type[CheckpointManager]):
+    def register_checkpoint_manager(
+        self, name: str, cls: type[CheckpointManager]
+    ) -> None:
         self._register(name, cls, "checkpoint_manager")
 
-    def register_cwl_docker_translator(self, name: str, cls: type[CWLDockerTranslator]):
+    def register_cwl_docker_translator(
+        self, name: str, cls: type[CWLDockerTranslator]
+    ) -> None:
         self._register(name, cls, "cwl_docker_translator")
 
-    def register_connector(self, name: str, cls: type[Connector]):
+    def register_connector(self, name: str, cls: type[Connector]) -> None:
         self._register(name, cls, "connector")
 
-    def register_data_manager(self, name: str, cls: type[DataManager]):
+    def register_data_manager(self, name: str, cls: type[DataManager]) -> None:
         self._register(name, cls, "data_manager")
 
-    def register_database(self, name: str, cls: type[Database]):
+    def register_database(self, name: str, cls: type[Database]) -> None:
         self._register(name, cls, "database")
 
-    def register_deployment_manager(self, name: str, cls: type[DeploymentManager]):
+    def register_deployment_manager(
+        self, name: str, cls: type[DeploymentManager]
+    ) -> None:
         self._register(name, cls, "deployment_manager")
 
-    def register_failure_manager(self, name: str, cls: type[FailureManager]):
+    def register_failure_manager(self, name: str, cls: type[FailureManager]) -> None:
         self._register(name, cls, "failure_manager")
 
-    def register_policy(self, name: str, cls: type[Policy]):
+    def register_policy(self, name: str, cls: type[Policy]) -> None:
         self._register(name, cls, "policy")
 
-    def register_scheduler(self, name: str, cls: type[Scheduler]):
+    def register_scheduler(self, name: str, cls: type[Scheduler]) -> None:
         self._register(name, cls, "scheduler")
 
-    def register_schema(self, schema: str) -> None:
+    def register_schema(self, schema: Traversable) -> None:
         ext_schemas.append(schema)

@@ -6,6 +6,8 @@ from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from typing_extensions import Self
+
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 
 if TYPE_CHECKING:
@@ -76,7 +78,7 @@ class DatabaseLoadingContext(ABC):
 class PersistableEntity:
     __slots__ = ("persistent_id", "persistence_lock")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.persistent_id: int | None = None
         self.persistence_lock: Lock = Lock()
 
@@ -87,7 +89,7 @@ class PersistableEntity:
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> PersistableEntity: ...
+    ) -> Self: ...
 
     @abstractmethod
     async def save(self, context: StreamFlowContext) -> None: ...

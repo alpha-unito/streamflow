@@ -7,7 +7,7 @@ import logging
 import os
 import shlex
 from abc import ABC, abstractmethod
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Collection, MutableMapping, MutableSequence
 from functools import partial
 from importlib.resources import files
 from typing import Any, AsyncContextManager, cast
@@ -313,9 +313,9 @@ class FluxService(QueueManagerService):
         self.ntasks: int | None = ntasks
         self.queue: str | None = queue
         self.requires: str | None = requires
-        self.rlimit: MutableSequence[str] | None = rlimit or []
-        self.setattr: MutableMapping[str, str] | None = setattr or {}
-        self.setopt: MutableMapping[str, str] | None = setopt or {}
+        self.rlimit: MutableSequence[str] = rlimit or []
+        self.setattr: MutableMapping[str, str] = setattr or {}
+        self.setopt: MutableMapping[str, str] = setopt or {}
         self.taskmap: str | None = taskmap
         self.tasksPerCore: int | None = tasksPerCore
         self.tasksPerNode: int | None = tasksPerNode
@@ -355,7 +355,7 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
                     "to it using the `wraps` property."
                 )
             self._inner_ssh_connector = True
-            connector: Connector = SSHConnector(
+            connector = SSHConnector(
                 deployment_name=f"{deployment_name}-ssh",
                 config_dir=config_dir,
                 checkHostKey=checkHostKey,
@@ -435,7 +435,9 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
     ) -> int: ...
 
     @abstractmethod
-    async def _get_running_jobs(self, location: ExecutionLocation) -> bool: ...
+    async def _get_running_jobs(
+        self, location: ExecutionLocation
+    ) -> Collection[str]: ...
 
     @abstractmethod
     async def _remove_jobs(
@@ -560,7 +562,7 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -568,9 +570,9 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         if job_name:
-            command = utils.create_command(
+            command_str = utils.create_command(
                 class_name=self.__class__.__name__,
                 command=command,
                 environment=environment,
@@ -579,12 +581,12 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
                     "EXECUTING command {command} on {location} {job}".format(
-                        command=command,
+                        command=command_str,
                         location=location,
                         job=f"for job {job_name}" if job_name else "",
                     )
                 )
-            command = utils.encode_command(command)
+            command_str = utils.encode_command(command_str)
             if logger.isEnabledFor(logging.WARNING):
                 if not self.template_map.is_empty() and location.service is None:
                     logger.warning(
@@ -592,14 +594,14 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
                         f"but none of them has been specified to execute job {job_name}. Execution "
                         f"will fall back to the default template."
                     )
-            command = self.template_map.get_command(
-                command=command,
+            command_str = self.template_map.get_command(
+                command=command_str,
                 template=location.service,
                 environment=environment,
                 workdir=workdir,
             )
             job_id = await self._run_batch_command(
-                command=command,
+                command=command_str,
                 environment=location.environment,
                 job_name=job_name,
                 location=location,
@@ -736,9 +738,7 @@ class SlurmConnector(QueueManagerConnector):
         lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
-    async def _get_running_jobs(
-        self, location: ExecutionLocation
-    ) -> MutableSequence[str]:
+    async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         command = [
             "squeue",
             "-h",
@@ -957,9 +957,7 @@ class PBSConnector(QueueManagerConnector):
         lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
-    async def _get_running_jobs(
-        self, location: ExecutionLocation
-    ) -> MutableSequence[str]:
+    async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         command = [
             "qstat",
             " ".join(self._scheduled_jobs.keys()),
@@ -1162,9 +1160,7 @@ class FluxConnector(QueueManagerConnector):
         lambda self: self._jobs_cache,
         key=partial(cachetools.keys.hashkey, "running_jobs"),
     )
-    async def _get_running_jobs(
-        self, location: ExecutionLocation
-    ) -> MutableSequence[str]:
+    async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         # If we add the job id, the filter is ignored
         command = [
             "flux",

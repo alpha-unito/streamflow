@@ -9,7 +9,7 @@ import shlex
 import tarfile
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any, AsyncContextManager
+from typing import AsyncContextManager
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
@@ -360,7 +360,7 @@ class BaseConnector(Connector, FutureAware, ABC):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -368,8 +368,8 @@ class BaseConnector(Connector, FutureAware, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
-        command = utils.create_command(
+    ) -> tuple[str, int] | None:
+        command_str = utils.create_command(
             self.__class__.__name__,
             command,
             environment,
@@ -381,14 +381,14 @@ class BaseConnector(Connector, FutureAware, ABC):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "EXECUTING command {command} on {location} {job}".format(
-                    command=command,
+                    command=command_str,
                     location=location,
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
         return await utils.run_in_subprocess(
             location=location,
-            command=[utils.encode_command(command, "sh")],
+            command=[utils.encode_command(command_str, "sh")],
             capture_output=capture_output,
             timeout=timeout,
         )

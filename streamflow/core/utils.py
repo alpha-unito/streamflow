@@ -22,19 +22,19 @@ if TYPE_CHECKING:
 
 
 class NamesStack:
-    def __init__(self):
-        self.stack: MutableSequence[set] = [set()]
+    def __init__(self) -> None:
+        self.stack: MutableSequence[set[str]] = [set()]
 
-    def add_scope(self):
+    def add_scope(self) -> None:
         self.stack.append(set())
 
-    def add_name(self, name: str):
+    def add_name(self, name: str) -> None:
         self.stack[-1].add(name)
 
-    def delete_scope(self):
+    def delete_scope(self) -> None:
         self.stack.pop()
 
-    def delete_name(self, name: str):
+    def delete_name(self, name: str) -> None:
         self.stack[-1].remove(name)
 
     def global_names(self) -> set[str]:
@@ -69,7 +69,7 @@ def contains_persistent_id(id_: int, entities: Iterable[PersistableEntity]) -> b
 def create_command(
     class_name: str,
     command: MutableSequence[str],
-    environment: MutableMapping[str, str] = None,
+    environment: MutableMapping[str, str] | None = None,
     workdir: str | None = None,
     stdin: int | str | None = None,
     stdout: int | str = asyncio.subprocess.STDOUT,
@@ -77,7 +77,7 @@ def create_command(
 ) -> str:
     # Format stdin
     stdin = (
-        f" < {shlex.quote(stdin)}"
+        f" < {shlex.quote(str(stdin))}"
         if stdin is not None and stdin != asyncio.subprocess.DEVNULL
         else ""
     )
@@ -87,7 +87,7 @@ def create_command(
     if stderr == stdout:
         stderr = " 2>&1"
     elif stderr != asyncio.subprocess.STDOUT:
-        stderr = f" 2>{shlex.quote(stderr)}"
+        stderr = f" 2>{shlex.quote(str(stderr))}"
     else:
         stderr = ""
     # Format stdout
@@ -98,7 +98,7 @@ def create_command(
     elif stdout == asyncio.subprocess.DEVNULL:
         stdout = "/dev/null"
     elif stdout != asyncio.subprocess.STDOUT:
-        stdout = f" > {shlex.quote(stdout)}"
+        stdout = f" > {shlex.quote(str(stdout))}"
     else:
         stdout = ""
     if stderr == asyncio.subprocess.PIPE:
@@ -106,7 +106,7 @@ def create_command(
             f"The `{class_name}` does not support `stderr` pipe redirection."
         )
     # Build command
-    command = "".join(
+    return "".join(
         "{workdir}" "{environment}" "{command}" "{stdin}" "{stdout}" "{stderr}"
     ).format(
         workdir=f"cd {workdir} && " if workdir is not None else "",
@@ -122,7 +122,6 @@ def create_command(
         stdout=stdout,
         stderr=stderr,
     )
-    return command
 
 
 def get_job_step_name(job_name: str) -> str:
@@ -290,7 +289,7 @@ async def run_in_subprocess(
     command: MutableSequence[str],
     capture_output: bool,
     timeout: int | None,
-) -> tuple[Any | None, int] | None:
+) -> tuple[str, int] | None:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(" ".join(command)),
         env=os.environ | location.environment,

@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import argparse
 import os
 import re
+from collections.abc import Sequence
+from typing import Any
 
 import streamflow.ext.plugin
 
@@ -9,18 +13,29 @@ UNESCAPED_EQUAL = re.compile(r"(?<!\\)=")
 
 
 class _KeyValueAction(argparse.Action):
-    def __call__(self, _parser, namespace, values, option_string=None):
-        items = getattr(namespace, self.dest) or []
-        items.append(
-            {
-                k: v
-                for k, v in (
-                    UNESCAPED_EQUAL.split(val, maxsplit=1)
-                    for val in UNESCAPED_COMMA.split(values)
-                )
-            }
-        )
-        setattr(namespace, self.dest, items)
+    def __call__(
+        self,
+        _parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ) -> None:
+        if values is not None:
+            items = getattr(namespace, self.dest) or []
+            items.append(
+                {
+                    k: v
+                    for k, v in (
+                        UNESCAPED_EQUAL.split(val, maxsplit=1)
+                        for val in (
+                            UNESCAPED_COMMA.split(values)
+                            if isinstance(values, str)
+                            else values
+                        )
+                    )
+                }
+            )
+            setattr(namespace, self.dest, items)
 
 
 parser = argparse.ArgumentParser(description="StreamFlow Command Line")

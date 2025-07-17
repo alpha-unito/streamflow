@@ -15,7 +15,7 @@ StreamFlow relies on a persistent ``Database`` to store all the metadata regardi
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> PersistableEntity:
+    ) -> Self:
         ...
 
     async def save(

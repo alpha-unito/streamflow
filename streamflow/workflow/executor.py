@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, overload
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.workflow import Executor, Status
+from streamflow.core.workflow import Executor, Status, Token
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 from streamflow.workflow.utils import get_token_value
@@ -21,12 +21,19 @@ if TYPE_CHECKING:
 class StreamFlowExecutor(Executor):
     def __init__(self, workflow: Workflow):
         super().__init__(workflow)
-        self.executions: MutableSequence[asyncio.Task] = []
-        self.output_tasks: MutableMapping[str, asyncio.Task] = {}
+        self.executions: MutableSequence[asyncio.Task[None]] = []
+        self.output_tasks: MutableMapping[str, asyncio.Task[Token]] = {}
         self.received: MutableSequence[str] = []
         self.closed: bool = False
 
-    async def _handle_exception(self, task: asyncio.Task):
+    if TYPE_CHECKING:
+
+        @overload
+        async def _handle_exception(self, task: asyncio.Task[Token]) -> Token: ...
+        @overload
+        async def _handle_exception(self, task: asyncio.Task[None]) -> None: ...
+
+    async def _handle_exception(self, task: asyncio.Task[Token | None]) -> Token | None:
         try:
             return await task
         except asyncio.CancelledError:
@@ -35,8 +42,9 @@ class StreamFlowExecutor(Executor):
             logger.exception(exc)
             if not self.closed:
                 await self._shutdown()
+            return None
 
-    async def _shutdown(self):
+    async def _shutdown(self) -> None:
         # Terminate all steps
         await asyncio.gather(
             *(
@@ -58,7 +66,7 @@ class StreamFlowExecutor(Executor):
         for task in finished:
             if task.cancelled():
                 continue
-            task_name = cast(asyncio.Task, task).get_name()
+            task_name = task.get_name()
             if task_name not in self.workflow.output_ports:
                 continue
             token = task.result()

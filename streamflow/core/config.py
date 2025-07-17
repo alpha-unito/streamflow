@@ -4,16 +4,21 @@ import asyncio
 import json
 import posixpath
 from collections.abc import MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from referencing import Registry, Resource
+from typing_extensions import Self
 
 from streamflow.core.exception import WorkflowDefinitionException
 
 if TYPE_CHECKING:
+    from typing import TypeVar
+
     from streamflow.core.context import SchemaEntity, StreamFlowContext
     from streamflow.core.deployment import FilterConfig, Target
     from streamflow.core.persistence import DatabaseLoadingContext
+
+    SchemaEntityType = TypeVar("SchemaEntityType", bound=SchemaEntity)
 
 
 class Config:
@@ -30,7 +35,7 @@ class Config:
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Self:
         return cls(name=row["name"], type=row["type"], config=row["config"])
 
     async def save(self, context: StreamFlowContext):
@@ -43,7 +48,7 @@ class BindingConfig:
     def __init__(
         self,
         targets: MutableSequence[Target],
-        filters: MutableSequence[FilterConfig] = None,
+        filters: MutableSequence[FilterConfig] | None = None,
     ):
         self.targets: MutableSequence[Target] = targets
         self.filters: MutableSequence[FilterConfig] = filters or []
@@ -54,25 +59,19 @@ class BindingConfig:
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> BindingConfig:
+    ) -> Self:
         return cls(
-            targets=cast(
-                MutableSequence,
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(loading_context.load_target(context, t))
-                        for t in row["targets"]
-                    )
-                ),
+            targets=await asyncio.gather(
+                *(
+                    asyncio.create_task(loading_context.load_target(context, t))
+                    for t in row["targets"]
+                )
             ),
-            filters=cast(
-                MutableSequence,
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(loading_context.load_filter(context, f))
-                        for f in row["filters"]
-                    )
-                ),
+            filters=await asyncio.gather(
+                *(
+                    asyncio.create_task(loading_context.load_filter(context, f))
+                    for f in row["filters"]
+                )
             ),
         )
 
@@ -115,13 +114,13 @@ class Schema:
             raise WorkflowDefinitionException(
                 f"Version {version} is unsupported. The `version` clause should be equal to `v1.0`."
             )
-        return self.registry.get(self.configs[version])
+        return self.registry[self.configs[version]]
 
     def inject_ext(
         self,
-        classes: MutableMapping[str, type[SchemaEntity]],
+        classes: MutableMapping[str, type[SchemaEntityType]],
         definition_name: str,
-    ):
+    ) -> None:
         for name, entity in classes.items():
             if entity_schema := entity.get_schema():
                 entity_schema = self.add_schema(entity_schema, embed=True).contents

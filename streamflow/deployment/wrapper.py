@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any, AsyncContextManager
+from typing import AsyncContextManager
 
 from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
@@ -111,7 +111,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -119,7 +119,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         return await self.connector.run(
             location=location,
             command=command,

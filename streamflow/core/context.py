@@ -33,7 +33,7 @@ class StreamFlowContext:
         self.process_executor: ProcessPoolExecutor = ProcessPoolExecutor()
         self.scheduler: Scheduler | None = None
 
-    async def close(self):
+    async def close(self) -> None:
         try:
             await asyncio.gather(
                 asyncio.create_task(self.checkpoint_manager.close()),

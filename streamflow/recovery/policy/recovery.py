@@ -236,7 +236,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 for port_name in await mapper.get_output_ports(job_token):
                     if port_name in retry_request.output_tokens.keys():
                         new_token = retry_request.output_tokens[port_name]
-                        await mapper.replace_token(
+                        mapper.replace_token(
                             port_name,
                             new_token,
                             True,

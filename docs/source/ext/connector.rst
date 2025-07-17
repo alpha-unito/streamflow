@@ -74,7 +74,7 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         ...
 
     async def undeploy(

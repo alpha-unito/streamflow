@@ -16,7 +16,7 @@ from streamflow.core.deployment import (
     Target,
     WrapsConfig,
 )
-from streamflow.deployment.connector import LocalConnector
+from streamflow.deployment.connector.local import LocalConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 def _get_workdir(
     deployment: MutableMapping[str, Any], workflow_config: WorkflowConfig
-) -> str:
+) -> str | None:
     while (workdir := deployment.get("workdir")) is None and (
         wraps := deployment.get("wraps")
     ) is not None:

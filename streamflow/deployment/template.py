@@ -4,6 +4,8 @@ from collections.abc import MutableMapping
 
 from jinja2 import Template
 
+from streamflow.core.exception import WorkflowDefinitionException
+
 
 class CommandTemplateMap:
     def __init__(
@@ -22,11 +24,15 @@ class CommandTemplateMap:
         self,
         command: str,
         template: str | None = None,
-        environment: MutableMapping[str, str] = None,
-        workdir: str = None,
+        environment: MutableMapping[str, str] | None = None,
+        workdir: str | None = None,
         **kwargs,
     ) -> str:
-        return self.templates.get(template, self.templates["__DEFAULT__"]).render(
+        if template is not None and template not in self.templates:
+            raise WorkflowDefinitionException(f'Template "{template}" is not defined.')
+        return self.templates[
+            template if template is not None else "__DEFAULT__"
+        ].render(
             streamflow_command=command,
             streamflow_environment=(
                 " && ".join(

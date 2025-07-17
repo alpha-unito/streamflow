@@ -14,10 +14,10 @@ class ManyToOneTransformer(Transformer, ABC):
                 f"{self.name} step must contain a single output port."
             )
 
-    def get_output_name(self):
+    def get_output_name(self) -> str:
         return next(iter(self.output_ports))
 
-    async def run(self):
+    async def run(self) -> None:
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a single output port."
