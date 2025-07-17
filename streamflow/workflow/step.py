@@ -1461,10 +1461,7 @@ class ScheduleStep(BaseStep):
         locations: MutableSequence[ExecutionLocation],
         job: Job,
     ) -> None:
-        if (
-            allocation := self.workflow.context.scheduler.get_allocation(job.name)
-        ) is None:
-            raise WorkflowExecutionException(f"No allocation found for job {job.name}")
+        allocation = self.workflow.context.scheduler.get_allocation(job.name)
         path_processor = get_path_processor(connector)
         job.input_directory = _get_directory(
             path_processor, job.input_directory, allocation.target

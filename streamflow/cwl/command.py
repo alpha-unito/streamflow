@@ -63,23 +63,27 @@ from streamflow.workflow.utils import get_token_value
 
 
 def _adjust_cwl_output(
-    base_path: StreamFlowPath, path_processor: ModuleType, value: Any
+    base_path: StreamFlowPath, job_name: str, path_processor: ModuleType, value: Any
 ) -> Any:
     if isinstance(value, MutableSequence):
-        return [_adjust_cwl_output(base_path, path_processor, v) for v in value]
+        return [
+            _adjust_cwl_output(base_path, job_name, path_processor, v) for v in value
+        ]
     elif isinstance(value, MutableMapping):
         if utils.get_token_class(value) in ["File", "Directory"]:
-            if not (
-                (path := utils.get_path_from_token(value)) is None
-                or path_processor.isabs(path)
-            ):
+            if (path := utils.get_path_from_token(value)) is None:
+                raise WorkflowExecutionException(
+                    f"Job {job_name} cannot retrieve output. "
+                    f"The value should be a file, but the path field is not defined."
+                )
+            elif not path_processor.isabs(path):
                 path = base_path / path
                 value["path"] = path
                 value["location"] = f"file://{path}"
             return value
         else:
             return {
-                k: _adjust_cwl_output(base_path, path_processor, v)
+                k: _adjust_cwl_output(base_path, job_name, path_processor, v)
                 for k, v in value.items()
             }
     else:
@@ -87,6 +91,7 @@ def _adjust_cwl_output(
 
 
 def _adjust_input(
+    job_name: str,
     input_: Any,
     path_processor: ModuleType,
     src_path: str,
@@ -105,39 +110,44 @@ def _adjust_input(
     if isinstance(input_, MutableMapping):
         # Process the input if it is a file or an object
         if (token_class := utils.get_token_class(input_)) in ("File", "Directory"):
-            if (path := utils.get_path_from_token(input_)) is not None:
-                if path == src_path:
-                    input_["path"] = dst_path
-                    dirname, basename = path_processor.split(dst_path)
-                    input_["dirname"] = dirname
-                    input_["basename"] = basename
-                    input_["location"] = f"file://{dst_path}"
-                    if token_class == "File":  # nosec
-                        nameroot, nameext = path_processor.splitext(basename)
-                        input_["nameroot"] = nameroot
-                        input_["nameext"] = nameext
-                    return True
-                elif (
-                    token_class == "Directory"  # nosec
-                    and src_path.startswith(path)
-                    and "listing" in input_
-                ):
-                    _adjust_inputs(
-                        input_["listing"], path_processor, src_path, dst_path
-                    )
-                    return True
+            if (path := utils.get_path_from_token(input_)) is None:
+                raise WorkflowExecutionException(
+                    f"Job {job_name} cannot adjust the input. "
+                    "The value should be a file, but the path field is not defined."
+                )
+            elif path == src_path:
+                input_["path"] = dst_path
+                dirname, basename = path_processor.split(dst_path)
+                input_["dirname"] = dirname
+                input_["basename"] = basename
+                input_["location"] = f"file://{dst_path}"
+                if token_class == "File":  # nosec
+                    nameroot, nameext = path_processor.splitext(basename)
+                    input_["nameroot"] = nameroot
+                    input_["nameext"] = nameext
+                return True
+            elif (
+                token_class == "Directory"  # nosec
+                and src_path.startswith(path)
+                and "listing" in input_
+            ):
+                _adjust_inputs(
+                    job_name, input_["listing"], path_processor, src_path, dst_path
+                )
+                return True
         else:
             for inp in input_.values():
-                if _adjust_input(inp, path_processor, src_path, dst_path):
+                if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
                     return True
     elif isinstance(input_, MutableSequence):
         for inp in input_:
-            if _adjust_input(inp, path_processor, src_path, dst_path):
+            if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
                 return True
     return False
 
 
 def _adjust_inputs(
+    job_name: str,
     inputs: MutableSequence[MutableMapping[str, Any]],
     path_processor: ModuleType,
     src_path: str,
@@ -155,7 +165,7 @@ def _adjust_inputs(
     :return: None
     """
     for inp in inputs:
-        if _adjust_input(inp, path_processor, src_path, dst_path):
+        if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
             break
 
 
@@ -220,6 +230,7 @@ async def _check_cwl_output(job: Job, step: Step, result: Any) -> Any:
                             context=step.workflow.context,
                             location=location,
                         ),
+                        job_name=job.name,
                         path_processor=path_processor,
                         value=out,
                     )
@@ -400,6 +411,7 @@ async def _prepare_work_dir(
                     writable=writable,
                 )
                 _adjust_inputs(
+                    job_name=options.job.name,
                     inputs=options.context["inputs"].values(),
                     path_processor=path_processor,
                     src_path=src_path,
