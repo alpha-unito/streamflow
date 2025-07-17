@@ -11,6 +11,7 @@ from collections.abc import (
     MutableSequence,
     MutableSet,
 )
+from functools import cmp_to_key
 from types import ModuleType
 from typing import Any, cast
 
@@ -32,7 +33,7 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import get_entity_ids
+from streamflow.core.utils import compare_tags, get_entity_ids
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -884,16 +885,20 @@ class GatherStep(BaseStep):
         return next(n for n in self.input_ports if n != "__size__")
 
     async def _gather(self, key: str) -> None:
-        input_tokens = [self.size_map[key]]
-        input_tokens.extend(self.token_map[key])
         output_port = self.get_output_port()
         output_port.put(
             await self._persist_token(
                 token=ListToken(
-                    tag=key, value=sorted(self.token_map[key], key=lambda cur: cur.tag)
+                    tag=key,
+                    value=sorted(
+                        self.token_map[key],
+                        key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag)),
+                    ),
                 ),
                 port=output_port,
-                input_token_ids=get_entity_ids(input_tokens),
+                input_token_ids=get_entity_ids(
+                    [self.size_map[key], *self.token_map[key]]
+                ),
             )
         )
 
