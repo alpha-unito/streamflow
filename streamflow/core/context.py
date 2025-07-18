@@ -23,15 +23,36 @@ class SchemaEntity(ABC):
 
 
 class StreamFlowContext:
-    def __init__(self, config: MutableMapping[str, Any]):
+    def __init__(
+        self,
+        config: MutableMapping[str, Any],
+        checkpoint_manager_class: type[CheckpointManager],
+        database_class: type[Database],
+        data_manager_class: type[DataManager],
+        deployment_manager_class: type[DeploymentManager],
+        failure_manager_class: type[FailureManager],
+        scheduler_class: type[Scheduler],
+    ):
         self.config: MutableMapping[str, Any] = config
-        self.checkpoint_manager: CheckpointManager | None = None
-        self.database: Database | None = None
-        self.data_manager: DataManager | None = None
-        self.deployment_manager: DeploymentManager | None = None
-        self.failure_manager: FailureManager | None = None
+        self.checkpoint_manager: CheckpointManager = checkpoint_manager_class(
+            context=self, **config.get("checkpoint_manager", {}).get("config", {})
+        )
+        self.database: Database = database_class(
+            context=self, **config.get("database", {}).get("config", {})
+        )
+        self.data_manager: DataManager = data_manager_class(
+            context=self, **config.get("data_manager", {}).get("config", {})
+        )
+        self.deployment_manager: DeploymentManager = deployment_manager_class(
+            context=self, **config.get("deployment_manager", {}).get("config", {})
+        )
+        self.failure_manager: FailureManager = failure_manager_class(
+            context=self, **config.get("failure_manager", {}).get("config", {})
+        )
         self.process_executor: ProcessPoolExecutor = ProcessPoolExecutor()
-        self.scheduler: Scheduler | None = None
+        self.scheduler: Scheduler = scheduler_class(
+            context=self, **config.get("scheduler", {}).get("config", {})
+        )
 
     async def close(self) -> None:
         try:
