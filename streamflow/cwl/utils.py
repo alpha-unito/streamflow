@@ -15,6 +15,7 @@ import cwl_utils.expression
 import cwl_utils.parser
 import cwl_utils.parser.utils
 from cwl_utils.parser.cwl_v1_2_utils import CONTENT_LIMIT
+from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
@@ -503,7 +504,7 @@ async def create_remote_directory(
 
 
 def eval_expression(
-    expression: str,
+    expression: Any,
     context: MutableMapping[str, Any],
     full_js: bool = False,
     expression_lib: MutableSequence[str] | None = None,
@@ -851,9 +852,7 @@ async def process_secondary_files(
             sf_specs.append(secondary_file)
     for sf_value, sf_spec in zip(await asyncio.gather(*sf_tasks), sf_specs):
         if sf_value is not None:
-            sf_map[get_path_from_token(cast(MutableMapping[str, Any], sf_value))] = (
-                sf_value
-            )
+            sf_map[get_path_from_token(sf_value)] = sf_value
         else:
             required = eval_expression(
                 expression=sf_spec.required,
@@ -873,7 +872,7 @@ async def register_data(
     locations: MutableSequence[ExecutionLocation],
     base_path: str | None,
     token_value: MutableSequence[MutableMapping[str, Any]] | MutableMapping[str, Any],
-):
+) -> None:
     # If `token_value` is a list, process every item independently
     if isinstance(token_value, MutableSequence):
         await asyncio.gather(
@@ -1006,7 +1005,7 @@ def resolve_dependencies(
     strip_whitespace: bool = True,
 ) -> set[str]:
     if isinstance(expression, str) and ("$(" in expression or "${" in expression):
-        context = {"inputs": {}, "self": {}, "runtime": {}}
+        context: MutableMapping[str, Any] = {"inputs": {}, "self": {}, "runtime": {}}
         engine = DependencyResolver()
         cwl_utils.expression.interpolate(
             expression,
@@ -1098,16 +1097,16 @@ class SecondaryFile:
         self.pattern: str = pattern
         self.required: bool | str = required
 
-    def __eq__(self, other):
+    def __eq__(self, other: Self) -> bool:
         if not isinstance(other, SecondaryFile):
             return False
         else:
             return self.pattern == other.pattern
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.pattern)
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {"pattern": self.pattern, "required": self.required}
 
 

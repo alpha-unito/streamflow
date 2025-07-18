@@ -10,7 +10,9 @@ from collections.abc import (
     MutableSequence,
     MutableSet,
 )
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, AbstractSet, cast
+
+from typing_extensions import Self
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
@@ -29,7 +31,7 @@ if TYPE_CHECKING:
 def _reduce_storages(
     storages: Iterable[Storage], operator: Callable[[Storage, Any], Storage]
 ) -> MutableMapping[str, Storage]:
-    storage = {}
+    storage: MutableMapping[str, Storage] = {}
     for disk in storages:
         if disk.mount_point in storage.keys():
             storage[disk.mount_point] = operator(storage[disk.mount_point], disk)
@@ -89,7 +91,7 @@ class Hardware:
                 return disk
         raise KeyError(path)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Hardware(cores={self.cores}, memory={self.memory}, storage={self.storage})"
 
     def __add__(self, other: Any) -> Hardware:
@@ -107,7 +109,7 @@ class Hardware:
             ),
         )
 
-    def __ior__(self, other) -> None:
+    def __ior__(self, other: Hardware) -> None:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         self.cores += other.cores
@@ -118,14 +120,14 @@ class Hardware:
             else:
                 self.storage[key] |= disk
 
-    def __or__(self, other) -> Hardware:
+    def __or__(self, other: Hardware) -> Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         hardware = copy.deepcopy(self)
         hardware |= other
         return hardware
 
-    def __sub__(self, other: Any) -> Hardware:
+    def __sub__(self, other: Hardware) -> Hardware:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         return Hardware(
@@ -167,7 +169,7 @@ class HardwareRequirement(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ): ...
+    ) -> Self: ...
 
     @abstractmethod
     async def _save_additional_params(
@@ -183,8 +185,8 @@ class HardwareRequirement(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
-        type_ = cast(type[HardwareRequirement], utils.get_class_from_name(row["type"]))
+    ) -> Self:
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
@@ -226,7 +228,7 @@ class AvailableLocation:
         name: str,
         deployment: str,
         hostname: str,
-        local: bool | None = False,
+        local: bool = False,
         service: str | None = None,
         slots: int | None = None,
         stacked: bool = False,
@@ -276,7 +278,7 @@ class AvailableLocation:
     def service(self) -> str | None:
         return self.location.service
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.location.__str__()
 
 
@@ -373,7 +375,7 @@ class Storage:
         self,
         mount_point: str,
         size: float,
-        paths: MutableSet[str] | None = None,
+        paths: AbstractSet[str] | None = None,
         bind: str | None = None,
     ):
         """
@@ -393,10 +395,10 @@ class Storage:
         self.size: float = size
         self.bind: str | None = bind
 
-    def add_path(self, path: str):
+    def add_path(self, path: str) -> None:
         self.paths.add(path)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"Storage(mount_point={self.mount_point}, size={self.size}, bind={self.bind}, paths={self.paths})"
 
     def __add__(self, other: Any) -> Storage:
@@ -413,7 +415,7 @@ class Storage:
             bind=self.bind,
         )
 
-    def __ior__(self, other) -> None:
+    def __ior__(self, other: Storage) -> None:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
@@ -423,7 +425,7 @@ class Storage:
         self.size = max(self.size, other.size)
         self.paths |= other.paths
 
-    def __or__(self, other) -> Storage:
+    def __or__(self, other: Storage) -> Storage:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:

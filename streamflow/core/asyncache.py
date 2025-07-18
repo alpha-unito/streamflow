@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Helpers to use [cachetools](https://github.com/tkem/cachetools) with
 asyncio.
@@ -8,11 +10,18 @@ import inspect
 
 __all__ = ["cached", "cachedmethod"]
 
+from contextlib import AbstractContextManager
+from typing import Any
+
 import cachetools
 
 
 # noinspection PyUnresolvedReferences
-def cached(cache, key=cachetools.keys.hashkey, lock=None):
+def cached(
+    cache: cachetools.Cache,
+    key=cachetools.keys.hashkey,
+    lock: AbstractContextManager[Any, bool | None] | None = None,
+):
     """
     Decorator to wrap a function or a coroutine with a memoizing callable
     that saves results in a cache.

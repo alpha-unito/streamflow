@@ -341,9 +341,7 @@ class GraphMapper:
             for port_name in empty_ports:
                 self.remove_port(port_name)
 
-    async def replace_token(
-        self, port_name: str, token: Token, is_available: bool
-    ) -> None:
+    def replace_token(self, port_name: str, token: Token, is_available: bool) -> None:
         old_token_id = self.get_equal_token(port_name, token)
         if old_token_id is None:
             raise FailureHandlingException("Impossible replace token")

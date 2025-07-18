@@ -11,10 +11,11 @@ from asyncio.subprocess import STDOUT
 from collections.abc import MutableMapping, MutableSequence
 from decimal import Decimal
 from types import ModuleType
-from typing import IO, Any, cast
+from typing import Any, cast
 
 from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
+from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation
@@ -28,6 +29,7 @@ from streamflow.core.utils import flatten_list, get_tag
 from streamflow.core.workflow import (
     Command,
     CommandOptions,
+    CommandOutputProcessor,
     CommandToken,
     CommandTokenProcessor,
     Job,
@@ -61,21 +63,27 @@ from streamflow.workflow.utils import get_token_value
 
 
 def _adjust_cwl_output(
-    base_path: StreamFlowPath, path_processor: ModuleType, value: Any
+    base_path: StreamFlowPath, job_name: str, path_processor: ModuleType, value: Any
 ) -> Any:
     if isinstance(value, MutableSequence):
-        return [_adjust_cwl_output(base_path, path_processor, v) for v in value]
+        return [
+            _adjust_cwl_output(base_path, job_name, path_processor, v) for v in value
+        ]
     elif isinstance(value, MutableMapping):
         if utils.get_token_class(value) in ["File", "Directory"]:
-            path = utils.get_path_from_token(value)
-            if not path_processor.isabs(path):
+            if (path := utils.get_path_from_token(value)) is None:
+                raise WorkflowExecutionException(
+                    f"Job {job_name} cannot retrieve output. "
+                    f"The value should be a file, but the path field is not defined."
+                )
+            elif not path_processor.isabs(path):
                 path = base_path / path
                 value["path"] = path
                 value["location"] = f"file://{path}"
             return value
         else:
             return {
-                k: _adjust_cwl_output(base_path, path_processor, v)
+                k: _adjust_cwl_output(base_path, job_name, path_processor, v)
                 for k, v in value.items()
             }
     else:
@@ -83,6 +91,7 @@ def _adjust_cwl_output(
 
 
 def _adjust_input(
+    job_name: str,
     input_: Any,
     path_processor: ModuleType,
     src_path: str,
@@ -101,7 +110,12 @@ def _adjust_input(
     if isinstance(input_, MutableMapping):
         # Process the input if it is a file or an object
         if (token_class := utils.get_token_class(input_)) in ("File", "Directory"):
-            if (path := utils.get_path_from_token(input_)) == src_path:
+            if (path := utils.get_path_from_token(input_)) is None:
+                raise WorkflowExecutionException(
+                    f"Job {job_name} cannot adjust the input. "
+                    "The value should be a file, but the path field is not defined."
+                )
+            elif path == src_path:
                 input_["path"] = dst_path
                 dirname, basename = path_processor.split(dst_path)
                 input_["dirname"] = dirname
@@ -117,20 +131,23 @@ def _adjust_input(
                 and src_path.startswith(path)
                 and "listing" in input_
             ):
-                _adjust_inputs(input_["listing"], path_processor, src_path, dst_path)
+                _adjust_inputs(
+                    job_name, input_["listing"], path_processor, src_path, dst_path
+                )
                 return True
         else:
             for inp in input_.values():
-                if _adjust_input(inp, path_processor, src_path, dst_path):
+                if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
                     return True
     elif isinstance(input_, MutableSequence):
         for inp in input_:
-            if _adjust_input(inp, path_processor, src_path, dst_path):
+            if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
                 return True
     return False
 
 
 def _adjust_inputs(
+    job_name: str,
     inputs: MutableSequence[MutableMapping[str, Any]],
     path_processor: ModuleType,
     src_path: str,
@@ -148,11 +165,13 @@ def _adjust_inputs(
     :return: None
     """
     for inp in inputs:
-        if _adjust_input(inp, path_processor, src_path, dst_path):
+        if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
             break
 
 
-def _build_command_output_processor(name: str, step: Step, value: Any):
+def _build_command_output_processor(
+    name: str, step: Step, value: Any
+) -> CommandOutputProcessor:
     if isinstance(value, MutableSequence):
         return CWLMapCommandOutputProcessor(
             name=name,
@@ -211,6 +230,7 @@ async def _check_cwl_output(job: Job, step: Step, result: Any) -> Any:
                             context=step.workflow.context,
                             location=location,
                         ),
+                        job_name=job.name,
                         path_processor=path_processor,
                         value=out,
                     )
@@ -274,11 +294,9 @@ async def _get_source_location(
 
 def _get_value_for_command(token: Any, item_separator: str | None) -> Any:
     if isinstance(token, MutableSequence):
-        value = []
-        for element in token:
-            value.append(_get_value_for_command(element, item_separator))
-        if item_separator is not None:
-            value = item_separator.join([_get_value_repr(v) for v in value])
+        value = [_get_value_for_command(element, item_separator) for element in token]
+        if value and item_separator is not None:
+            return item_separator.join([_get_value_repr(v) for v in value])
         return value or None
     elif isinstance(token, MutableMapping):
         if (path := utils.get_path_from_token(token)) is not None:
@@ -291,7 +309,7 @@ def _get_value_for_command(token: Any, item_separator: str | None) -> Any:
         return token
 
 
-def _get_value_repr(value: Any) -> str | None:
+def _get_value_repr(value: Any) -> str:
     if isinstance(value, ScalarFloat):
         rep = RoundTripRepresenter()
         dec_value = Decimal(rep.represent_scalar_float(value).value)
@@ -393,6 +411,7 @@ async def _prepare_work_dir(
                     writable=writable,
                 )
                 _adjust_inputs(
+                    job_name=options.job.name,
                     inputs=options.context["inputs"].values(),
                     path_processor=path_processor,
                     src_path=src_path,
@@ -614,16 +633,16 @@ class CWLCommand(TokenizedCommand):
         self.absolute_initial_workdir_allowed: bool = absolute_initial_workdir_allowed
         self.base_command: MutableSequence[str] = base_command or []
         self.environment: MutableMapping[str, str] = {}
-        self.expression_lib: MutableSequence[str] = expression_lib
+        self.expression_lib: MutableSequence[str] = expression_lib or []
         self.failure_codes: MutableSequence[int] | None = failure_codes
         self.full_js: bool = full_js
         self.initial_work_dir: str | MutableSequence[Any] | None = initial_work_dir
         self.inplace_update: bool = inplace_update
         self.is_shell_command: bool = is_shell_command
         self.success_codes: MutableSequence[int] | None = success_codes
-        self.stderr: str | IO = step_stderr
-        self.stdin: str | IO = step_stdin
-        self.stdout: str | IO = step_stdout
+        self.stderr: str | None = step_stderr
+        self.stdin: str | None = step_stdin
+        self.stdout: str | None = step_stdout
         self.time_limit: int | str | None = time_limit
 
     def _get_timeout(self, job: Job) -> int | None:
@@ -668,9 +687,9 @@ class CWLCommand(TokenizedCommand):
             "inplace_update": self.inplace_update,
             "is_shell_command": self.is_shell_command,
             "success_codes": self.success_codes,
-            "stderr": self.stderr,  # TODO: manage when is IO type
-            "stdin": self.stdin,  # TODO: manage when is IO type
-            "stdout": self.stdout,  # TODO: manage when is IO type
+            "stderr": self.stderr,
+            "stdin": self.stdin,
+            "stdout": self.stdout,
             "time_limit": self.time_limit,
         }
 
@@ -681,7 +700,7 @@ class CWLCommand(TokenizedCommand):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
-    ) -> CWLCommand:
+    ) -> Self:
         return cls(
             step=step,
             absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
@@ -776,7 +795,7 @@ class CWLCommand(TokenizedCommand):
                     step=self.step,
                 ),
             )
-            inputs = dict(
+            inputs: MutableMapping[str, Token] = dict(
                 zip(
                     job.inputs.keys(),
                     await asyncio.gather(
@@ -854,10 +873,10 @@ class CWLCommand(TokenizedCommand):
                 ),
             ]
         # If step is assigned to multiple locations, add the STREAMFLOW_HOSTS environment variable
-        if len(locations) > 1:
-            parsed_env["STREAMFLOW_HOSTS"] = ",".join(
-                [loc.hostname for loc in locations]
-            )
+        if len(locations) > 1 and (
+            hostnames := [loc.hostname for loc in locations if loc.hostname is not None]
+        ):
+            parsed_env["STREAMFLOW_HOSTS"] = ",".join(hostnames)
         # Process streams
         stdin = utils.eval_expression(
             expression=self.stdin,
@@ -967,10 +986,14 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
 
     def bind(
         self,
-        token: Token | None,
+        token: Token,
         position: int | None,
-        options: CWLCommandOptions,
-    ) -> CommandToken | None:
+        options: CommandOptions,
+    ) -> CommandToken:
+        if not isinstance(options, CWLCommandOptions):
+            raise TypeError(
+                "The `options` argument must be a `CWLCommandOptions` instance"
+            )
         # Obtain token value
         if isinstance(self.expression, str):
             value = utils.eval_expression(
@@ -1058,7 +1081,7 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Self:
         return cls(
             name=row["name"],
             expression=row["expression"],
@@ -1115,7 +1138,7 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Self:
         return cls(
             name=row["name"],
             token_type=row["token_type"],
@@ -1129,7 +1152,7 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
         }
 
     def bind(
-        self, token: Token | None, position: int | None, options: CommandOptions
+        self, token: Token, position: int | None, options: CommandOptions
     ) -> CommandToken:
         value = get_token_value(token)
         return CommandToken(
@@ -1144,8 +1167,12 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
 
 class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
     def _update_options(
-        self, options: CWLCommandOptions, token: Token
+        self, options: CommandOptions, token: Token
     ) -> CWLCommandOptions:
+        if not isinstance(options, CWLCommandOptions):
+            raise TypeError(
+                "The `options` argument must be a `CWLCommandOptions` instance"
+            )
         return CWLCommandOptions(
             context=cast(dict[str, Any], options.context)
             | {"inputs": {self.name: get_token_value(token)}},
@@ -1156,8 +1183,12 @@ class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
 
 class CWLMapCommandTokenProcessor(MapCommandTokenProcessor):
     def _update_options(
-        self, options: CWLCommandOptions, token: Token
+        self, options: CommandOptions, token: Token
     ) -> CWLCommandOptions:
+        if not isinstance(options, CWLCommandOptions):
+            raise TypeError(
+                "The `options` argument must be a `CWLCommandOptions` instance"
+            )
         value = get_token_value(token)
         return CWLCommandOptions(
             context=cast(dict[str, Any], options.context)
@@ -1259,7 +1290,7 @@ class CWLExpressionCommand(Command):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
-    ) -> CWLExpressionCommand:
+    ) -> Self:
         return cls(
             step=step,
             absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],

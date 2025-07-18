@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import cwl_utils.file_formats
 from schema_salad.exceptions import ValidationException
+from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, LocalTarget, Target
@@ -33,7 +34,9 @@ from streamflow.log_handler import logger
 from streamflow.workflow.token import ListToken, ObjectToken
 
 
-def _check_default_processor(processor: CWLCommandOutputProcessor, token_value: Any):
+def _check_default_processor(
+    processor: CWLCommandOutputProcessor, token_value: Any
+) -> bool:
     try:
         _check_token_type(
             name=processor.name,
@@ -52,7 +55,7 @@ def _check_token_type(
     name: str,
     token_value: Any,
     token_type: str | MutableSequence[str],
-    enum_symbols: MutableSequence[str] | None,
+    enum_symbols: MutableSequence[str],
     optional: bool,
     check_file: bool,
 ) -> None:
@@ -104,7 +107,7 @@ class CWLCommandOutput(CommandOutput):
         super().__init__(value, status)
         self.exit_code: int = exit_code
 
-    def update(self, value: Any):
+    def update(self, value: Any) -> CWLCommandOutput:
         return CWLCommandOutput(
             value=value, status=self.status, exit_code=self.exit_code
         )
@@ -129,9 +132,9 @@ class CWLTokenProcessor(TokenProcessor):
         streamable: bool = False,
     ):
         super().__init__(name, workflow)
-        self.token_type: str = token_type
+        self.token_type: str | None = token_type
         self.check_type: bool = check_type
-        self.enum_symbols: MutableSequence[str] | None = enum_symbols
+        self.enum_symbols: MutableSequence[str] = enum_symbols or []
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
         self.full_js: bool = full_js
@@ -148,7 +151,7 @@ class CWLTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLTokenProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -325,7 +328,7 @@ class CWLTokenProcessor(TokenProcessor):
         if utils.get_token_class(token.value) in ["File", "Directory"]:
             token = token.update(await self._process_file_token(inputs, token.value))
         # Check type
-        if self.check_type and self.token_type:
+        if self.check_type and self.token_type is not None:
             if isinstance(token.value, MutableSequence):
                 for v in token.value:
                     _check_token_type(
@@ -371,7 +374,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     ):
         super().__init__(name, workflow, target)
         self.token_type: str | MutableSequence[str] | None = token_type
-        self.enum_symbols: MutableSequence[str] | None = enum_symbols
+        self.enum_symbols: MutableSequence[str] = enum_symbols or []
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
         self.full_js: bool = full_js
@@ -390,7 +393,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CommandOutputProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -753,7 +756,7 @@ class CWLMapTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLMapTokenProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -817,7 +820,7 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CommandOutputProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -898,7 +901,7 @@ class CWLObjectTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLObjectTokenProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -995,7 +998,7 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CommandOutputProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -1126,7 +1129,9 @@ class CWLUnionTokenProcessor(TokenProcessor):
     ):
         super().__init__(name, workflow)
         self.processors: MutableSequence[TokenProcessor] = processors
-        self.check_processor: MutableMapping[type[TokenProcessor], Callable] = {
+        self.check_processor: MutableMapping[
+            type[TokenProcessor], Callable[[TokenProcessor, Any], bool]
+        ] = {
             CWLTokenProcessor: self._check_default_processor,
             CWLObjectTokenProcessor: self._check_object_processor,
             CWLMapTokenProcessor: self._check_map_processor,
@@ -1134,7 +1139,9 @@ class CWLUnionTokenProcessor(TokenProcessor):
         }
 
     # noinspection PyMethodMayBeStatic
-    def _check_default_processor(self, processor: CWLTokenProcessor, token_value: Any):
+    def _check_default_processor(
+        self, processor: CWLTokenProcessor, token_value: Any
+    ) -> bool:
         try:
             _check_token_type(
                 name=processor.name,
@@ -1148,7 +1155,9 @@ class CWLUnionTokenProcessor(TokenProcessor):
         except WorkflowExecutionException:
             return False
 
-    def _check_map_processor(self, processor: CWLMapTokenProcessor, token_value: Any):
+    def _check_map_processor(
+        self, processor: CWLMapTokenProcessor, token_value: Any
+    ) -> bool:
         if isinstance(token_value, MutableSequence):
             if len(token_value) > 0:
                 return self.check_processor[type(processor.processor)](
@@ -1161,7 +1170,7 @@ class CWLUnionTokenProcessor(TokenProcessor):
 
     def _check_object_processor(
         self, processor: CWLObjectTokenProcessor, token_value: Any
-    ):
+    ) -> bool:
         return isinstance(token_value, MutableMapping) and all(
             k in processor.processors
             and self.check_processor[type(processor.processors[k])](
@@ -1172,7 +1181,7 @@ class CWLUnionTokenProcessor(TokenProcessor):
 
     def _check_union_processor(
         self, processor: CWLUnionTokenProcessor, token_value: Any
-    ):
+    ) -> bool:
         return any(
             self.check_processor[type(p)](p, token_value) for p in processor.processors
         )
@@ -1183,7 +1192,7 @@ class CWLUnionTokenProcessor(TokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLUnionTokenProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -1239,7 +1248,9 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
     ):
         super().__init__(name, workflow)
         self.processors: MutableSequence[CommandOutputProcessor] = processors
-        self.check_processor: MutableMapping[type[CommandOutputProcessor], Callable] = {
+        self.check_processor: MutableMapping[
+            type[CommandOutputProcessor], Callable[[CommandOutputProcessor, Any], bool]
+        ] = {
             CWLCommandOutputProcessor: _check_default_processor,
             CWLObjectCommandOutputProcessor: self._check_object_processor,
             CWLMapCommandOutputProcessor: self._check_map_processor,
@@ -1249,7 +1260,7 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
     # noinspection PyMethodMayBeStatic
     def _check_map_processor(
         self, processor: CWLMapCommandOutputProcessor, token_value: Any
-    ):
+    ) -> bool:
         if isinstance(token_value, MutableSequence):
             if len(token_value) > 0:
                 return self.check_processor[type(processor.processor)](
@@ -1262,7 +1273,7 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
 
     def _check_object_processor(
         self, processor: CWLObjectCommandOutputProcessor, token_value: Any
-    ):
+    ) -> bool:
         return isinstance(token_value, MutableMapping) and all(
             k in processor.processors
             and self.check_processor[type(processor.processors[k])](
@@ -1273,7 +1284,7 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
 
     def _check_union_processor(
         self, processor: CWLUnionCommandOutputProcessor, token_value: Any
-    ):
+    ) -> bool:
         return any(
             self.check_processor[type(p)](p, token_value) for p in processor.processors
         )
@@ -1301,7 +1312,7 @@ class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CommandOutputProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(

@@ -4,8 +4,10 @@ import asyncio
 import json
 import os
 import posixpath
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Iterable, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any, cast
+
+from typing_extensions import Self
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
@@ -148,7 +150,7 @@ def create_deploy_step(
 
 def create_schedule_step(
     workflow: Workflow,
-    deploy_steps: MutableSequence[DeployStep],
+    deploy_steps: Iterable[DeployStep],
     cls: type[ScheduleStep] | None = None,
     binding_config: BindingConfig = None,
     hardware_requirement: HardwareRequirement = None,
@@ -350,7 +352,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> EvalCommandOutputProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -501,7 +503,7 @@ class InjectorFailureCommand(Command):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
-    ) -> InjectorFailureCommand:
+    ) -> Self:
         return cls(
             step=step,
             command=row["command"],
@@ -552,7 +554,7 @@ class InjectorFailureScheduleStep(ScheduleStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> InjectorFailureScheduleStep:
+    ) -> Self:
         params = row["params"]
         if hardware_requirement := params.get("hardware_requirement"):
             hardware_requirement = await HardwareRequirement.load(
@@ -644,7 +646,7 @@ class InjectorFailureTransferStep(TransferStep):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> InjectorFailureTransferStep:
+    ) -> Self:
         params = row["params"]
         return cls(
             name=row["name"],

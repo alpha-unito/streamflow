@@ -14,7 +14,7 @@ from streamflow.scheduling.policy import policy_classes
 
 
 class SfSchema(Schema):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(
             {
                 "v1.0": "https://streamflow.di.unito.it/schemas/config/v1.0/config_schema.json"

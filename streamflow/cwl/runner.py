@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import uuid
+from collections.abc import Sequence
 
 import streamflow.cwl.main
 import streamflow.ext
@@ -54,7 +55,7 @@ parser.add_argument(
 )
 
 
-async def _async_main(args: argparse.Namespace):
+async def _async_main(args: argparse.Namespace) -> None:
     load_extensions()
     validator = SfValidator()
     args.name = args.name or str(uuid.uuid4())
@@ -96,24 +97,24 @@ async def _async_main(args: argparse.Namespace):
         await context.close()
 
 
-def main(args) -> int:
+def main(args: Sequence[str]) -> int:
     try:
-        args = parser.parse_args(args)
-        if args.version:
+        parsed_args = parser.parse_args(args)
+        if parsed_args.version:
             from streamflow.version import VERSION
 
             print(f"StreamFlow version {VERSION}")
             return 0
-        if args.quiet:
+        if parsed_args.quiet:
             logger.setLevel(logging.WARNING)
-        elif args.debug:
+        elif parsed_args.debug:
             logger.setLevel(logging.DEBUG)
-        asyncio.run(_async_main(args))
+        asyncio.run(_async_main(parsed_args))
         return 0
     except SystemExit as se:
         if se.code != 0:
             logger.exception(se)
-        return se.code
+        return int(se.code) if se.code is not None else 1
     except Exception as e:
         logger.exception(e)
         return 1
@@ -121,7 +122,7 @@ def main(args) -> int:
         return 1
 
 
-def run():
+def run() -> int:
     return main(sys.argv[1:])
 
 

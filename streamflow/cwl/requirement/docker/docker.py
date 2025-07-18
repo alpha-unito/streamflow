@@ -115,7 +115,7 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         self.cgroupParent: str | None = cgroupParent
         self.cgroupns: str | None = cgroupns
         self.cidfile: str | None = cidfile
-        self.command: MutableSequence[str] = command
+        self.command: MutableSequence[str] | None = command
         self.cpuPeriod: int | None = cpuPeriod
         self.cpuQuota: int | None = cpuQuota
         self.cpuRTPeriod: int | None = cpuRTPeriod

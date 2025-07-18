@@ -70,7 +70,7 @@ class CheckpointManager(SchemaEntity):
         self.context: StreamFlowContext = context
 
     @abstractmethod
-    async def close(self): ...
+    async def close(self) -> None: ...
 
     @abstractmethod
     def register(self, data_location: DataLocation) -> None: ...
@@ -115,7 +115,7 @@ class RecoveryPolicy:
 class RetryRequest:
     __slots__ = ("job_token", "lock", "output_tokens", "version", "workflow")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.job_token: JobToken | None = None
         self.lock: asyncio.Lock = asyncio.Lock()
         self.output_tokens: MutableMapping[str, Token] = {}

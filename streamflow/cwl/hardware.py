@@ -5,6 +5,8 @@ import os
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any
 
+from typing_extensions import Self
+
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement, Storage
@@ -41,7 +43,7 @@ class CWLHardwareRequirement(HardwareRequirement):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLHardwareRequirement:
+    ) -> Self:
         return cls(
             cwl_version="",
             cores=row["cores"],
@@ -76,16 +78,16 @@ class CWLHardwareRequirement(HardwareRequirement):
             )
         )
 
-    def get_cores(self, context):
+    def get_cores(self, context: MutableMapping[str, Any]) -> float:
         return self._process_requirement(self.cores, context)
 
-    def get_memory(self, context):
+    def get_memory(self, context: MutableMapping[str, Any]) -> float:
         return self._process_requirement(self.memory, context)
 
-    def get_outdir_size(self, context):
+    def get_outdir_size(self, context: MutableMapping[str, Any]) -> float:
         return self._process_requirement(self.outdir, context)
 
-    def get_tmpdir_size(self, context):
+    def get_tmpdir_size(self, context: MutableMapping[str, Any]) -> float:
         return self._process_requirement(self.tmpdir, context)
 
     def eval(self, job: Job) -> Hardware:

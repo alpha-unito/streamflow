@@ -9,11 +9,11 @@ from streamflow.core.data import StreamWrapper
 
 
 class BaseStreamWrapper(StreamWrapper):
-    def __init__(self, stream):
+    def __init__(self, stream) -> None:
         super().__init__(stream)
         self.closed = False
 
-    async def close(self):
+    async def close(self) -> None:
         if self.closed:
             return
         self.closed = True
@@ -27,7 +27,7 @@ class BaseStreamWrapper(StreamWrapper):
 
 
 class StreamReaderWrapper(StreamWrapper):
-    async def close(self):
+    async def close(self) -> None:
         pass
 
     async def read(self, size: int | None = None):
@@ -38,7 +38,7 @@ class StreamReaderWrapper(StreamWrapper):
 
 
 class StreamWriterWrapper(StreamWrapper):
-    async def close(self):
+    async def close(self) -> None:
         self.stream.close()
         await self.stream.wait_closed()
 

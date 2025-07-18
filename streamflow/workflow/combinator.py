@@ -4,6 +4,8 @@ from collections import deque
 from collections.abc import AsyncIterable, MutableMapping, MutableSequence
 from typing import Any, cast
 
+from typing_extensions import Self
+
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
@@ -24,7 +26,7 @@ class CartesianProductCombinator(Combinator):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CartesianProductCombinator:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -210,7 +212,7 @@ class LoopTerminationCombinator(DotProductCombinator):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> LoopTerminationCombinator:
+    ) -> Self:
         combinator = cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),

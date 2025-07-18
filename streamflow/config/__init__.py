@@ -1,6 +1,8 @@
+from collections.abc import MutableSequence
+from importlib.abc import Traversable
 from importlib.resources import files
 
-ext_schemas = [
+ext_schemas: MutableSequence[Traversable] = [
     files("streamflow.deployment.connector")
     .joinpath("schemas")
     .joinpath("base")

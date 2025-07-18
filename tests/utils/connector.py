@@ -80,7 +80,7 @@ class FailureConnector(Connector):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         raise FailureConnectorException("FailureConnector run")
 
     async def undeploy(self, external: bool) -> None:

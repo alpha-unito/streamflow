@@ -5,6 +5,8 @@ from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
+from typing_extensions import Self
+
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.persistence import DatabaseLoadingContext
@@ -29,7 +31,7 @@ class MapCommandTokenProcessor(CommandTokenProcessor):
         super().__init__(name)
         self.processor: CommandTokenProcessor = processor
 
-    def _check_list(self, token: Token):
+    def _check_list(self, token: Token) -> None:
         if not isinstance(token, ListToken):
             raise WorkflowDefinitionException(
                 f"A {self.__class__.__name__} object can only be used to process list inputs"
@@ -41,7 +43,7 @@ class MapCommandTokenProcessor(CommandTokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Self:
         return cls(
             name=row["name"],
             processor=await CommandTokenProcessor.load(
@@ -61,7 +63,7 @@ class MapCommandTokenProcessor(CommandTokenProcessor):
 
     def bind(
         self,
-        token: Token | None,
+        token: Token,
         position: int | None,
         options: CommandOptions,
     ) -> ListCommandToken:
@@ -100,7 +102,7 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
         super().__init__(name)
         self.processors: MutableMapping[str, CommandTokenProcessor] = processors
 
-    def _check_dict(self, token: Token):
+    def _check_dict(self, token: Token) -> None:
         if not isinstance(token, ObjectToken):
             raise WorkflowDefinitionException(
                 f"A {self.__class__.__name__} object can only be used to process dictionary inputs"
@@ -112,7 +114,7 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Self:
         return cls(
             name=row["name"],
             processors={
@@ -158,7 +160,7 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
 
     def bind(
         self,
-        token: Token | None,
+        token: Token,
         position: int | None,
         options: CommandOptions,
     ) -> ObjectCommandToken:
@@ -222,7 +224,7 @@ class TokenizedCommand(Command, ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
-    ):
+    ) -> Self:
         return cls(
             step=step,
             processors=await cls._load_command_token_processors(
@@ -260,7 +262,7 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Self:
         return cls(
             name=row["name"],
             processors=cast(
@@ -292,7 +294,7 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
 
     def bind(
         self,
-        token: Token | None,
+        token: Token,
         position: int | None,
         options: CommandOptions,
     ) -> CommandToken:

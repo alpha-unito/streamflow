@@ -27,7 +27,7 @@ from streamflow.deployment.template import CommandTemplateMap
 from streamflow.log_handler import logger
 
 
-def parse_hostname(hostname):
+def parse_hostname(hostname: str) -> tuple[str, int]:
     if ":" in hostname:
         hostname, port = hostname.split(":")
         port = int(port)
@@ -91,7 +91,7 @@ class SSHContext:
             connect_timeout=config.connect_timeout,
         )
 
-    async def close(self):
+    async def close(self) -> None:
         if self._ssh_connection is not None:
             if (
                 logger.isEnabledFor(logging.WARNING)
@@ -138,7 +138,7 @@ class SSHContext:
     def get_hostname(self) -> str:
         return self._config.hostname
 
-    async def reset(self):
+    async def reset(self) -> None:
         await self.close()
         self.connection_attempts += 1
         self._connect_event.clear()
@@ -268,7 +268,7 @@ class SSHContextFactory:
         self._retries = retries
         self._retry_delay = retry_delay
 
-    async def close(self):
+    async def close(self) -> None:
         await asyncio.gather(*(asyncio.create_task(c.close()) for c in self._contexts))
 
     def get(
@@ -279,7 +279,7 @@ class SSHContextFactory:
         stdout: int = asyncio.subprocess.PIPE,
         stderr: int = asyncio.subprocess.PIPE,
         encoding: str | None = "utf-8",
-    ):
+    ) -> SSHContextManager:
         return SSHContextManager(
             condition=self._condition,
             contexts=self._contexts,
@@ -315,7 +315,7 @@ class SSHStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
 
 
 class SSHStreamReaderWrapperContextManager(SSHStreamWrapperContextManager):
-    async def __aenter__(self):
+    async def __aenter__(self) -> StreamReaderWrapper:
         self.ssh_context = self.ssh_context_factory.get(
             command=" ".join(self.command),
             environment=self.environment,
@@ -328,7 +328,7 @@ class SSHStreamReaderWrapperContextManager(SSHStreamWrapperContextManager):
 
 
 class SSHStreamWriterWrapperContextManager(SSHStreamWrapperContextManager):
-    async def __aenter__(self):
+    async def __aenter__(self) -> StreamWriterWrapper:
         self.ssh_context = self.ssh_context_factory.get(
             command=" ".join(self.command),
             environment=self.environment,
@@ -352,7 +352,7 @@ class SSHConfig:
         ssh_key_passphrase_file: str | None,
         tunnel: SSHConfig | None,
         username: str,
-    ):
+    ) -> None:
         self.check_host_key: bool = check_host_key
         self.client_keys: MutableSequence[str] = client_keys
         self.connect_timeout: int = connect_timeout
@@ -508,14 +508,14 @@ class SSHConnector(BaseConnector):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
         stderr: int | str = asyncio.subprocess.STDOUT,
         job_name: str | None = None,
-    ):
-        command = utils.create_command(
+    ) -> str:
+        command_str = utils.create_command(
             class_name=self.__class__.__name__,
             command=command,
             environment=environment,
@@ -527,12 +527,14 @@ class SSHConnector(BaseConnector):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "EXECUTING command {} on {}{}".format(
-                    command, location, f" for job {job_name}" if job_name else ""
+                    command_str, location, f" for job {job_name}" if job_name else ""
                 )
             )
-        return utils.encode_command(command)
+        return utils.encode_command(command_str)
 
-    def _get_config(self, node: str | MutableMapping[str, Any]) -> SSHConfig | None:
+    def _get_config(
+        self, node: str | MutableMapping[str, Any] | None
+    ) -> SSHConfig | None:
         if node is None:
             return None
         elif isinstance(node, str):
@@ -584,7 +586,9 @@ class SSHConnector(BaseConnector):
             encoding=encoding,
         )
 
-    def _get_ssh_context_factory(self, location: ExecutionLocation):
+    def _get_ssh_context_factory(
+        self, location: ExecutionLocation
+    ) -> SSHContextFactory:
         if self.dataTransferConfig:
             if location not in self.data_transfer_context_factories:
                 self.data_transfer_context_factories[location.name] = SSHContextFactory(
@@ -666,7 +670,7 @@ class SSHConnector(BaseConnector):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -674,7 +678,7 @@ class SSHConnector(BaseConnector):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         command = self._get_command(
             location=location,
             command=command,

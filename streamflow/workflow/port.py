@@ -36,12 +36,14 @@ class FilterTokenPort(Port):
         self,
         workflow: Workflow,
         name: str,
-        filter_function: Callable | None = None,
+        filter_function: Callable[[Token], bool] | None = None,
     ):
         super().__init__(workflow, name)
-        self.filter_function: Callable = filter_function or (lambda _: True)
+        self.filter_function: Callable[[Token], bool] = filter_function or (
+            lambda _: True
+        )
 
-    def put(self, token: Token):
+    def put(self, token: Token) -> None:
         if isinstance(token, TerminationToken) or self.filter_function(token):
             super().put(token)
         elif logger.isEnabledFor(logging.DEBUG):
@@ -53,10 +55,10 @@ class InterWorkflowPort(Port):
         super().__init__(workflow, name)
         self.inter_ports: MutableSequence[tuple[Port, str | None]] = []
 
-    def add_inter_port(self, port: Port, border_tag: str | None = None):
+    def add_inter_port(self, port: Port, border_tag: str | None = None) -> None:
         self.inter_ports.append((port, border_tag))
 
-    def put(self, token: Token):
+    def put(self, token: Token) -> None:
         if not isinstance(token, TerminationToken):
             for port, border_tag in self.inter_ports:
                 if border_tag is None or border_tag == token.tag:

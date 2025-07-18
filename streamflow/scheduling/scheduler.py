@@ -476,7 +476,7 @@ class DefaultScheduler(Scheduler):
                 )
         return hardware
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
     @classmethod

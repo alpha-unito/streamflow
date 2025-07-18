@@ -26,9 +26,9 @@ class DefaultCheckpointManager(CheckpointManager):
             "checkpoint",
             utils.random_name(),
         )
-        self.copy_tasks: MutableSequence = []
+        self.copy_tasks: MutableSequence[asyncio.Task[None]] = []
 
-    async def _async_local_copy(self, data_location: DataLocation):
+    async def _async_local_copy(self, data_location: DataLocation) -> None:
         parent_directory = os.path.join(self.checkpoint_dir, random_name())
         local_path = os.path.join(parent_directory, data_location.relpath)
         await self.context.data_manager.transfer_data(
@@ -44,7 +44,7 @@ class DefaultCheckpointManager(CheckpointManager):
             dst_path=local_path,
         )
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
     @classmethod
@@ -63,7 +63,7 @@ class DefaultCheckpointManager(CheckpointManager):
 
 
 class DummyCheckpointManager(CheckpointManager):
-    async def close(self):
+    async def close(self) -> None:
         pass
 
     @classmethod

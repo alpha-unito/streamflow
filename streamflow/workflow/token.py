@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any
 
+from typing_extensions import Self
+
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.exception import WorkflowExecutionException
@@ -52,7 +54,7 @@ class IterationTerminationToken(Token):
     def __init__(self, tag: str):
         super().__init__(None, tag)
 
-    def get_weight(self, context: StreamFlowContext):
+    def get_weight(self, context: StreamFlowContext) -> int:
         return 0
 
     def update(self, value: Any) -> Token:
@@ -67,7 +69,7 @@ class IterationTerminationToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> IterationTerminationToken:
+    ) -> Self:
         return cls(tag=row["tag"])
 
 
@@ -119,7 +121,7 @@ class JobToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> JobToken:
+    ) -> Self:
         return cls(
             tag=row["tag"],
             value=await Job.load(context, row["value"]["job"], loading_context),
@@ -136,7 +138,7 @@ class ListToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Token:
+    ) -> Self:
         return cls(
             tag=row["tag"],
             value=await asyncio.gather(
@@ -154,7 +156,7 @@ class ListToken(Token):
         )
         return [t.persistent_id for t in self.value]
 
-    async def get_weight(self, context: StreamFlowContext):
+    async def get_weight(self, context: StreamFlowContext) -> int:
         return sum(
             await asyncio.gather(
                 *(asyncio.create_task(t.get_weight(context)) for t in self.value)
@@ -178,7 +180,7 @@ class ObjectToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Token:
+    ) -> Self:
         value = row["value"]
         return cls(
             tag=row["tag"],
@@ -203,7 +205,7 @@ class ObjectToken(Token):
         )
         return {k: t.persistent_id for k, t in self.value.items()}
 
-    async def get_weight(self, context: StreamFlowContext):
+    async def get_weight(self, context: StreamFlowContext) -> int:
         return sum(
             await asyncio.gather(
                 *(
@@ -234,13 +236,13 @@ class TerminationToken(Token):
             )
         super().__init__(value)
 
-    def get_weight(self, context: StreamFlowContext):
+    def get_weight(self, context: StreamFlowContext) -> int:
         return 0
 
-    def update(self, value: Any) -> Token:
+    def update(self, value: Any, recoverable: bool = False) -> Token:
         raise NotImplementedError
 
-    def retag(self, tag: str) -> Token:
+    def retag(self, tag: str, recoverable: bool = False) -> Token:
         raise NotImplementedError
 
     async def _save_value(self, context: StreamFlowContext):
@@ -252,5 +254,5 @@ class TerminationToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> TerminationToken:
+    ) -> Self:
         return cls(Status(row["value"]["status"]))

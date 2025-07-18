@@ -4,6 +4,7 @@ from collections.abc import MutableMapping, MutableSet
 from typing import TYPE_CHECKING, Any, cast
 
 from rdflib import Graph
+from typing_extensions import Self
 
 from streamflow.core.data import DataLocation
 from streamflow.core.persistence import DatabaseLoadingContext
@@ -21,7 +22,7 @@ class CWLWorkflow(Workflow):
         context: StreamFlowContext,
         cwl_version: str,
         config: MutableMapping[str, Any],
-        name: str = None,
+        name: str | None = None,
         format_graph: Graph | None = None,
     ):
         super().__init__(context, config, name)
@@ -46,7 +47,7 @@ class CWLWorkflow(Workflow):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLWorkflow:
+    ) -> Self:
         params = row["params"]
         return cls(
             context=context,

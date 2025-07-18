@@ -28,7 +28,7 @@ def _export_to_file(fig, args: argparse.Namespace, path: str) -> None:
         print(f"Report saved to {fullpath}")
 
 
-async def create_report(context: StreamFlowContext, args: argparse.Namespace):
+async def create_report(context: StreamFlowContext, args: argparse.Namespace) -> None:
     import pandas as pd
     import plotly.express as px
 

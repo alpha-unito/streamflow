@@ -25,7 +25,7 @@ async def _copy(
     dst_connector: Connector,
     dst_locations: MutableSequence[ExecutionLocation],
     dst: str,
-    writable: False,
+    writable: bool,
 ) -> None:
     if src_location.local:
         await dst_connector.copy_local_to_remote(
@@ -55,13 +55,13 @@ async def _copy(
 class _RemotePathNode:
     __slots__ = ("children", "locations")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.children: MutableMapping[str, _RemotePathNode] = {}
         self.locations: MutableMapping[
             str, MutableMapping[str, MutableSequence[DataLocation]]
         ] = {}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return " - ".join(
             [
                 ",".join(
@@ -81,11 +81,11 @@ class _RemotePathNode:
 
 
 class _RemotePathMapper:
-    def __init__(self, context: StreamFlowContext):
+    def __init__(self, context: StreamFlowContext) -> None:
         self._filesystem: _RemotePathNode = _RemotePathNode()
         self.context: StreamFlowContext = context
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "\n".join(
             self._node_repr(node, 0) for node in self._filesystem.children.values()
         )
@@ -109,9 +109,8 @@ class _RemotePathMapper:
         deployment: str | None = None,
         name: str | None = None,
     ) -> MutableSequence[DataLocation]:
-        path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
-        for token in path.parts:
+        for token in PurePosixPath(Path(path).as_posix()).parts:
             if token in node.children:
                 node = node.children[token]
             else:
@@ -325,7 +324,7 @@ class DefaultDataManager(DataManager):
             src_location.deployment
         )
         dst_connector = self.context.deployment_manager.get_connector(
-            dst_locations[0].deployment
+            next(iter(dst_locations)).deployment
         )
         # Create destination folder
         await asyncio.gather(

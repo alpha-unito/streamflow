@@ -7,7 +7,7 @@ from streamflow.core.workflow import Port, Status, Step, Token, Workflow
 
 
 class DefaultDatabaseLoadingContext(DatabaseLoadingContext):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._deployment_configs: MutableMapping[int, DeploymentConfig] = {}
         self._ports: MutableMapping[int, Port] = {}

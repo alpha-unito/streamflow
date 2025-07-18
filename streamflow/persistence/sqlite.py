@@ -39,7 +39,7 @@ class SqliteConnection:
         self.init_db: bool = init_db
         self._connection: aiosqlite.Connection | None = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> aiosqlite.Connection:
         if not self._connection:
             self._connection = await aiosqlite.connect(
                 database=self.connection, timeout=self.timeout
@@ -57,10 +57,10 @@ class SqliteConnection:
             self._connection.row_factory = aiosqlite.Row
         return self._connection
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         pass
 
-    async def close(self):
+    async def close(self) -> None:
         if self._connection:
             async with self as db:
                 await db.commit()
@@ -85,7 +85,7 @@ class SqliteDatabase(CachedDatabase):
             init_db=not os.path.exists(connection),
         )
 
-    async def close(self):
+    async def close(self) -> None:
         await self.connection.close()
         self.connection = None
 
@@ -134,7 +134,7 @@ class SqliteDatabase(CachedDatabase):
                     "wraps": json.dumps(wraps) if wraps else None,
                 },
             ) as cursor:
-                return cursor.lastrowid
+                return cast(int, cursor.lastrowid)
 
     async def add_execution(self, step_id: int, tag: str, cmd: str) -> int:
         async with self.connection as db:
@@ -142,7 +142,7 @@ class SqliteDatabase(CachedDatabase):
                 "INSERT INTO execution(step, tag, cmd) " "VALUES(:step, :tag, :cmd)",
                 {"step": step_id, "tag": tag, "cmd": cmd},
             ) as cursor:
-                return cursor.lastrowid
+                return cast(int, cursor.lastrowid)
 
     async def add_filter(
         self,
@@ -160,7 +160,7 @@ class SqliteDatabase(CachedDatabase):
                     "config": json.dumps(config),
                 },
             ) as cursor:
-                return cursor.lastrowid
+                return cast(int, cursor.lastrowid)
 
     async def add_port(
         self,
@@ -180,9 +180,9 @@ class SqliteDatabase(CachedDatabase):
                     "params": json.dumps(params),
                 },
             ) as cursor:
-                return cursor.lastrowid
+                return cast(int, cursor.lastrowid)
 
-    async def add_provenance(self, inputs: MutableSequence[int], token: int):
+    async def add_provenance(self, inputs: MutableSequence[int], token: int) -> None:
         provenance = [{"dependee": i, "depender": token} for i in inputs]
         async with self.connection as db:
             await asyncio.gather(
@@ -218,7 +218,7 @@ class SqliteDatabase(CachedDatabase):
                     "params": json.dumps(params),
                 },
             ) as cursor:
-                return cursor.lastrowid
+                return cast(int, cursor.lastrowid)
 
     async def add_target(
         self,
@@ -251,7 +251,7 @@ class SqliteDatabase(CachedDatabase):
         value: Any,
         port: int | None = None,
         recoverable: bool = False,
-    ):
+    ) -> int:
         async with self.connection as db:
             async with db.execute(
                 "INSERT INTO token(port, type, tag, value) "

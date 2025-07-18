@@ -3,6 +3,7 @@ from collections.abc import MutableMapping
 from typing import Any
 
 import pytest
+from typing_extensions import Self
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config
@@ -53,7 +54,7 @@ class DummyHardwareRequirement(HardwareRequirement):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Self:
         return DummyHardwareRequirement()
 
     async def _save_additional_params(

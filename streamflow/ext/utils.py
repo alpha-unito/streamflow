@@ -55,7 +55,7 @@ def _get_property_desc(
     return "\n".join(property_desc)
 
 
-def _replace_refs(contents: Any, resolver: Resolver):
+def _replace_refs(contents: Any, resolver: Resolver) -> None:
     refs = {}
     _resolve_refs(contents, resolver, PurePosixPath("/"), refs)
     refs = {k: v for k, v in sorted(refs.items())}
@@ -140,7 +140,7 @@ def _split_schema(schema: MutableMapping[str, Any]):
     return required, optional, refs
 
 
-def list_extensions(name: str | None, type_: str | None):
+def list_extensions(name: str | None, type_: str | None) -> None:
     extensions = {}
     max_sizes = {
         "name": 0,
@@ -221,7 +221,7 @@ def list_extensions(name: str | None, type_: str | None):
         )
 
 
-def list_plugins():
+def list_plugins() -> None:
     if plugins := entry_points(group=PLUGIN_ENTRY_POINT):
         plugin_objs = []
         max_sizes = {
@@ -271,7 +271,7 @@ def list_plugins():
         print("No StreamFlow plugins detected.", file=sys.stderr)
 
 
-def load_extensions():
+def load_extensions() -> None:
     plugins = entry_points(group=PLUGIN_ENTRY_POINT)
     for plugin in plugins:
         plugin = (plugin.load())()
@@ -287,7 +287,7 @@ def load_extensions():
             )
 
 
-def show_extension(name: str, type_: str):
+def show_extension(name: str, type_: str) -> None:
     plugin = "-"
     if name in extension_points[type_]:
         class_ = extension_points[type_][name]
@@ -348,15 +348,16 @@ def show_extension(name: str, type_: str):
         )
 
 
-def show_plugin(plugin: str):
+def show_plugin(plugin: str) -> None:
     if plugins := entry_points(name=plugin, group=PLUGIN_ENTRY_POINT):
         plugin_obj = plugins[plugin]
         plugin_class = (plugin_obj.load())()
         if isinstance(plugin_class, StreamFlowPlugin):
             plugin_class.register()
             print(f"NAME: {plugin_obj.name}")
-            print(f"PACKAGE: {plugin_obj.dist.name}")
-            print(f"VERSION: {plugin_obj.dist.version}")
+            if plugin_obj.dist is not None:
+                print(f"PACKAGE: {plugin_obj.dist.name}")
+                print(f"VERSION: {plugin_obj.dist.version}")
             print(f"CLASS_NAME: {get_class_fullname(type(plugin_class))}\n")
             classes = plugin_class.classes_
             if len(classes) == 0:

@@ -8,6 +8,8 @@ from abc import abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, AsyncContextManager, cast
 
+from typing_extensions import Self
+
 from streamflow.core import utils
 from streamflow.core.config import Config
 from streamflow.core.context import SchemaEntity
@@ -41,10 +43,10 @@ class ExecutionLocation:
         deployment: str,
         environment: MutableMapping[str, str] | None = None,
         hostname: str | None = None,
-        local: bool | None = False,
+        local: bool = False,
         mounts: MutableMapping[str, str] | None = None,
         service: str | None = None,
-        stacked: bool | None = False,
+        stacked: bool = False,
         wraps: ExecutionLocation | None = None,
     ):
         self.deployment: str = deployment
@@ -119,7 +121,7 @@ class Connector(SchemaEntity):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -127,7 +129,7 @@ class Connector(SchemaEntity):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None: ...
+    ) -> tuple[str, int] | None: ...
 
     @abstractmethod
     async def undeploy(self, external: bool) -> None: ...
@@ -160,7 +162,7 @@ class DeploymentManager(SchemaEntity):
     async def undeploy(self, deployment_name: str) -> None: ...
 
     @abstractmethod
-    async def undeploy_all(self): ...
+    async def undeploy_all(self) -> None: ...
 
 
 class DeploymentConfig(PersistableEntity):
@@ -204,7 +206,7 @@ class DeploymentConfig(PersistableEntity):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> DeploymentConfig:
+    ) -> Self:
         row = await context.database.get_deployment(persistent_id)
         obj = cls(
             name=row["name"],
@@ -283,7 +285,7 @@ class Target(PersistableEntity):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Target:
+    ) -> Self:
         return cls(
             deployment=await DeploymentConfig.load(
                 context, row["deployment"], loading_context
@@ -299,9 +301,9 @@ class Target(PersistableEntity):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> Target:
+    ) -> Self:
         row = await context.database.get_target(persistent_id)
-        type_ = cast(type[Target], utils.get_class_from_name(row["type"]))
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         obj = await type_._load(context, row, loading_context)
         loading_context.add_target(persistent_id, obj)
         return obj
@@ -330,8 +332,8 @@ class LocalTarget(Target):
         )
 
     @classmethod
-    def _get_deployment_config(cls):
-        if not cls.__deployment_config:
+    def _get_deployment_config(cls) -> DeploymentConfig:
+        if cls.__deployment_config is None:
             cls.__deployment_config = DeploymentConfig(
                 name=cls.deployment_name,
                 type="local",
@@ -347,7 +349,7 @@ class LocalTarget(Target):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> LocalTarget:
+    ) -> Self:
         return cls(workdir=row["workdir"])
 
 
@@ -366,7 +368,7 @@ class FilterConfig(PersistableEntity):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> FilterConfig:
+    ) -> Self:
         row = await context.database.get_filter(persistent_id)
         obj = cls(
             name=row["name"],
@@ -397,8 +399,8 @@ class WrapsConfig:
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
-        return WrapsConfig(deployment=row["deployment"], service=row.get("service"))
+    ) -> Self:
+        return cls(deployment=row["deployment"], service=row.get("service"))
 
     async def save(self, context: StreamFlowContext):
         row = {"deployment": self.deployment}

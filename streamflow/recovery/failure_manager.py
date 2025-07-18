@@ -22,7 +22,7 @@ class DefaultFailureManager(FailureManager):
         retry_delay: int | None = None,
     ):
         super().__init__(context)
-        self.max_retries: int = max_retries
+        self.max_retries: int | None = max_retries
         self.retry_delay: int | None = retry_delay
         self._retry_requests: MutableMapping[str, RetryRequest] = {}
 

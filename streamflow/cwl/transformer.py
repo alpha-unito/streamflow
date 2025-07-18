@@ -4,6 +4,8 @@ import functools
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
+from typing_extensions import Self
+
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import (
     WorkflowDefinitionException,
@@ -65,7 +67,7 @@ class CloneTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -141,7 +143,7 @@ class CWLTokenTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CWLTokenTransformer:
+    ) -> Self:
         params = row["params"]
         return cls(
             name=row["name"],
@@ -185,7 +187,7 @@ class DefaultTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> DefaultTransformer:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=cast(
@@ -366,7 +368,7 @@ class ValueFromTransformer(ManyToOneTransformer):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> ValueFromTransformer:
+    ) -> Self:
         params = row["params"]
         job_port = cast(
             JobPort, await loading_context.load_port(context, params["job_port"])

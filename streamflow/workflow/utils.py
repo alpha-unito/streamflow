@@ -66,7 +66,7 @@ def check_termination(inputs: Token | Iterable[Token]) -> bool:
     return check_token_class(inputs, TerminationToken)
 
 
-def check_token_class(inputs: Token | Iterable[Token], cls: type[Token]):
+def check_token_class(inputs: Token | Iterable[Token], cls: type[Token]) -> bool:
     if isinstance(inputs, Token):
         return isinstance(inputs, cls)
     else:

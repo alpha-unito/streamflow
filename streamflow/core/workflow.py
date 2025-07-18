@@ -8,6 +8,8 @@ from collections.abc import MutableMapping, MutableSequence
 from enum import IntEnum
 from typing import TYPE_CHECKING, TypeVar, cast
 
+from typing_extensions import Self
+
 from streamflow.core import utils
 from streamflow.core.deployment import Connector, ExecutionLocation, Target
 from streamflow.core.exception import WorkflowExecutionException
@@ -39,8 +41,8 @@ class Command(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
-    ) -> Command:
-        type_ = cast(type[Command], utils.get_class_from_name(row["type"]))
+    ) -> Self:
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context, step)
 
     async def save(self, context: StreamFlowContext):
@@ -56,7 +58,7 @@ class Command(ABC):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
-    ) -> Command:
+    ) -> Self:
         return cls(step=step)
 
     async def _save_additional_params(
@@ -76,7 +78,7 @@ class CommandOutput:
         self.value: Any = value
         self.status: Status = status
 
-    def update(self, value: Any):
+    def update(self, value: Any) -> CommandOutput:
         return CommandOutput(value=value, status=self.status)
 
 
@@ -106,7 +108,7 @@ class CommandOutputProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CommandOutputProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -134,10 +136,8 @@ class CommandOutputProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CommandOutputProcessor:
-        type_ = cast(
-            type[CommandOutputProcessor], utils.get_class_from_name(row["type"])
-        )
+    ) -> Self:
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context)
 
     @abstractmethod
@@ -174,7 +174,7 @@ class CommandTokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CommandTokenProcessor:
+    ) -> Self:
         return cls(name=row["name"])
 
     async def _save_additional_params(
@@ -185,7 +185,7 @@ class CommandTokenProcessor(ABC):
     @abstractmethod
     def bind(
         self,
-        token: Token | None,
+        token: Token,
         position: int | None,
         options: CommandOptions,
     ) -> CommandToken: ...
@@ -199,8 +199,8 @@ class CommandTokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> CommandTokenProcessor:
-        type_ = cast(type[CommandTokenProcessor], get_class_from_name(row["type"]))
+    ) -> Self:
+        type_ = cast(Self, get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
@@ -250,7 +250,7 @@ class Job:
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Job:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow_id=row["workflow_id"],
@@ -292,8 +292,8 @@ class Job:
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
-        type_ = cast(type[Job], utils.get_class_from_name(row["type"]))
+    ) -> Self:
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context)
 
     async def save(self, context: StreamFlowContext):
@@ -306,12 +306,12 @@ class Job:
 class Port(PersistableEntity):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__()
-        self.queues: MutableMapping[str, asyncio.Queue] = {}
+        self.queues: MutableMapping[str, asyncio.Queue[Token]] = {}
         self.name: str = name
         self.token_list: MutableSequence[Token] = []
         self.workflow: Workflow = workflow
 
-    def _init_consumer(self, consumer: str):
+    def _init_consumer(self, consumer: str) -> None:
         self.queues[consumer] = asyncio.Queue()
         for t in self.token_list:
             self.queues[consumer].put_nowait(t)
@@ -322,7 +322,7 @@ class Port(PersistableEntity):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Port:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -333,7 +333,7 @@ class Port(PersistableEntity):
     ) -> MutableMapping[str, Any]:
         return {}
 
-    def close(self, consumer: str):
+    def close(self, consumer: str) -> None:
         if consumer in self.queues:
             self.queues[consumer].task_done()
 
@@ -369,14 +369,14 @@ class Port(PersistableEntity):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> Port:
+    ) -> Self:
         row = await context.database.get_port(persistent_id)
-        type_ = cast(type[Port], utils.get_class_from_name(row["type"]))
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         port = await type_._load(context, row, loading_context)
         loading_context.add_port(persistent_id, port)
         return port
 
-    def put(self, token: Token):
+    def put(self, token: Token) -> None:
         self.token_list.append(token)
         for q in self.queues.values():
             q.put_nowait(token)
@@ -414,7 +414,7 @@ class Step(PersistableEntity, ABC):
         self.terminated: bool = False
         self.workflow: Workflow = workflow
 
-    def _add_port(self, name: str, port: Port, type_: DependencyType):
+    def _add_port(self, name: str, port: Port, type_: DependencyType) -> None:
         if port.name not in self.workflow.ports:
             self.workflow.ports[port.name] = port
         if type_ == DependencyType.INPUT:
@@ -428,7 +428,7 @@ class Step(PersistableEntity, ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Step:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -439,7 +439,7 @@ class Step(PersistableEntity, ABC):
     ) -> MutableMapping[str, Any]:
         return {}
 
-    async def _set_status(self, status: Status):
+    async def _set_status(self, status: Status) -> None:
         self.status = status
         if self.persistent_id is not None:
             await self.workflow.context.database.update_step(
@@ -452,7 +452,7 @@ class Step(PersistableEntity, ABC):
     def add_output_port(self, name: str, port: Port) -> None:
         self._add_port(name, port, DependencyType.OUTPUT)
 
-    def get_input_port(self, name: str | None = None) -> Port:
+    def get_input_port(self, name: str | None = None) -> Port | None:
         if name is None:
             if len(self.input_ports) == 1:
                 return self.workflow.ports.get(next(iter(self.input_ports.values())))
@@ -469,7 +469,7 @@ class Step(PersistableEntity, ABC):
     def get_input_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.input_ports.items()}
 
-    def get_output_port(self, name: str | None = None) -> Port:
+    def get_output_port(self, name: str | None = None) -> Port | None:
         if name is None:
             if len(self.output_ports) == 1:
                 return self.workflow.ports.get(next(iter(self.output_ports.values())))
@@ -492,9 +492,9 @@ class Step(PersistableEntity, ABC):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> Step:
+    ) -> Self:
         row = await context.database.get_step(persistent_id)
-        type_ = cast(type[Step], utils.get_class_from_name(row["type"]))
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         step = await type_._load(context, row, loading_context)
         step.status = Status(row["status"])
         step.terminated = step.status in [
@@ -524,7 +524,7 @@ class Step(PersistableEntity, ABC):
         return step
 
     @abstractmethod
-    async def run(self): ...
+    async def run(self) -> None: ...
 
     async def save(self, context: StreamFlowContext) -> None:
         async with self.persistence_lock:
@@ -562,7 +562,7 @@ class Step(PersistableEntity, ABC):
         await asyncio.gather(*save_tasks)
 
     @abstractmethod
-    async def terminate(self, status: Status): ...
+    async def terminate(self, status: Status) -> None: ...
 
 
 class Token(PersistableEntity):
@@ -580,7 +580,7 @@ class Token(PersistableEntity):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Token:
+    ) -> Self:
         value = row["value"]
         if isinstance(value, MutableMapping) and "token" in value:
             value = await loading_context.load_token(context, value["token"])
@@ -595,7 +595,7 @@ class Token(PersistableEntity):
             else self.value
         )
 
-    async def get_weight(self, context: StreamFlowContext):
+    async def get_weight(self, context: StreamFlowContext) -> int:
         if isinstance(self.value, Token):
             return await self.value.get_weight(context)
         else:
@@ -607,9 +607,9 @@ class Token(PersistableEntity):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> Token:
+    ) -> Self:
         row = await context.database.get_token(persistent_id)
-        type_ = cast(type[Token], utils.get_class_from_name(row["type"]))
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         token = await type_._load(context, row, loading_context)
         loading_context.add_token(persistent_id, token)
         return token
@@ -623,7 +623,9 @@ class Token(PersistableEntity):
     def retag(self, tag: str, recoverable: bool = False) -> Token:
         return self.__class__(tag=tag, value=self.value, recoverable=recoverable)
 
-    async def save(self, context: StreamFlowContext, port_id: int | None = None):
+    async def save(
+        self, context: StreamFlowContext, port_id: int | None = None
+    ) -> None:
         async with self.persistence_lock:
             if not self.persistent_id:
                 try:
@@ -652,7 +654,7 @@ class TokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> TokenProcessor:
+    ) -> Self:
         return cls(
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
@@ -669,8 +671,8 @@ class TokenProcessor(ABC):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ):
-        type_ = cast(type[TokenProcessor], utils.get_class_from_name(row["type"]))
+    ) -> Self:
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context)
 
     @abstractmethod
@@ -678,7 +680,7 @@ class TokenProcessor(ABC):
         self, inputs: MutableMapping[str, Token], token: Token
     ) -> Token: ...
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
             "type": utils.get_class_fullname(type(self)),
             "params": await self._save_additional_params(context),
@@ -695,7 +697,7 @@ class Workflow(PersistableEntity):
         self,
         context: StreamFlowContext,
         config: MutableMapping[str, Any],
-        name: str = None,
+        name: str | None = None,
     ):
         super().__init__()
         self.context: StreamFlowContext = context
@@ -713,7 +715,7 @@ class Workflow(PersistableEntity):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Workflow:
+    ) -> Self:
         return cls(context=context, config=row["params"]["config"], name=row["name"])
 
     async def _save_additional_params(
@@ -721,14 +723,14 @@ class Workflow(PersistableEntity):
     ) -> MutableMapping[str, Any]:
         return {"config": self.config, "output_ports": self.output_ports}
 
-    def create_port(self, cls: type[P] = Port, name: str = None, **kwargs) -> P:
+    def create_port(self, cls: type[P] = Port, name: str | None = None, **kwargs) -> P:
         if name is None:
             name = str(uuid.uuid4())
         port = cls(workflow=self, name=name, **kwargs)
         self.ports[name] = port
         return port
 
-    def create_step(self, cls: type[S], name: str = None, **kwargs) -> S:
+    def create_step(self, cls: type[S], name: str | None = None, **kwargs) -> S:
         if name is None:
             name = str(uuid.uuid4())
         step = cls(name=name, workflow=self, **kwargs)
@@ -753,9 +755,9 @@ class Workflow(PersistableEntity):
         context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
-    ) -> Workflow:
+    ) -> Self:
         row = await context.database.get_workflow(persistent_id)
-        type_ = cast(type[Workflow], utils.get_class_from_name(row["type"]))
+        type_ = cast(Self, utils.get_class_from_name(row["type"]))
         workflow = await type_._load(context, row, loading_context)
         loading_context.add_workflow(persistent_id, workflow)
         if workflow.persistent_id is None:

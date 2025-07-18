@@ -6,10 +6,10 @@ import logging
 import os
 import sys
 import uuid
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, Sequence
 from typing import Any
 
-from streamflow import VERSION, report
+from streamflow import report
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.schema import SfSchema
 from streamflow.config.validator import SfValidator
@@ -34,16 +34,17 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.provenance import prov_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
+from streamflow.version import VERSION
 
 
-async def _async_ext(args: argparse.Namespace):
+async def _async_ext(args: argparse.Namespace) -> None:
     if args.ext_context == "list":
         list_extensions(args.name, args.type)
     elif args.ext_context == "show":
         show_extension(args.name, args.type)
 
 
-async def _async_list(args: argparse.Namespace):
+async def _async_list(args: argparse.Namespace) -> None:
     context = _get_context_from_config(args.file)
     try:
         if workflows := await context.database.get_workflows_list(args.name):
@@ -93,20 +94,17 @@ async def _async_list(args: argparse.Namespace):
         await context.close()
 
 
-async def _async_plugin(args: argparse.Namespace):
+async def _async_plugin(args: argparse.Namespace) -> None:
     if args.plugin_context == "list":
         list_plugins()
     elif args.plugin_context == "show":
         show_plugin(args.plugin)
 
 
-async def _async_prov(args: argparse.Namespace):
+async def _async_prov(args: argparse.Namespace) -> None:
     context = _get_context_from_config(args.file)
     try:
         db_context = DefaultDatabaseLoadingContext()
-        workflows = await context.database.get_workflows_by_name(
-            args.workflow, last_only=not args.all
-        )
         workflows = await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -116,7 +114,9 @@ async def _async_prov(args: argparse.Namespace):
                         loading_context=db_context,
                     )
                 )
-                for w in workflows
+                for w in await context.database.get_workflows_by_name(
+                    args.workflow, last_only=not args.all
+                )
             )
         )
         wf_type = {w.type for w in workflows}
@@ -125,7 +125,7 @@ async def _async_prov(args: argparse.Namespace):
                 "Cannot mix different provenance types in the same file. "
                 f"Workflow {args.workflow} is associated to the following types: {','.join(wf_type)}"
             )
-        wf_type = list(wf_type)[0]
+        wf_type = next(iter(wf_type))
         if args.type not in prov_classes:
             raise WorkflowProvenanceException(
                 f"{args.type} provenance format is not supported."
@@ -151,7 +151,7 @@ async def _async_prov(args: argparse.Namespace):
         await context.close()
 
 
-async def _async_report(args: argparse.Namespace):
+async def _async_report(args: argparse.Namespace) -> None:
     context = _get_context_from_config(args.file)
     try:
         await report.create_report(context, args)
@@ -159,7 +159,7 @@ async def _async_report(args: argparse.Namespace):
         await context.close()
 
 
-async def _async_run(args: argparse.Namespace):
+async def _async_run(args: argparse.Namespace) -> None:
     args.name = args.name or str(uuid.uuid4())
     load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
@@ -179,7 +179,7 @@ async def _async_run(args: argparse.Namespace):
 
 
 def _get_context_from_config(streamflow_file: str | None) -> StreamFlowContext:
-    if os.path.exists(streamflow_file):
+    if streamflow_file is not None and os.path.exists(streamflow_file):
         load_extensions()
         streamflow_config = SfValidator().validate_file(streamflow_file)
         streamflow_config["path"] = streamflow_file
@@ -243,35 +243,39 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
     return context
 
 
-def main(args):
+def main(args: Sequence[str]) -> int:
     try:
-        args = parser.parse_args(args)
-        if args.context == "ext":
-            asyncio.run(_async_ext(args))
-        elif args.context == "list":
-            asyncio.run(_async_list(args))
-        elif args.context == "plugin":
-            asyncio.run(_async_plugin(args))
-        elif args.context == "prov":
-            asyncio.run(_async_prov(args))
-        elif args.context == "report":
-            asyncio.run(_async_report(args))
-        elif args.context == "run":
-            if args.quiet:
+        parsed_args = parser.parse_args(args)
+        if parsed_args.context == "ext":
+            asyncio.run(_async_ext(parsed_args))
+        elif parsed_args.context == "list":
+            asyncio.run(_async_list(parsed_args))
+        elif parsed_args.context == "plugin":
+            asyncio.run(_async_plugin(parsed_args))
+        elif parsed_args.context == "prov":
+            asyncio.run(_async_prov(parsed_args))
+        elif parsed_args.context == "report":
+            asyncio.run(_async_report(parsed_args))
+        elif parsed_args.context == "run":
+            if parsed_args.quiet:
                 logger.setLevel(logging.WARNING)
-            elif args.debug:
+            elif parsed_args.debug:
                 logger.setLevel(logging.DEBUG)
-            if args.color and hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+            if (
+                parsed_args.color
+                and hasattr(sys.stdout, "isatty")
+                and sys.stdout.isatty()
+            ):
                 colored_stream_handler = logging.StreamHandler()
                 colored_stream_handler.setFormatter(CustomFormatter())
                 logger.handlers = []
                 logger.addHandler(colored_stream_handler)
                 logger.addFilter(HighlitingFilter())
-            asyncio.run(_async_run(args))
-        elif args.context == "schema":
+            asyncio.run(_async_run(parsed_args))
+        elif parsed_args.context == "schema":
             load_extensions()
-            print(SfSchema().dump(args.version, args.pretty))
-        elif args.context == "version":
+            print(SfSchema().dump(parsed_args.version, parsed_args.pretty))
+        elif parsed_args.context == "version":
             print(f"StreamFlow version {VERSION}")
         else:
             parser.print_help(file=sys.stderr)
@@ -280,13 +284,13 @@ def main(args):
     except SystemExit as se:
         if se.code != 0:
             logger.exception(se)
-        return se.code
+        return int(se.code) if se.code is not None else 1
     except Exception as e:
         logger.exception(e)
         return 1
 
 
-def run():
+def run() -> int:
     return main(sys.argv[1:])
 
 

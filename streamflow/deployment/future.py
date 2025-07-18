@@ -183,7 +183,7 @@ class FutureConnector(Connector):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
-    ) -> tuple[Any | None, int] | None:
+    ) -> tuple[str, int] | None:
         if self._connector is None:
             if not self.deploying:
                 self.deploying = True

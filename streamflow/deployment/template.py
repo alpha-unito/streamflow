@@ -22,11 +22,17 @@ class CommandTemplateMap:
         self,
         command: str,
         template: str | None = None,
-        environment: MutableMapping[str, str] = None,
-        workdir: str = None,
+        environment: MutableMapping[str, str] | None = None,
+        workdir: str | None = None,
         **kwargs,
     ) -> str:
-        return self.templates.get(template, self.templates["__DEFAULT__"]).render(
+        return self.templates[
+            (
+                template
+                if template is not None and template in self.templates.keys()
+                else "__DEFAULT__"
+            )
+        ].render(
             streamflow_command=command,
             streamflow_environment=(
                 " && ".join(
