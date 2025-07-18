@@ -7,7 +7,7 @@ cachetools==6.1.0
 cwl-utils==0.38
 importlib-metadata==8.7.0
 Jinja2==3.1.6
-jsonschema==4.24.0
+jsonschema==4.24.1
 kubernetes_asyncio==32.3.2
 psutil==7.0.0
 referencing==0.36.2
