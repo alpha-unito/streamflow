@@ -449,8 +449,13 @@ class DefaultCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: CommandOutput,
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
-        return Token(tag=utils.get_tag(job.inputs.values()), value=command_output.value)
+        return Token(
+            tag=utils.get_tag(job.inputs.values()),
+            value=command_output.value,
+            recoverable=recoverable,
+        )
 
 
 class DeployStep(BaseStep):
@@ -663,7 +668,7 @@ class ExecuteStep(BaseStep):
     ) -> None:
         if (
             token := await self.output_processors[output_name].process(
-                job, command_output, connector
+                job, command_output, connector, recoverable=True
             )
         ) is not None:
             job_token = get_job_token(
@@ -688,7 +693,6 @@ class ExecuteStep(BaseStep):
     ):
         command_output = await self.command.execute(job)
         if command_output.status == Status.FAILED:
-            logger.error(f"FAILED Job {job.name} with error:\n\t{command_output.value}")
             raise WorkflowExecutionException(
                 f"FAILED Job {job.name} with error:\n\t{command_output.value}"
             )
