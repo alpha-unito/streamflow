@@ -7,7 +7,7 @@ import os
 import sys
 import uuid
 from collections.abc import MutableMapping, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from streamflow import report
 from streamflow.config.config import WorkflowConfig
@@ -35,6 +35,9 @@ from streamflow.provenance import prov_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
 from streamflow.version import VERSION
+
+if TYPE_CHECKING:
+    from streamflow.core.config import SchemaEntityType
 
 
 async def _async_ext(args: argparse.Namespace) -> None:
@@ -188,59 +191,54 @@ def _get_context_from_config(streamflow_file: str | None) -> StreamFlowContext:
         return build_context({"path": os.getcwd()})
 
 
-def _get_instance_from_config(
+def _get_class_from_config(
     streamflow_config: MutableMapping[str, Any],
-    classes: MutableMapping[str, type],
+    classes: MutableMapping[str, type[SchemaEntityType]],
     instance_type: str,
-    kwargs: MutableMapping[str, Any],
     enabled_by_default: bool = True,
-) -> Any:
-    config = streamflow_config.get(instance_type, None)
-    if config is not None:
+) -> type[SchemaEntityType]:
+    if (config := streamflow_config.get(instance_type)) is not None:
         enabled = config.get("enabled", enabled_by_default)
         class_name = config.get("type", "default" if enabled else "dummy")
-        kwargs |= config.get("config", {})
     else:
         class_name = "default" if enabled_by_default else "dummy"
-    class_ = classes[class_name]
-    return class_(**kwargs)
+    return classes[class_name]
 
 
 def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
-    context = StreamFlowContext(config)
-    context.checkpoint_manager = _get_instance_from_config(
-        config,
-        checkpoint_manager_classes,
-        "checkpointManager",
-        {"context": context},
-        enabled_by_default=False,
+    return StreamFlowContext(
+        config=config,
+        checkpoint_manager_class=_get_class_from_config(
+            config,
+            checkpoint_manager_classes,
+            "checkpointManager",
+            enabled_by_default=False,
+        ),
+        database_class=_get_class_from_config(
+            config,
+            database_classes,
+            "database",
+        ),
+        data_manager_class=_get_class_from_config(
+            config,
+            data_manager_classes,
+            "dataManager",
+        ),
+        deployment_manager_class=_get_class_from_config(
+            config,
+            deployment_manager_classes,
+            "deploymentManager",
+        ),
+        failure_manager_class=_get_class_from_config(
+            config,
+            failure_manager_classes,
+            "failureManager",
+            enabled_by_default=False,
+        ),
+        scheduler_class=_get_class_from_config(
+            config.get("scheduling", {}), scheduler_classes, "scheduler"
+        ),
     )
-    context.database = _get_instance_from_config(
-        config,
-        database_classes,
-        "database",
-        {"context": context},
-    )
-    context.data_manager = _get_instance_from_config(
-        config, data_manager_classes, "dataManager", {"context": context}
-    )
-    context.deployment_manager = _get_instance_from_config(
-        config, deployment_manager_classes, "deploymentManager", {"context": context}
-    )
-    context.failure_manager = _get_instance_from_config(
-        config,
-        failure_manager_classes,
-        "failureManager",
-        {"context": context},
-        enabled_by_default=False,
-    )
-    context.scheduler = _get_instance_from_config(
-        config.get("scheduling", {}),
-        scheduler_classes,
-        "scheduler",
-        {"context": context},
-    )
-    return context
 
 
 def main(args: Sequence[str]) -> int:
