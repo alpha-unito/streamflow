@@ -245,11 +245,19 @@ class Combinator(ABC):
         combinator = await type_._load(context, row["params"], loading_context)
         combinator.items = row["params"]["items"]
         combinator.combinators_map = row["params"]["combinators_map"]
-        combinator.combinators = {}
-        for k, c in row["params"]["combinators"].items():
-            combinator.combinators[k] = await Combinator.load(
-                context, c, loading_context
+        combinator.combinators = dict(
+            zip(
+                row["params"]["combinators"].keys(),
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            Combinator.load(context, c, loading_context)
+                        )
+                        for c in row["params"]["combinators"].values()
+                    )
+                ),
             )
+        )
         return combinator
 
     async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:

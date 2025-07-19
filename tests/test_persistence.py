@@ -18,19 +18,11 @@ from streamflow.core.deployment import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
-from streamflow.workflow.combinator import (
-    CartesianProductCombinator,
-    DotProductCombinator,
-    LoopCombinator,
-    LoopTerminationCombinator,
-)
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
-    CombinatorStep,
     DeployStep,
     ExecuteStep,
     GatherStep,
-    LoopCombinatorStep,
     ScatterStep,
     ScheduleStep,
 )
@@ -44,7 +36,7 @@ from streamflow.workflow.token import (
 from tests.conftest import save_load_and_test
 from tests.utils.deployment import get_docker_deployment_config
 from tests.utils.utils import get_full_instantiation
-from tests.utils.workflow import create_workflow
+from tests.utils.workflow import create_workflow, get_combinator_step
 
 
 class DummyHardwareRequirement(HardwareRequirement):
@@ -106,47 +98,6 @@ async def test_connector_port(context: StreamFlowContext):
     port = get_full_instantiation(cls_=ConnectorPort, workflow=workflow, name="my_port")
     workflow.ports[port.name] = port
     await save_load_and_test(port, context)
-
-
-@pytest.mark.asyncio
-async def test_combinator_step(context: StreamFlowContext):
-    """Test saving and loading CombinatorStep with CartesianProductCombinator from database"""
-    workflow = Workflow(context=context, name=utils.random_name(), config={})
-    await workflow.save(context)
-    step = get_full_instantiation(
-        cls_=CombinatorStep,
-        name=utils.random_name() + "-combinator",
-        combinator=get_full_instantiation(
-            cls_=CartesianProductCombinator,
-            name=utils.random_name(),
-            workflow=workflow,
-            depth=2,
-        ),
-        workflow=workflow,
-    )
-    workflow.steps[step.name] = step
-    await save_load_and_test(step, context)
-
-
-@pytest.mark.asyncio
-async def test_loop_combinator_step(context: StreamFlowContext):
-    """Test saving and loading LoopCombinatorStep from database"""
-    workflow = Workflow(context=context, name=utils.random_name(), config={})
-    await workflow.save(context)
-
-    step = get_full_instantiation(
-        cls_=LoopCombinatorStep,
-        name=utils.random_name() + "-loop-combinator",
-        combinator=get_full_instantiation(
-            cls_=CartesianProductCombinator,
-            name=utils.random_name(),
-            workflow=workflow,
-            depth=2,
-        ),
-        workflow=workflow,
-    )
-    workflow.steps[step.name] = step
-    await save_load_and_test(step, context)
 
 
 @pytest.mark.asyncio
@@ -263,62 +214,23 @@ async def test_scatter_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_dot_product_combinator(context: StreamFlowContext):
-    """Test saving and loading CombinatorStep with DotProductCombinator from database"""
+@pytest.mark.parametrize(
+    "combinator_t",
+    [
+        "cartesian_product_combinator",
+        "dot_combinator",
+        "loop_combinator",
+        "loop_termination_combinator",
+    ],
+)
+async def test_combinator_step(context: StreamFlowContext, combinator_t: str):
+    """
+    Test saving and loading CombinatorStep and LoopCombinatorStep
+    with appropriate Combinator classes from database
+    """
     workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
-
-    step = get_full_instantiation(
-        cls_=CombinatorStep,
-        name=utils.random_name() + "-combinator",
-        workflow=workflow,
-        combinator=get_full_instantiation(
-            cls_=DotProductCombinator, name=utils.random_name(), workflow=workflow
-        ),
-    )
-    workflow.steps[step.name] = step
-    await save_load_and_test(step, context)
-
-
-@pytest.mark.asyncio
-async def test_loop_combinator(context: StreamFlowContext):
-    """Test saving and loading CombinatorStep with LoopCombinator from database"""
-    workflow = Workflow(context=context, name=utils.random_name(), config={})
-    await workflow.save(context)
-
-    step = get_full_instantiation(
-        cls_=CombinatorStep,
-        name=utils.random_name() + "-combinator",
-        workflow=workflow,
-        combinator=get_full_instantiation(
-            cls_=LoopCombinator, name=utils.random_name(), workflow=workflow
-        ),
-    )
-    workflow.steps[step.name] = step
-    await save_load_and_test(step, context)
-
-
-@pytest.mark.asyncio
-async def test_loop_termination_combinator(context: StreamFlowContext):
-    """Test saving and loading CombinatorStep with LoopTerminationCombinator from database"""
-    workflow = Workflow(context=context, name=utils.random_name(), config={})
-    await workflow.save(context)
-
-    name = utils.random_name()
-    combinator = get_full_instantiation(
-        cls_=LoopTerminationCombinator,
-        name=name + "-loop-termination-combinator",
-        workflow=workflow,
-    )
-    combinator.add_output_item("test")
-    combinator.add_output_item("another")
-    step = get_full_instantiation(
-        cls_=CombinatorStep,
-        name=name + "-loop-termination",
-        workflow=workflow,
-        combinator=combinator,
-    )
-    workflow.steps[step.name] = step
+    step = get_combinator_step(workflow, combinator_t, inner_combinator=True)
     await save_load_and_test(step, context)
 
 
