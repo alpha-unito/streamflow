@@ -94,10 +94,11 @@ def _create_cwl_command(
 def _create_cwl_command_output_processor(
     name: str, workflow: CWLWorkflow
 ) -> CommandOutputProcessor:
-    return CWLCommandOutputProcessor(
+    return get_full_instantiation(
+        cls_=CWLCommandOutputProcessor,
         name=name,
         workflow=workflow,
-        target=LocalTarget(workdir="/home"),
+        target=get_full_instantiation(cls_=LocalTarget, workdir="/home"),
         token_type=["string"],
         enum_symbols=["test"],
         expression_lib=["mylib"],
@@ -108,7 +109,11 @@ def _create_cwl_command_output_processor(
         load_listing=LoadListing.shallow_listing,
         optional=True,
         output_eval="$(do something)",
-        secondary_files=[SecondaryFile(pattern=".bai", required="1 == 1")],
+        secondary_files=[
+            get_full_instantiation(
+                cls_=SecondaryFile, pattern=".bai", required="1 == 1"
+            )
+        ],
         single=True,
         streamable=True,
     )
@@ -148,7 +153,9 @@ def _create_cwl_token_processor(name: str, workflow: CWLWorkflow) -> CWLTokenPro
         load_listing=LoadListing.no_listing,
         only_propagate_secondary_files=False,
         optional=True,
-        secondary_files=[SecondaryFile("file1", True)],
+        secondary_files=[
+            get_full_instantiation(cls_=SecondaryFile, pattern="file1", required=True)
+        ],
         streamable=True,
     )
 
@@ -245,7 +252,6 @@ async def test_cwl_command_token_processor(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
-
     step.command = _create_cwl_command(
         step,
         [
@@ -271,7 +277,6 @@ async def test_cwl_command_token_processors_nested(context: StreamFlowContext):
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
-
     step.command = _create_cwl_command(
         step,
         [
@@ -319,15 +324,18 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
                 name=utils.random_name(), workflow=workflow
             )
         elif output_type == "map":
-            processor = CWLMapCommandOutputProcessor(
+            processor = get_full_instantiation(
+                cls_=CWLMapCommandOutputProcessor,
                 name=utils.random_name(),
                 workflow=workflow,
                 processor=_create_cwl_command_output_processor(
                     name=utils.random_name(), workflow=workflow
                 ),
+                target=LocalTarget(workdir="/home"),
             )
         elif output_type == "object":
-            processor = CWLObjectCommandOutputProcessor(
+            processor = get_full_instantiation(
+                cls_=CWLObjectCommandOutputProcessor,
                 name=utils.random_name(),
                 workflow=workflow,
                 processors={
@@ -341,7 +349,8 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
                 target=LocalTarget("/shared"),
             )
         elif output_type == "union":
-            processor = CWLUnionCommandOutputProcessor(
+            processor = get_full_instantiation(
+                cls_=CWLUnionCommandOutputProcessor,
                 name=utils.random_name(),
                 workflow=workflow,
                 processors=[
@@ -936,7 +945,6 @@ async def test_cwl_schedule_step(context: StreamFlowContext):
         for target in binding_config.targets
     }
     await workflow.save(context)
-
     step = get_full_instantiation(
         cls_=CWLScheduleStep,
         name=posixpath.join(utils.random_name(), "__schedule__"),
