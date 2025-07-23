@@ -1021,10 +1021,10 @@ def _get_path(element_id: str) -> str:
 
 
 def _get_schedule_step(step: Step) -> ScheduleStep:
-    schedule_step = None
     if job_port := step.get_input_port("__job__"):
-        schedule_step = next(iter(job_port.get_input_steps()))
-    return schedule_step
+        return cast(ScheduleStep, next(iter(job_port.get_input_steps())))
+    else:
+        raise WorkflowDefinitionException(f"Step {step.name} has no job input")
 
 
 def _get_schema_def_types(
@@ -1113,6 +1113,32 @@ def _inject_value(value: Any):
         return dict_value
     else:
         return value
+
+
+def _is_optional_port(
+    port_type: (
+        str
+        | cwl_utils.parser.InputSchema
+        | cwl_utils.parser.OutputSchema
+        | MutableSequence[
+            str,
+            cwl_utils.parser.OutputSchema,
+            cwl_utils.parser.InputSchema,
+        ]
+    ),
+) -> bool:
+    if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
+        return _is_optional_port(port_type.items)
+    elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
+        return _is_optional_port(port_type.symbols)
+    elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
+        return _is_optional_port(port_type.fields)
+    elif isinstance(port_type, MutableSequence):
+        return any(_is_optional_port(e) for e in port_type)
+    elif isinstance(port_type, str):
+        return "null" == port_type
+    else:
+        return False
 
 
 def _percolate_port(port_name: str, *args) -> Port | None:
@@ -1382,13 +1408,14 @@ class CWLTranslator:
         element_input: cwl_utils.parser.InputParameter,
         global_name: str,
         port_name: str,
+        default_ports: MutableMapping[str, Port],
     ) -> Port:
         # Retrieve or create input port
         if global_name not in self.input_ports:
             self.input_ports[global_name] = workflow.create_port()
         input_port = self.input_ports[global_name]
         # If there is a default value, construct a default port block
-        if element_input.default is not None:
+        if element_input.default is not None or _is_optional_port(element_input.type_):
             # Insert default port
             transformer_suffix = (
                 "-wf-default-transformer"
@@ -1403,6 +1430,7 @@ class CWLTranslator:
                 workflow=workflow,
                 value=element_input.default,
             )
+            default_ports[port_name] = input_port
         # Return port
         return input_port
 
@@ -1449,46 +1477,6 @@ class CWLTranslator:
             return transformer.get_output_port()
         else:
             return default_port
-
-    def _handle_optional_input_variables(
-        self,
-        cwl_element: cwl_utils.parser.WorkflowStep,
-        inner_cwl_element: cwl_utils.parser.Process,
-        cwl_name_prefix: str,
-        inner_cwl_name_prefix: str,
-        default_ports: MutableMapping[str, Port],
-        name_prefix: str,
-        step_name: str,
-        workflow: CWLWorkflow,
-    ) -> None:
-        inner_input_ports, outer_input_ports = {}, set()
-        # Get inner CWL object input names
-        for element_input in inner_cwl_element.inputs:
-            if "null" in element_input.type_ or element_input.default is not None:
-                global_name = utils.get_name(
-                    step_name, inner_cwl_name_prefix, element_input.id
-                )
-                port_name = posixpath.relpath(global_name, step_name)
-                inner_input_ports[port_name] = element_input.default
-        # Get WorkflowStep input names
-        for element_input in cwl_element.in_:
-            cwl_step_name = utils.get_name(
-                name_prefix, cwl_name_prefix, cwl_element.id, preserve_cwl_prefix=True
-            )
-            global_name = utils.get_name(step_name, cwl_step_name, element_input.id)
-            port_name = posixpath.relpath(global_name, step_name)
-            outer_input_ports.add(port_name)
-        # Create a `DefaultTransformer` for each optional input
-        for port_name in set(inner_input_ports.keys()) - outer_input_ports:
-            global_name = os.path.join(step_name, port_name)
-            default_ports[global_name] = self._handle_default_port(
-                global_name=global_name,
-                port_name=port_name,
-                transformer_suffix="-step-default-transformer",
-                port=None,
-                workflow=workflow,
-                value=inner_input_ports[port_name],
-            )
 
     def _inject_input(
         self,
@@ -1751,17 +1739,42 @@ class CWLTranslator:
         # Process inputs
         input_ports = {}
         token_transformers = []
+        default_ports = {}
         for element_input in cwl_element.inputs:
             global_name = utils.get_name(name_prefix, cwl_name_prefix, element_input.id)
             port_name = posixpath.relpath(global_name, name_prefix)
             # Retrieve or create input port
-            input_port = self._get_input_port(
+            input_ports[port_name] = self._get_input_port(
                 workflow=workflow,
                 cwl_element=cwl_element,
                 element_input=element_input,
                 global_name=global_name,
                 port_name=port_name,
+                default_ports=default_ports,
             )
+        for default_name, default_port in default_ports.items():
+            # If there are inputs, add a default retag transformer
+            if input_ports:
+                global_name = posixpath.join(name_prefix, default_name)
+                transformer = workflow.create_step(
+                    cls=DefaultRetagTransformer,
+                    name=global_name + "-step-retag-transformer",
+                    default_port=default_port,
+                )
+                for port_name, port in input_ports.items():
+                    if port_name != default_name:
+                        transformer.add_input_port(
+                            posixpath.relpath(port_name, name_prefix), port
+                        )
+                transformer.add_output_port(
+                    posixpath.relpath(default_name, name_prefix), workflow.create_port()
+                )
+                default_ports[default_name] = transformer.get_output_port()
+        input_ports |= default_ports
+
+        for element_input in cwl_element.inputs:
+            global_name = utils.get_name(name_prefix, cwl_name_prefix, element_input.id)
+            port_name = posixpath.relpath(global_name, name_prefix)
             # Add a token transformer step to process inputs
             token_transformer = _create_token_transformer(
                 name=global_name + "-token-transformer",
@@ -1786,7 +1799,6 @@ class CWLTranslator:
             # Connect the transfer step with the ExecuteStep
             step.add_input_port(port_name, transfer_step.get_output_port(port_name))
             # Store input port and token transformer
-            input_ports[port_name] = input_port
             token_transformers.append(token_transformer)
         # Add input ports to token transformers
         for port_name, input_port in input_ports.items():
@@ -1896,6 +1908,7 @@ class CWLTranslator:
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Process inputs to create steps
+        default_ports: MutableMapping[str, Port] = {}
         input_ports: MutableMapping[str, Port] = {}
         token_transformers: MutableMapping[str, Transformer] = {}
         input_dependencies: MutableMapping[str, set[str]] = {}
@@ -1909,7 +1922,31 @@ class CWLTranslator:
                 element_input=element_input,
                 global_name=global_name,
                 port_name=port_name,
+                default_ports=default_ports,
             )
+        for default_name, default_port in default_ports.items():
+            # If there are inputs, add default retag transformer
+            if input_ports:
+                global_name = posixpath.join(name_prefix, default_name)
+                transformer = workflow.create_step(
+                    cls=DefaultRetagTransformer,
+                    name=global_name + "-step-retag-transformer",
+                    default_port=default_port,
+                )
+                for port_name, port in input_ports.items():
+                    if port_name != default_name:
+                        transformer.add_input_port(
+                            posixpath.relpath(port_name, name_prefix), port
+                        )
+                transformer.add_output_port(
+                    posixpath.relpath(default_name, name_prefix), workflow.create_port()
+                )
+                default_ports[default_name] = transformer.get_output_port()
+        input_ports |= default_ports
+
+        for element_input in cwl_element.inputs:
+            global_name = utils.get_name(step_name, cwl_name_prefix, element_input.id)
+            port_name = posixpath.relpath(global_name, step_name)
             # Create token transformer step
             token_transformers[global_name] = _create_token_transformer(
                 name=global_name + "-token-transformer",
@@ -2087,17 +2124,6 @@ class CWLTranslator:
 
         # Handle optional input variables
         default_ports: MutableMapping[str, Port] = {}
-        default_transformers = {}
-        self._handle_optional_input_variables(
-            cwl_element=cwl_element,
-            inner_cwl_element=run_command,
-            cwl_name_prefix=cwl_name_prefix,
-            inner_cwl_name_prefix=inner_cwl_name_prefix,
-            default_ports=default_ports,
-            name_prefix=name_prefix,
-            step_name=step_name,
-            workflow=workflow,
-        )
         # Process inputs
         input_ports: MutableMapping[str, Port] = {}
         value_from_transformers: MutableMapping[str, ValueFromTransformer] = {}
@@ -2125,7 +2151,10 @@ class CWLTranslator:
                     name=global_name + "-step-retag-transformer",
                     default_port=default_port,
                 )
-                default_transformers[default_name] = transformer
+                for port_name, port in input_ports.items():
+                    transformer.add_input_port(
+                        posixpath.relpath(port_name, step_name), port
+                    )
                 transformer.add_output_port(
                     posixpath.relpath(default_name, step_name), workflow.create_port()
                 )
@@ -2278,16 +2307,13 @@ class CWLTranslator:
         # Process inputs again to attach ports to transformers
         input_ports = _process_transformers(
             step_name=step_name,
-            input_ports={
-                k: v for k, v in input_ports.items() if k not in default_ports
-            },
+            input_ports=input_ports,
             transformers=value_from_transformers,
             input_dependencies=input_dependencies,
             schedule_steps={
                 k: _get_schedule_step(v) for k, v in value_from_transformers.items()
             },
         )
-        input_ports |= default_ports
 
         # Save input ports in the global map
         self.input_ports |= input_ports
@@ -2540,17 +2566,6 @@ class CWLTranslator:
                 cast(CWLConditionalStep, conditional_step).add_skip_port(
                     port_name, skip_port
                 )
-
-        for default_name in default_ports.keys():
-            # If there are inputs, add a default retag transformer
-            if input_ports:
-                global_name = posixpath.join(step_name, default_name)
-                transformer = default_transformers[default_name]
-                for port_name, port in input_ports.items():
-                    if port_name != global_name:
-                        transformer.add_input_port(
-                            posixpath.relpath(port_name, step_name), port
-                        )
         # Update output ports with the internal ones
         self.output_ports |= internal_output_ports
         self._recursive_translate(
