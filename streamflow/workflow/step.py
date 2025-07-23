@@ -122,7 +122,7 @@ class BaseStep(Step, ABC):
                 )
             else:
                 logger.debug(
-                    f"Step {self.name} received inputs {[t.tag for t in inputs.values()]}"
+                    f"Step {self.name} received inputs {dict(zip(inputs.keys(), [t.tag for t in inputs.values()]))}"
                 )
         return inputs
 
@@ -1870,15 +1870,27 @@ class Transformer(BaseStep, ABC):
                                             )
                                         )
             else:
-                for port_name, token in (await self.transform({})).items():
-                    self.get_output_port(port_name).put(
-                        await self._persist_token(
-                            token=token,
-                            port=self.get_output_port(port_name),
-                            input_token_ids=[],
-                        )
-                    )
                 status = Status.COMPLETED
+                for port_name, token in (await self.transform({})).items():
+                    if check_termination([token]):
+                        status = token.value
+                        break
+                    elif check_iteration_termination([token]):
+                        self.get_output_port(port_name).put(
+                            await self._persist_token(
+                                token=token.update(token.value),
+                                port=self.get_output_port(port_name),
+                                input_token_ids=[],
+                            )
+                        )
+                    else:
+                        self.get_output_port(port_name).put(
+                            await self._persist_token(
+                                token=token,
+                                port=self.get_output_port(port_name),
+                                input_token_ids=[],
+                            )
+                        )
             # Terminate step
             await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)

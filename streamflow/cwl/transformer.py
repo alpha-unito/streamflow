@@ -240,12 +240,18 @@ class DefaultRetagTransformer(DefaultTransformer):
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a default port."
             )
-        tag = get_tag(inputs.values())
         if not self.default_token:
             self.default_token = (
                 await self._get_inputs({"__default__": self.default_port})
             )["__default__"]
-        return {self.get_output_name(): self.default_token.retag(tag, recoverable=True)}
+        try:
+            token = self.default_token.retag(
+                get_tag(inputs.values()) if inputs else self.default_token.tag,
+                recoverable=True,
+            )
+        except NotImplementedError:
+            token = self.default_token
+        return {self.get_output_name(): token}
 
 
 class DotProductSizeTransformer(ManyToOneTransformer):
