@@ -255,6 +255,32 @@ class DefaultRetagTransformer(DefaultTransformer):
                 if k != self.primary_port
             }
 
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Self:
+        return cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            default_port=await loading_context.load_port(
+                context, row["params"]["default_port"]
+            ),
+            primary_port=row["params"].get("primary_port"),
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | (
+            {"primary_port": self.primary_port} if self.primary_port else {}
+        )
+
     async def _set_default_token(self, inputs: MutableMapping[str, Token]):
         self.default_token = (
             await self._get_inputs({"__default__": self.default_port})
