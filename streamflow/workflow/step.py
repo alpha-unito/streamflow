@@ -1820,13 +1820,14 @@ class Transformer(BaseStep, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
 
+    def _filter_input_ports(self):
+        return {k: v for k, v in self.get_input_ports().items() if k != "__job__"}
+
     async def run(self) -> None:
         try:
-            if self.input_ports:
+            if input_ports := self._filter_input_ports():
                 inputs_map = {}
-                input_ports = {
-                    k: v for k, v in self.get_input_ports().items() if k != "__job__"
-                }
+
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
@@ -1872,25 +1873,13 @@ class Transformer(BaseStep, ABC):
             else:
                 status = Status.COMPLETED
                 for port_name, token in (await self.transform({})).items():
-                    if check_termination([token]):
-                        status = token.value
-                        break
-                    elif check_iteration_termination([token]):
-                        self.get_output_port(port_name).put(
-                            await self._persist_token(
-                                token=token.update(token.value),
-                                port=self.get_output_port(port_name),
-                                input_token_ids=[],
-                            )
+                    self.get_output_port(port_name).put(
+                        await self._persist_token(
+                            token=token,
+                            port=self.get_output_port(port_name),
+                            input_token_ids=[],
                         )
-                    else:
-                        self.get_output_port(port_name).put(
-                            await self._persist_token(
-                                token=token,
-                                port=self.get_output_port(port_name),
-                                input_token_ids=[],
-                            )
-                        )
+                    )
             # Terminate step
             await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)

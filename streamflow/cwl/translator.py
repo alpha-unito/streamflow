@@ -76,7 +76,6 @@ from streamflow.cwl.transformer import (
     CloneTransformer,
     CWLTokenTransformer,
     DefaultRetagTransformer,
-    DefaultTransformer,
     DotProductSizeTransformer,
     FirstNonNullTransformer,
     ForwardTransformer,
@@ -125,37 +124,58 @@ def _adjust_default_ports(
     dependent_ports: MutableSequence[str] | None = None,
 ) -> None:
     dependent_ports = dependent_ports or {}
+    filtered_ports = None
     for default_name, default_port in default_ports.items():
         # If there are inputs, add a default retag transformer
-        if input_ports:
-            transformer = workflow.create_step(
-                cls=DefaultRetagTransformer,
-                name=posixpath.join(step_name, default_name)
-                + f"-{cwl_component_type}-retag-transformer",
-                default_port=default_port,
+        if filtered_ports := {
+            port_name: port
+            for port_name, port in input_ports.items()
+            if port_name not in default_ports.keys()
+            and port_name not in dependent_ports
+        }:
+            name = (
+                posixpath.join(step_name, default_name)
+                + f"-{cwl_component_type}-default-transformer"
             )
-            for port_name, port in input_ports.items():
-                if (
-                    port_name not in default_ports.keys()
-                    and port_name not in dependent_ports
-                ):
-                    transformer.add_input_port(
-                        (
-                            posixpath.relpath(port_name, step_name)
-                            if os.path.isabs(port_name)
-                            else port_name
-                        ),
-                        port,
-                    )
-            transformer.add_output_port(
-                (
-                    posixpath.relpath(default_name, step_name)
-                    if os.path.isabs(default_name)
-                    else default_name
-                ),
-                workflow.create_port(),
-            )
+            if (transformer := workflow.steps.get(name)) is None:
+                transformer = workflow.create_step(
+                    cls=DefaultRetagTransformer,
+                    name=posixpath.join(step_name, default_name)
+                    + f"-{cwl_component_type}-retag-transformer",
+                    default_port=default_port,
+                    primary_port=default_name,
+                )
+                transformer.add_input_port(default_name, workflow.create_port())
+                transformer.add_output_port(
+                    (
+                        posixpath.relpath(default_name, step_name)
+                        if os.path.isabs(default_name)
+                        else default_name
+                    ),
+                    workflow.create_port(),
+                )
+            for port_name, port in filtered_ports.items():
+                transformer.add_input_port(
+                    (
+                        posixpath.relpath(port_name, step_name)
+                        if os.path.isabs(port_name)
+                        else port_name
+                    ),
+                    port,
+                )
             default_ports[default_name] = transformer.get_output_port()
+        elif input_ports:
+            a = (
+                posixpath.join(step_name, default_name)
+                + f"-{cwl_component_type}-retag-transformer",
+            )
+            logger.info(f"Missing creation of {a} (input ports)")
+        else:
+            a = (
+                posixpath.join(step_name, default_name)
+                + f"-{cwl_component_type}-retag-transformer",
+            )
+            logger.info(f"Missing creation of {a}")
     input_ports |= default_ports
 
 
@@ -1518,9 +1538,10 @@ class CWLTranslator:
         if port is not None:
             # Add default transformer
             transformer = workflow.create_step(
-                cls=DefaultTransformer,
+                cls=DefaultRetagTransformer,
                 name=global_name + transformer_suffix,
                 default_port=default_port,
+                primary_port=port_name,
             )
             transformer.add_input_port(port_name, port)
             transformer.add_output_port(port_name, workflow.create_port())
