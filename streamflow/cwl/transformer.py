@@ -233,6 +233,37 @@ class DefaultTransformer(ManyToOneTransformer):
 
 
 class DefaultRetagTransformer(DefaultTransformer):
+
+    def __init__(
+        self,
+        name: str,
+        workflow: CWLWorkflow,
+        default_port: Port,
+        primary_port: str | None = None,
+    ):
+        super().__init__(name, workflow, default_port)
+        self.primary_port = primary_port
+
+    def _filter_input_ports(self):
+        # If there is a single input port, the step behavior is forward.
+        if len(self.input_ports) == 1:
+            return super()._filter_input_ports()
+        else:
+            return {
+                k: v
+                for k, v in super()._filter_input_ports().items()
+                if k != self.primary_port
+            }
+
+    async def _set_default_token(self, inputs: MutableMapping[str, Token]):
+        self.default_token = (
+            await self._get_inputs({"__default__": self.default_port})
+        )["__default__"]
+        return self.default_token.retag(
+            get_tag(inputs.values()) if inputs else self.default_token.tag,
+            recoverable=True,
+        )
+
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
@@ -240,17 +271,41 @@ class DefaultRetagTransformer(DefaultTransformer):
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a default port."
             )
-        if not self.default_token:
-            self.default_token = (
-                await self._get_inputs({"__default__": self.default_port})
-            )["__default__"]
-        try:
+        # If the default token is present, it means the primary token
+        # was evaluated previously and was empty
+        if self.default_token:
             token = self.default_token.retag(
                 get_tag(inputs.values()) if inputs else self.default_token.tag,
                 recoverable=True,
             )
-        except NotImplementedError:
-            token = self.default_token
+        # If there is a single input port, propagate the token
+        elif len(self.input_ports) == 1:
+            if (token := next(iter(inputs.values()))).value is None:
+                token = await self._set_default_token(inputs)
+            else:
+                token = token.update(token.value)
+        else:
+            # The primary port has no output step, so propagate the default token
+            # WARNING. This logic breaks if the previous step gives in
+            # output values [Token(None, 0.0), Token(value, 0.1)]
+            if (
+                self.primary_port is None
+                or (
+                    primary_token := (
+                        await self._get_inputs(
+                            {self.primary_port: self.get_input_port(self.primary_port)}
+                        )
+                    )[self.primary_port]
+                ).value
+                is None
+            ):
+                token = await self._set_default_token(inputs)
+            else:
+                # The primary port has an output step, so propagate the primary token
+                try:
+                    token = primary_token.update(primary_token.value)
+                except NotImplementedError:
+                    token = primary_token
         return {self.get_output_name(): token}
 
 
