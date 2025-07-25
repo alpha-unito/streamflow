@@ -594,6 +594,7 @@ async def test_default_retag_transformer(context: StreamFlowContext):
         cls_=DefaultRetagTransformer,
         name=utils.random_name() + "-transformer",
         default_port=port,
+        primary_port="prime",
         workflow=workflow,
     )
     workflow.steps[step.name] = step
