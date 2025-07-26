@@ -164,18 +164,6 @@ def _adjust_default_ports(
                     port,
                 )
             default_ports[default_name] = transformer.get_output_port()
-        elif input_ports:
-            a = (
-                posixpath.join(step_name, default_name)
-                + f"-{cwl_component_type}-retag-transformer",
-            )
-            logger.info(f"Missing creation of {a} (input ports)")
-        else:
-            a = (
-                posixpath.join(step_name, default_name)
-                + f"-{cwl_component_type}-retag-transformer",
-            )
-            logger.info(f"Missing creation of {a}")
     input_ports |= default_ports
 
 
@@ -2532,25 +2520,14 @@ class CWLTranslator:
                     inner_steps_prefix="-loop",
                     value_from_transformer_cls=LoopValueFromTransformer,
                 )
-            for default_name, default_port in loop_default_ports.items():
-                # If there are inputs, add default retag transformer
-                if loop_input_ports:
-                    global_name = posixpath.join(step_name, default_name)
-                    transformer = workflow.create_step(
-                        cls=DefaultRetagTransformer,
-                        name=global_name + "-loop-step-retag-transformer",
-                        default_port=default_port,
-                    )
-                    for port_name, port in loop_input_ports.items():
-                        transformer.add_input_port(
-                            posixpath.relpath(port_name, step_name), port
-                        )
-                    transformer.add_output_port(
-                        posixpath.relpath(default_name, step_name),
-                        workflow.create_port(),
-                    )
-                    loop_default_ports[default_name] = transformer.get_output_port()
-            loop_input_ports |= loop_default_ports
+            _adjust_default_ports(
+                workflow,
+                name_prefix,
+                loop_default_ports,
+                loop_input_ports,
+                "loop-step",
+                list(loop_input_dependencies.keys()),
+            )
             # Process inputs again to attach ports to transformers
             loop_input_ports = _process_loop_transformers(
                 step_name=step_name,
