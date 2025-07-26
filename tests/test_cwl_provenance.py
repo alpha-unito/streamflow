@@ -166,7 +166,12 @@ async def test_default_transformer(context: StreamFlowContext, step_cls: type[St
         kwargs_step={
             "name": utils.random_name() + "-transformer",
             "default_port": in_port,
-        },
+        }
+        | (
+            {"primary_port": "pci"}
+            if issubclass(step_cls, DefaultRetagTransformer)
+            else {}
+        ),
         token_list=token_list,
     )
 

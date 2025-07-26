@@ -65,7 +65,11 @@ async def test_default_retag_transformer(context: StreamFlowContext):
     await duplicate_and_test(
         workflow,
         DefaultRetagTransformer,
-        {"name": utils.random_name() + "-transformer", "default_port": port},
+        {
+            "name": utils.random_name() + "-transformer",
+            "default_port": port,
+            "primary_port": "pci",
+        },
         context,
     )
 
