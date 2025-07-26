@@ -125,35 +125,20 @@ def _adjust_default_ports(
 ) -> None:
     dependent_ports = dependent_ports or {}
     filtered_ports = None
-    for default_name, default_port in default_ports.items():
-        # If there are inputs, add a default retag transformer
-        if filtered_ports := {
+    # If there are inputs, add a default retag transformer
+    if (
+        filtered_ports := {
             port_name: port
             for port_name, port in input_ports.items()
             if port_name not in default_ports.keys()
             and port_name not in dependent_ports
-        }:
-            name = (
+        }
+    ) is not None:
+        for default_name in default_ports.keys():
+            transformer = workflow.steps.get(
                 posixpath.join(step_name, default_name)
                 + f"-{cwl_component_type}-default-transformer"
             )
-            if (transformer := workflow.steps.get(name)) is None:
-                transformer = workflow.create_step(
-                    cls=DefaultRetagTransformer,
-                    name=posixpath.join(step_name, default_name)
-                    + f"-{cwl_component_type}-retag-transformer",
-                    default_port=default_port,
-                    primary_port=default_name,
-                )
-                transformer.add_input_port(default_name, workflow.create_port())
-                transformer.add_output_port(
-                    (
-                        posixpath.relpath(default_name, step_name)
-                        if os.path.isabs(default_name)
-                        else default_name
-                    ),
-                    workflow.create_port(),
-                )
             for port_name, port in filtered_ports.items():
                 transformer.add_input_port(
                     (
@@ -2768,7 +2753,7 @@ class CWLTranslator:
                 global_name=global_name,
                 port_name=port_name,
                 transformer_suffix=inner_steps_prefix + "-step-default-transformer",
-                port=None,
+                port=workflow.create_port(),
                 workflow=workflow,
                 value=element_input.default,
             )

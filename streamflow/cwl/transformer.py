@@ -245,9 +245,15 @@ class DefaultRetagTransformer(DefaultTransformer):
         self.primary_port: str = primary_port
 
     def _filter_input_ports(self):
-        # If there is a single input port, the step behavior is forward.
+        # Handle the case of a single input port.
+        # Step termination is controlled by token-passing on this port,
+        # and output token retagging is based on the tag of the tokens from this port.
         if len(self.input_ports) == 1:
             return super()._filter_input_ports()
+
+        # Handle case of multiple input ports.
+        # Step termination is controlled by token-passing on other ports,
+        # and output token retagging is based on the tags of tokens from these ports.
         else:
             return {
                 k: v
@@ -256,17 +262,15 @@ class DefaultRetagTransformer(DefaultTransformer):
             }
 
     async def _get_next_token(self, token: Token, inputs: MutableMapping[str, Token]):
-        # WARNING. This logic breaks if the previous step gives in
-        # output token sequence: [Token(None, 0.0), Token(value, 0.1)]
+        # The primary port has no output step, so propagate the default token
         if token.value is None:
+            # WARNING. This logic breaks if the previous step gives in
+            # output token sequence: [..., Token(None, 0.0), Token(value, 0.1), ...]
             self.default_token = (
                 await self._get_inputs({"__default__": self.default_port})
             )["__default__"]
-            return self.default_token.retag(
-                get_tag(inputs.values()) if inputs else self.default_token.tag,
-                recoverable=True,
-            )
-        # The primary port has no output step, so propagate the default token
+            return self.default_token.retag(get_tag(inputs.values()), recoverable=True)
+        # Propagate the primary token
         else:
             return token.update(token.value)
 
@@ -310,9 +314,10 @@ class DefaultRetagTransformer(DefaultTransformer):
                 get_tag(inputs.values()) if inputs else self.default_token.tag,
                 recoverable=True,
             )
-        # If there is a single input port, which is the same of the default port
+        # There is a single input port: the primary token is already retrieved as it manages the step life-cyc
         elif len(self.input_ports) == 1:
             token = await self._get_next_token(next(iter(inputs.values())), inputs)
+        # There are multiple input ports: retrieve the primary token and evaluate the next token for propagation.
         else:
             token = await self._get_next_token(
                 (
