@@ -239,10 +239,10 @@ class DefaultRetagTransformer(DefaultTransformer):
         name: str,
         workflow: CWLWorkflow,
         default_port: Port,
-        primary_port: str | None = None,
+        primary_port: str,
     ):
         super().__init__(name, workflow, default_port)
-        self.primary_port = primary_port
+        self.primary_port: str = primary_port
 
     def _filter_input_ports(self):
         # If there is a single input port, the step behavior is forward.
@@ -254,6 +254,21 @@ class DefaultRetagTransformer(DefaultTransformer):
                 for k, v in super()._filter_input_ports().items()
                 if k != self.primary_port
             }
+
+    async def _get_next_token(self, token: Token, inputs: MutableMapping[str, Token]):
+        # WARNING. This logic breaks if the previous step gives in
+        # output token sequence: [Token(None, 0.0), Token(value, 0.1)]
+        if token.value is None:
+            self.default_token = (
+                await self._get_inputs({"__default__": self.default_port})
+            )["__default__"]
+            return self.default_token.retag(
+                get_tag(inputs.values()) if inputs else self.default_token.tag,
+                recoverable=True,
+            )
+        # The primary port has no output step, so propagate the default token
+        else:
+            return token.update(token.value)
 
     @classmethod
     async def _load(
@@ -271,24 +286,15 @@ class DefaultRetagTransformer(DefaultTransformer):
             default_port=await loading_context.load_port(
                 context, row["params"]["default_port"]
             ),
-            primary_port=row["params"].get("primary_port"),
+            primary_port=row["params"]["primary_port"],
         )
 
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | (
-            {"primary_port": self.primary_port} if self.primary_port else {}
-        )
-
-    async def _set_default_token(self, inputs: MutableMapping[str, Token]):
-        self.default_token = (
-            await self._get_inputs({"__default__": self.default_port})
-        )["__default__"]
-        return self.default_token.retag(
-            get_tag(inputs.values()) if inputs else self.default_token.tag,
-            recoverable=True,
-        )
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "primary_port": self.primary_port
+        }
 
     async def transform(
         self, inputs: MutableMapping[str, Token]
@@ -304,34 +310,18 @@ class DefaultRetagTransformer(DefaultTransformer):
                 get_tag(inputs.values()) if inputs else self.default_token.tag,
                 recoverable=True,
             )
-        # If there is a single input port, propagate the token
+        # If there is a single input port, which is the same of the default port
         elif len(self.input_ports) == 1:
-            if (token := next(iter(inputs.values()))).value is None:
-                token = await self._set_default_token(inputs)
-            else:
-                token = token.update(token.value)
+            token = await self._get_next_token(next(iter(inputs.values())), inputs)
         else:
-            # The primary port has no output step, so propagate the default token
-            # WARNING. This logic breaks if the previous step gives in
-            # output values [Token(None, 0.0), Token(value, 0.1)]
-            if (
-                self.primary_port is None
-                or (
-                    primary_token := (
-                        await self._get_inputs(
-                            {self.primary_port: self.get_input_port(self.primary_port)}
-                        )
-                    )[self.primary_port]
-                ).value
-                is None
-            ):
-                token = await self._set_default_token(inputs)
-            else:
-                # The primary port has an output step, so propagate the primary token
-                try:
-                    token = primary_token.update(primary_token.value)
-                except NotImplementedError:
-                    token = primary_token
+            token = await self._get_next_token(
+                (
+                    await self._get_inputs(
+                        {self.primary_port: self.get_input_port(self.primary_port)}
+                    )
+                )[self.primary_port],
+                inputs,
+            )
         return {self.get_output_name(): token}
 
 
