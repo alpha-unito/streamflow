@@ -1868,7 +1868,6 @@ class Transformer(BaseStep, ABC):
                                             )
                                         )
             else:
-                status = Status.COMPLETED
                 for port_name, token in (await self.transform({})).items():
                     self.get_output_port(port_name).put(
                         await self._persist_token(
@@ -1877,6 +1876,7 @@ class Transformer(BaseStep, ABC):
                             input_token_ids=[],
                         )
                     )
+                status = Status.COMPLETED
             # Terminate step
             await self.terminate(self._get_status(status))
         # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
