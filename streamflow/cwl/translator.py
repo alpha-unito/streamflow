@@ -1291,7 +1291,13 @@ def _process_transformers(
         # If transformer has true dependencies, use them
         if not (dependencies := input_dependencies[input_name]):
             # Otherwise, if there are other inputs, use them as dependencies to preserve token tag
-            if not (dependencies := {k for k in input_ports.keys() if k != input_name}):
+            if not (
+                dependencies := {
+                    k
+                    for k in input_ports.keys()
+                    if k != input_name and k not in input_dependencies.keys()
+                }
+            ):
                 # Otherwise, if there is only one input without dependencies, use it as its own dependency
                 dependencies = {input_name}
         # Process inputs to attach ports

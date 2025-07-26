@@ -18,7 +18,7 @@ from streamflow.cwl import utils
 from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.port import JobPort
-from streamflow.workflow.token import ListToken
+from streamflow.workflow.token import ListToken, TerminationToken
 from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
 from streamflow.workflow.utils import get_token_value
 
@@ -243,6 +243,7 @@ class DefaultRetagTransformer(DefaultTransformer):
     ):
         super().__init__(name, workflow, default_port)
         self.primary_port: str = primary_port
+        self._only_default: bool = False
 
     def _filter_input_ports(self) -> MutableMapping[str, Port]:
         # Handle the case of a single input port.
@@ -266,15 +267,14 @@ class DefaultRetagTransformer(DefaultTransformer):
     ) -> Token:
         # The primary port has no output step, so propagate the default token
         if token.value is None:
-            # WARNING. This logic breaks if the previous step gives in
-            # output token sequence: [..., Token(None, 0.0), Token(value, 0.1), ...]
-            self.default_token = (
-                await self._get_inputs({"__default__": self.default_port})
-            )["__default__"]
+            if self.default_token is None:
+                self.default_token = (
+                    await self._get_inputs({"__default__": self.default_port})
+                )["__default__"]
             return self.default_token.retag(get_tag(inputs.values()), recoverable=True)
         # Propagate the primary token
         else:
-            return token.update(token.value)
+            return token.update(token.value).retag(get_tag(inputs.values()))
 
     @classmethod
     async def _load(
@@ -311,21 +311,22 @@ class DefaultRetagTransformer(DefaultTransformer):
             )
         # If the default token is present, it means the primary token
         # was evaluated previously and was empty
-        if self.default_token:
+        if self.default_token and self._only_default:
             token = self.default_token.retag(get_tag(inputs.values()), recoverable=True)
         # There is a single input port: the primary token is already retrieved as it manages the step life-cyc
         elif len(self.input_ports) == 1:
             token = await self._get_next_token(next(iter(inputs.values())), inputs)
         # There are multiple input ports: retrieve the primary token and evaluate the next token for propagation.
         else:
-            token = await self._get_next_token(
-                (
-                    await self._get_inputs(
-                        {self.primary_port: self.get_input_port(self.primary_port)}
-                    )
-                )[self.primary_port],
-                inputs,
-            )
+            token = (
+                await self._get_inputs(
+                    {self.primary_port: self.get_input_port(self.primary_port)}
+                )
+            )[self.primary_port]
+            if isinstance(token, TerminationToken):
+                self._only_default = True
+                token = Token(value=None)
+            token = await self._get_next_token(token, inputs)
         return {self.get_output_name(): token}
 
 
