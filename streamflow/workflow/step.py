@@ -122,7 +122,7 @@ class BaseStep(Step, ABC):
                 )
             else:
                 logger.debug(
-                    f"Step {self.name} received inputs {dict(zip(inputs.keys(), [t.tag for t in inputs.values()]))}"
+                    f"Step {self.name} received inputs {[t.tag for t in inputs.values()]}"
                 )
         return inputs
 
@@ -1820,7 +1820,7 @@ class Transformer(BaseStep, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
 
-    def _filter_input_ports(self):
+    def _filter_input_ports(self) -> MutableMapping[str, Port]:
         return {k: v for k, v in self.get_input_ports().items() if k != "__job__"}
 
     async def run(self) -> None:

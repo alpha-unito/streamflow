@@ -125,7 +125,6 @@ def _adjust_default_ports(
 ) -> None:
     dependent_ports = dependent_ports or {}
     filtered_ports = None
-    # If there are inputs, add a default retag transformer
     if (
         filtered_ports := {
             port_name: port

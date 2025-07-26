@@ -244,7 +244,7 @@ class DefaultRetagTransformer(DefaultTransformer):
         super().__init__(name, workflow, default_port)
         self.primary_port: str = primary_port
 
-    def _filter_input_ports(self):
+    def _filter_input_ports(self) -> MutableMapping[str, Port]:
         # Handle the case of a single input port.
         # Step termination is controlled by token-passing on this port,
         # and output token retagging is based on the tag of the tokens from this port.
@@ -261,7 +261,9 @@ class DefaultRetagTransformer(DefaultTransformer):
                 if k != self.primary_port
             }
 
-    async def _get_next_token(self, token: Token, inputs: MutableMapping[str, Token]):
+    async def _get_next_token(
+        self, token: Token, inputs: MutableMapping[str, Token]
+    ) -> Token:
         # The primary port has no output step, so propagate the default token
         if token.value is None:
             # WARNING. This logic breaks if the previous step gives in
@@ -310,10 +312,7 @@ class DefaultRetagTransformer(DefaultTransformer):
         # If the default token is present, it means the primary token
         # was evaluated previously and was empty
         if self.default_token:
-            token = self.default_token.retag(
-                get_tag(inputs.values()) if inputs else self.default_token.tag,
-                recoverable=True,
-            )
+            token = self.default_token.retag(get_tag(inputs.values()), recoverable=True)
         # There is a single input port: the primary token is already retrieved as it manages the step life-cyc
         elif len(self.input_ports) == 1:
             token = await self._get_next_token(next(iter(inputs.values())), inputs)
