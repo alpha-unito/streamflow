@@ -60,6 +60,7 @@ from streamflow.workflow.step import (
     TransferStep,
 )
 from streamflow.workflow.token import FileToken, ListToken, ObjectToken
+from streamflow.workflow.utils import get_job_token
 from tests.utils.deployment import get_docker_deployment_config
 from tests.utils.utils import get_full_instantiation
 
@@ -486,7 +487,15 @@ class InjectorFailureCommand(Command):
         )
 
         tag = get_job_tag(job.name)
-        num_executions = len([e for e in flatten_list(executions) if e["tag"] == tag])
+        num_executions = sum(
+            jt["value"]["job"]["params"]["name"] == job.name
+            for jt in await asyncio.gather(
+                *(
+                    asyncio.create_task(context.database.get_token(e["job_token"]))
+                    for e in flatten_list(executions)
+                )
+            )
+        )
         if (
             max_failures := self.failure_tags.get(tag, None)
         ) is not None and num_executions < max_failures:
@@ -508,9 +517,12 @@ class InjectorFailureCommand(Command):
             except Exception as err:
                 logger.error(f"Failed command evaluation: {err}")
                 raise FailureHandlingException(err)
+        job_token = get_job_token(
+            job.name, cast(ExecuteStep, self.step).get_job_port().token_list
+        )
         await context.database.update_execution(
             await context.database.add_execution(
-                self.step.persistent_id, tag, self.command
+                self.step.persistent_id, job_token.persistent_id, self.command
             ),
             {
                 "status": cmd_out.status,

@@ -798,6 +798,9 @@ class ExecuteStep(BaseStep):
             output_processor or DefaultCommandOutputProcessor(name, self.workflow)
         )
 
+    def get_job_port(self):
+        return self.get_input_port("__job__")
+
     async def run(self) -> None:
         # If there are input connector ports, retrieve connectors
         connector_ports = {

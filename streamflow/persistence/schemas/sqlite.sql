@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS execution
 (
     id         INTEGER PRIMARY KEY,
     step       INTEGER,
-    tag        TEXT,
+    job_token  INTEGER,
     cmd        TEXT,
     status     INTEGER,
     start_time INTEGER,
