@@ -617,6 +617,7 @@ class CWLCommand(TokenizedCommand):
         processors: MutableSequence[CommandTokenProcessor] | None = None,
         absolute_initial_workdir_allowed: bool = False,
         base_command: MutableSequence[str] | None = None,
+        environment: MutableMapping[str, str] | None = None,
         expression_lib: MutableSequence[str] | None = None,
         failure_codes: MutableSequence[int] | None = None,
         full_js: bool = False,
@@ -632,7 +633,7 @@ class CWLCommand(TokenizedCommand):
         super().__init__(step=step, processors=processors)
         self.absolute_initial_workdir_allowed: bool = absolute_initial_workdir_allowed
         self.base_command: MutableSequence[str] = base_command or []
-        self.environment: MutableMapping[str, str] = {}
+        self.environment: MutableMapping[str, str] = environment or {}
         self.expression_lib: MutableSequence[str] = expression_lib or []
         self.failure_codes: MutableSequence[int] | None = failure_codes
         self.full_js: bool = full_js
@@ -708,6 +709,7 @@ class CWLCommand(TokenizedCommand):
             processors=await cls._load_command_token_processors(
                 context=context, row=row, loading_context=loading_context
             ),
+            environment=row["environment"],
             expression_lib=row["expression_lib"],
             failure_codes=row["failure_codes"],
             full_js=row["full_js"],

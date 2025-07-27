@@ -78,6 +78,7 @@ def _create_cwl_command(
         processors=processors,
         base_command=["command", "tool"],
         expression_lib=["Requirement"],
+        environment={"ARCH": "$(inputs.arch)", "PYTHONPATH": "$(inputs.pythonpath)"},
         failure_codes=[0, 0],
         full_js=True,
         initial_work_dir="/home",
