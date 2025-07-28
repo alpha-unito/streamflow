@@ -15,20 +15,16 @@ from streamflow.main import main as sf_main
 from tests.utils.utils import create_file, get_streamflow_config
 
 
-
-def test_scatter() -> None:
-    """Test runcrate on a scatter workflow."""
+def _test(wf_name: str, wf_path: str, config_path: str, expected_checksum: str) -> None:
     workdir = Path(tempfile.gettempdir(), utils.random_name())
     workdir.mkdir(parents=True, exist_ok=True)
-    db_path = os.path.join(workdir, "sqlite.db")
-    wf_name = "wf_scatter_two_dotproduct"
     sf_path = create_file(
         get_streamflow_config()
         | {
             "database": {
                 "type": "sqlite",
                 "config": {
-                    "connection": db_path,
+                    "connection": os.path.join(workdir, "sqlite.db"),
                 },
             }
         },
@@ -36,15 +32,20 @@ def test_scatter() -> None:
         workdir=str(workdir),
     )
     try:
-        params = [
-            get_data("tests/wf/scatter-wf4.cwl"),
-            get_data("tests/wf/scatter-job2.json"),
-            "--streamflow-file",
-            sf_path,
-            "--name",
-            wf_name,
-        ]
-        assert cwl_runner(params) == 0
+        # Execute workflow
+        assert (
+            cwl_runner(
+                [
+                    wf_path,
+                    config_path,
+                    "--streamflow-file",
+                    sf_path,
+                    "--name",
+                    wf_name,
+                ]
+            )
+            == 0
+        )
         # Generate archive
         assert (
             sf_main(
@@ -83,10 +84,29 @@ def test_scatter() -> None:
                 fd_cons.write(line)
             # Checksum report
             fd_cons.seek(0)
-            sha1_checksum = hashlib.new("sha1", usedforsecurity=False)
-            while data := fd_cons.read(2**16):
-                sha1_checksum.update(data.encode())
-            checksum = sha1_checksum.hexdigest()
-            assert checksum == "f35e3ff32e0c560efe4478c66a4992b75d8701a6"
+            assert (
+                hashlib.sha1(fd_cons.read().encode("utf-8")).hexdigest()
+                == expected_checksum
+            )
     finally:
         shutil.rmtree(workdir)
+
+
+def test_scatter() -> None:
+    """Test runcrate on a scatter workflow."""
+    _test(
+        wf_name="wf_scatter_two_dotproduct",
+        wf_path=get_data("tests/wf/scatter-wf4.cwl"),
+        config_path=get_data("tests/wf/scatter-job2.json"),
+        expected_checksum="f35e3ff32e0c560efe4478c66a4992b75d8701a6",
+    )
+
+
+def test_loop() -> None:
+    """Test runcrate on a loop workflow."""
+    _test(
+        wf_name="wf_loop_value_from",
+        wf_path=get_data("tests/loop-ext/value-from-loop.cwl"),
+        config_path=get_data("tests/loop-ext/two-vars-loop-job.yml"),
+        expected_checksum="",
+    )

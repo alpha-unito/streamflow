@@ -1182,12 +1182,12 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         # Connect output sources
         workflow_inputs = [inp["@id"] for inp in jsonld_workflow.get("output", [])]
         for cwl_output in cwl_workflow.outputs or []:
-            if source := cwl_output.get("outputSource"):
+            if source := cwl_output.outputSource:
                 connection = self._get_connection(
                     cwl_prefix=cwl_prefix,
                     prefix=prefix,
                     source=source,
-                    target_parameter=_get_cwl_entity_id(cwl_output["id"]),
+                    target_parameter=_get_cwl_entity_id(cwl_output.id),
                     workflow_inputs=workflow_inputs,
                 )
                 self.graph[connection["@id"]] = connection
