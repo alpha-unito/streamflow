@@ -1,11 +1,9 @@
-import json
 import os
 import posixpath
 import random
 import tempfile
-from collections.abc import MutableMapping
 from pathlib import PurePosixPath
-from typing import Any, cast
+from typing import cast
 
 import cwl_utils.parser
 import cwl_utils.parser.utils
@@ -38,29 +36,8 @@ from tests.utils.deployment import (
     get_location,
     get_service,
 )
+from tests.utils.utils import create_file, get_streamflow_config
 from tests.utils.workflow import CWL_VERSION, RecoveryTranslator, create_workflow
-
-
-def _create_file(content: MutableMapping[Any, Any]) -> str:
-    temp_config = tempfile.NamedTemporaryFile(delete=False)
-    with open(temp_config.name, "w") as fd:
-        fd.write(json.dumps(content))
-    return temp_config.name
-
-
-def _get_streamflow_config() -> MutableMapping[str, Any]:
-    return {
-        "version": "v1.0",
-        "workflows": {
-            "test": {
-                "type": "cwl",
-                "config": {
-                    "file": "cwl/main.cwl",
-                    "settings": "cwl/config.yaml",
-                },
-            }
-        },
-    }
 
 
 def _get_workflow_config(streamflow_config) -> WorkflowConfig:
@@ -128,7 +105,7 @@ async def test_inject_remote_input(context: StreamFlowContext, config: str) -> N
         yaml={port_name: input_dict},
         uri=__file__,
     )
-    streamflow_config = _get_streamflow_config()
+    streamflow_config = get_streamflow_config()
     streamflow_config["workflows"]["test"].setdefault("bindings", []).append(
         {
             "port": f"/{port_name}",
@@ -269,7 +246,7 @@ async def test_inject_remote_input(context: StreamFlowContext, config: str) -> N
 @pytest.mark.parametrize("stack", ["self", "cycle"])
 def test_recursive_deployments(stack: str) -> None:
     """Test if the cyclic deployment definition are detected"""
-    streamflow_config = _get_streamflow_config()
+    streamflow_config = get_streamflow_config()
     streamflow_config.setdefault("deployments", {})
     streamflow_config["deployments"] |= {
         "awesome": {
@@ -357,7 +334,7 @@ async def test_gather_order(context: StreamFlowContext) -> None:
 
 def test_workdir_inheritance() -> None:
     """Test the workdir inheritance of deployments, wrapped deployments and targets"""
-    streamflow_config = _get_streamflow_config()
+    streamflow_config = get_streamflow_config()
     streamflow_config["workflows"]["test"].setdefault("bindings", []).append(
         {
             "step": "/compute_1",
@@ -448,8 +425,18 @@ def test_workdir_inheritance() -> None:
 
 def test_dot_product_transformer_raises_error() -> None:
     """Test DotProductSizeTransformer which must raise an exception because the size tokens have different values"""
-    params = [
-        get_data("tests/wf/scatter-wf4.cwl"),
-        _create_file({"inp1": ["one", "two", "extra"], "inp2": ["three", "four"]}),
-    ]
-    assert main(params) == 1
+    config_path = create_file(
+        {"inp1": ["one", "two", "extra"], "inp2": ["three", "four"]}
+    )
+    try:
+        assert (
+            main(
+                [
+                    get_data("tests/wf/scatter-wf4.cwl"),
+                    config_path,
+                ]
+            )
+            == 1
+        )
+    finally:
+        os.remove(config_path)

@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import inspect
+import json
 import logging
+import os
+import tempfile
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any
 
 import pytest
+from ruamel.yaml import YAML
 
+from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.utils import contains_persistent_id
 from streamflow.core.workflow import Port, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import (
@@ -20,39 +24,6 @@ from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
-
-
-def get_full_instantiation(cls_: type[Any], **arguments) -> Any:
-    """
-    Instantiates a class using the provided arguments, checking whether the resulting
-    instance has values that differ from the class's default values.
-
-    All class arguments are mandatory in this instantiation. Moreover, values for parameters that have
-    default values must be explicitly provided and must differ from those defaults.
-
-    :param cls_: The class to instantiate.
-    :param arguments: A mapping of argument names to values used for instantiation.
-    :returns: An instance of the class, created using the provided arguments.
-    """
-    sig = inspect.signature(cls_.__init__)
-
-    if new_args := {k for k in sig.parameters.keys() if k != "self"} - set(
-        arguments.keys()
-    ):
-        pytest.fail(f"Object instantiation failed due to missing arguments: {new_args}")
-    new_args = []
-    for name, param in sig.parameters.items():
-        if (
-            name != "self"
-            and param.default != inspect.Parameter.empty
-            and arguments[name] == param.default
-        ):
-            new_args.append(name)
-    if new_args:
-        pytest.fail(
-            f"Cannot create the object because default values were used for the following arguments: {new_args}"
-        )
-    return cls_(**arguments)
 
 
 def check_combinators(
@@ -117,6 +88,24 @@ async def create_and_run_step(
     return step
 
 
+def create_file(
+    content: MutableMapping[Any, Any], dump_format: str, workdir: str | None = None
+) -> str:
+    filepath = (
+        os.path.join(workdir, utils.random_name())
+        if workdir is not None
+        else tempfile.NamedTemporaryFile(delete=False).name
+    )
+    with open(filepath, "w") as fd:
+        if dump_format == "json":
+            fd.write(json.dumps(content))
+        elif dump_format == "yaml":
+            YAML(typ="safe").dump(content, fd)
+        else:
+            raise ValueError(f"Unknown dump format: {dump_format}")
+    return filepath
+
+
 async def duplicate_and_test(
     workflow: Workflow,
     step_cls: type[Step],
@@ -159,6 +148,54 @@ async def duplicate_elements(
         new_workflow.ports[new_port.name] = new_port
     await new_workflow.save(context)
     return new_workflow, new_step
+
+
+def get_full_instantiation(cls_: type[Any], **arguments) -> Any:
+    """
+    Instantiates a class using the provided arguments, checking whether the resulting
+    instance has values that differ from the class's default values.
+
+    All class arguments are mandatory in this instantiation. Moreover, values for parameters that have
+    default values must be explicitly provided and must differ from those defaults.
+
+    :param cls_: The class to instantiate.
+    :param arguments: A mapping of argument names to values used for instantiation.
+    :returns: An instance of the class, created using the provided arguments.
+    """
+    sig = inspect.signature(cls_.__init__)
+
+    if new_args := {k for k in sig.parameters.keys() if k != "self"} - set(
+        arguments.keys()
+    ):
+        pytest.fail(f"Object instantiation failed due to missing arguments: {new_args}")
+    new_args = []
+    for name, param in sig.parameters.items():
+        if (
+            name != "self"
+            and param.default != inspect.Parameter.empty
+            and arguments[name] == param.default
+        ):
+            new_args.append(name)
+    if new_args:
+        pytest.fail(
+            f"Cannot create the object because default values were used for the following arguments: {new_args}"
+        )
+    return cls_(**arguments)
+
+
+def get_streamflow_config():
+    return {
+        "version": "v1.0",
+        "workflows": {
+            "test": {
+                "type": "cwl",
+                "config": {
+                    "file": "cwl/main.cwl",
+                    "settings": "cwl/config.yaml",
+                },
+            }
+        },
+    }
 
 
 async def inject_tokens(
@@ -219,7 +256,7 @@ async def verify_dependency_tokens(
         )
     assert len(depender_list) == len(expected_depender)
     for t1 in depender_list:
-        assert contains_persistent_id(t1.persistent_id, expected_depender)
+        assert utils.contains_persistent_id(t1.persistent_id, expected_depender)
 
     dependee_list = await load_dependee_tokens(
         token.persistent_id, context, loading_context
@@ -234,13 +271,13 @@ async def verify_dependency_tokens(
     try:
         assert len(dependee_list) == len(expected_dependee)
         for t1 in dependee_list:
-            assert contains_persistent_id(t1.persistent_id, expected_dependee)
+            assert utils.contains_persistent_id(t1.persistent_id, expected_dependee)
     except AssertionError as err:
         if alternative_expected_dependee is None:
             raise err
         else:
             assert len(dependee_list) == len(alternative_expected_dependee)
             for t1 in dependee_list:
-                assert contains_persistent_id(
+                assert utils.contains_persistent_id(
                     t1.persistent_id, alternative_expected_dependee
                 )
