@@ -136,11 +136,12 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return cast(int, cursor.lastrowid)
 
-    async def add_execution(self, step_id: int, tag: str, cmd: str) -> int:
+    async def add_execution(self, step_id: int, job_token_id: int, cmd: str) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO execution(step, tag, cmd) " "VALUES(:step, :tag, :cmd)",
-                {"step": step_id, "tag": tag, "cmd": cmd},
+                "INSERT INTO execution(step, job_token, cmd) "
+                "VALUES(:step, :job_token, :cmd)",
+                {"step": step_id, "job_token": job_token_id, "cmd": cmd},
             ) as cursor:
                 return cast(int, cursor.lastrowid)
 

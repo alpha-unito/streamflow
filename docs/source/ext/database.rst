@@ -53,7 +53,7 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         ...
 
     async def add_execution(
-        self, step_id: int, tag: str, cmd: str
+        self, step_id: int, job_token_id: int, cmd: str
     ) -> int:
         ...
 

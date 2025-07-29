@@ -25,7 +25,7 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import flatten_list, get_tag
+from streamflow.core.utils import flatten_list
 from streamflow.core.workflow import (
     Command,
     CommandOptions,
@@ -59,7 +59,7 @@ from streamflow.workflow.command import (
     TokenizedCommand,
 )
 from streamflow.workflow.step import ExecuteStep
-from streamflow.workflow.utils import get_token_value
+from streamflow.workflow.utils import get_job_token, get_token_value
 
 
 def _adjust_cwl_output(
@@ -858,9 +858,12 @@ class CWLCommand(TokenizedCommand):
                 )
             )
         # Persist command
+        job_token = get_job_token(
+            job.name, cast(ExecuteStep, self.step).get_job_port().token_list
+        )
         execution_id = await self.step.workflow.context.database.add_execution(
             step_id=self.step.persistent_id,
-            tag=get_tag(job.inputs.values()),
+            job_token_id=job_token.persistent_id,
             cmd=cmd_string,
         )
         # Escape shell command when needed
@@ -1246,9 +1249,12 @@ class CWLExpressionCommand(Command):
                 f"Evaluating expression for step {self.step.name} (job {job.name})"
             )
         # Persist command
+        job_token = get_job_token(
+            job.name, cast(ExecuteStep, self.step).get_job_port().token_list
+        )
         execution_id = await self.step.workflow.context.database.add_execution(
             step_id=self.step.persistent_id,
-            tag=get_tag(job.inputs.values()),
+            job_token_id=job_token.persistent_id,
             cmd=self.expression,
         )
         # Execute command

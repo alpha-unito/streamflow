@@ -28,6 +28,7 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.provenance import ProvenanceManager
+from streamflow.core.utils import get_job_tag
 from streamflow.core.workflow import Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.version import VERSION
@@ -289,7 +290,11 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         self.create_action_map: MutableMapping[
             int,
             MutableMapping[
-                str, MutableMapping[str, MutableMapping[str, MutableMapping[str, Any]]]
+                str,
+                MutableMapping[
+                    str,
+                    MutableMapping[str, MutableSequence[MutableMapping[str, Any]]],
+                ],
             ],
         ] = {}
         self.files_map: MutableMapping[str, str] = {}
@@ -556,23 +561,23 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                     parent["@id"]
                 ].items():
                     if step_name.startswith(action_name):
-                        create_action = create_actions[tag]
-                        if is_input and param["@id"] in [
-                            inp["@id"] for inp in parent.get("input", [])
-                        ]:
-                            jsonld_object = create_action.setdefault("object", [])
-                            if property_value["@id"] not in [
-                                obj["@id"] for obj in jsonld_object
+                        for create_action in create_actions[tag]:
+                            if is_input and param["@id"] in [
+                                inp["@id"] for inp in parent.get("input", [])
                             ]:
-                                jsonld_object.append({"@id": property_value["@id"]})
-                        elif not is_input and param["@id"] in [
-                            out["@id"] for out in parent.get("output", [])
-                        ]:
-                            jsonld_result = create_action.setdefault("result", [])
-                            if property_value["@id"] not in [
-                                res["@id"] for res in jsonld_result
+                                jsonld_object = create_action.setdefault("object", [])
+                                if property_value["@id"] not in [
+                                    obj["@id"] for obj in jsonld_object
+                                ]:
+                                    jsonld_object.append({"@id": property_value["@id"]})
+                            elif not is_input and param["@id"] in [
+                                out["@id"] for out in parent.get("output", [])
                             ]:
-                                jsonld_result.append({"@id": property_value["@id"]})
+                                jsonld_result = create_action.setdefault("result", [])
+                                if property_value["@id"] not in [
+                                    res["@id"] for res in jsonld_result
+                                ]:
+                                    jsonld_result.append({"@id": property_value["@id"]})
 
     async def add_file(self, file: MutableMapping[str, str]) -> None:
         if "src" not in file:
@@ -757,7 +762,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
             }
             self.create_action_map.setdefault(wf_id, {}).setdefault(
                 main_entity["@id"], {}
-            ).setdefault(posixpath.sep, {})["0"] = execution
+            ).setdefault(posixpath.sep, {}).setdefault("0", []).append(execution)
             self.graph["./"].setdefault("mentions", []).append(
                 {"@id": execution["@id"]}
             )
@@ -813,9 +818,18 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                             ),
                         }
                         self.graph[create_action["@id"]] = create_action
+                        tag = get_job_tag(
+                            (
+                                await self.context.database.get_token(
+                                    execution["job_token"]
+                                )
+                            )["value"]["job"]["params"]["name"]
+                        )
                         self.create_action_map.setdefault(wf_id, {}).setdefault(
                             jsonld_step["workExample"]["@id"], {}
-                        ).setdefault(step_name, {})[execution["tag"]] = create_action
+                        ).setdefault(step_name, {}).setdefault(tag, []).append(
+                            create_action
+                        )
                         create_actions.append(create_action)
                 # Add ControlAction
                 if create_actions:
@@ -1182,12 +1196,12 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         # Connect output sources
         workflow_inputs = [inp["@id"] for inp in jsonld_workflow.get("output", [])]
         for cwl_output in cwl_workflow.outputs or []:
-            if source := cwl_output.get("outputSource"):
+            if source := cwl_output.outputSource:
                 connection = self._get_connection(
                     cwl_prefix=cwl_prefix,
                     prefix=prefix,
                     source=source,
-                    target_parameter=_get_cwl_entity_id(cwl_output["id"]),
+                    target_parameter=_get_cwl_entity_id(cwl_output.id),
                     workflow_inputs=workflow_inputs,
                 )
                 self.graph[connection["@id"]] = connection
