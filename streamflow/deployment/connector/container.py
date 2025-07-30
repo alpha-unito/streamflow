@@ -182,6 +182,45 @@ class ContainerConnector(ConnectorWrapper, ABC):
         effective_locations.append(location)
         return common_paths, effective_locations
 
+    def _get_container_path(self, instance: ContainerInstance, path: str) -> str | None:
+        for volume in instance.volumes.values():
+            if volume.bind is not None and path.startswith(volume.bind):
+                path_processor = os.path if self._wraps_local() else posixpath
+                return posixpath.join(
+                    volume.mount_point,
+                    *path_processor.split(path_processor.relpath(path, volume.bind)),
+                )
+        return None
+
+    async def _get_effective_locations(
+        self,
+        locations: MutableSequence[ExecutionLocation],
+        dst_path: str,
+        source_location: ExecutionLocation | None = None,
+    ) -> MutableSequence[ExecutionLocation]:
+        common_paths = {}
+        effective_locations = []
+        for location in locations:
+            common_paths, effective_locations = await self._check_effective_location(
+                common_paths, effective_locations, location, dst_path, source_location
+            )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"Extracted effective locations {','.join(loc.name for loc in effective_locations)} "
+                f"from initial locations {','.join(loc.name for loc in locations)}"
+            )
+        return effective_locations
+
+    def _get_host_path(self, instance: ContainerInstance, path: str) -> str | None:
+        for volume in instance.volumes.values():
+            if volume.bind is not None and path.startswith(volume.mount_point):
+                path_processor = os.path if self._wraps_local() else posixpath
+                return path_processor.join(
+                    volume.bind,
+                    *posixpath.split(posixpath.relpath(path, volume.mount_point)),
+                )
+        return None
+
     def _get_inner_location(self) -> ExecutionLocation:
         if self._inner_location is None:
             raise ValueError(
@@ -189,6 +228,14 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 "should not be null at this time"
             )
         return self._inner_location.location
+
+    @abstractmethod
+    async def _get_instance(self, location: str) -> ContainerInstance: ...
+
+    @abstractmethod
+    def _get_run_command(
+        self, command: str, location: ExecutionLocation, interactive: bool = False
+    ) -> MutableSequence[str]: ...
 
     async def _local_copy(
         self, src: str, dst: str, location: ExecutionLocation, read_only: bool
@@ -201,6 +248,39 @@ class ContainerConnector(ConnectorWrapper, ABC):
         )
         if logger.isEnabledFor(logging.INFO):
             logger.info(f"COMPLETED copy from {src} to {dst} on location {location}")
+
+    async def _prepare_volumes(
+        self, binds: MutableSequence[str] | None, mounts: MutableSequence[str] | None
+    ):
+        sources = [b.split(":", 2)[0] for b in binds] if binds is not None else []
+        for m in mounts if mounts is not None else []:
+            mount_type = next(
+                part[5:] for part in m.split(",") if part.startswith("type=")
+            )
+            if mount_type == "bind":
+                sources.append(
+                    next(
+                        part[4:]
+                        for part in m.split(",")
+                        if part.startswith("src=") or part.startswith("source=")
+                    )
+                )
+        if self._wraps_local():
+            for src in sources:
+                os.makedirs(src, exist_ok=True)
+        else:
+            await self.connector.run(
+                location=self._get_inner_location(),
+                command=["mkdir", "-p"] + sources,
+            )
+
+    def _wraps_local(self) -> bool:
+        if self._inner_location is None:
+            raise ValueError(
+                f"The _inner_location parameter of {self.__class__.__name__} "
+                "should not be null at this time"
+            )
+        return self._inner_location.local
 
     async def copy_local_to_remote(
         self,
@@ -471,86 +551,6 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     source_connector=source_connector,
                     source_location=source_location,
                 )
-
-    async def _get_effective_locations(
-        self,
-        locations: MutableSequence[ExecutionLocation],
-        dst_path: str,
-        source_location: ExecutionLocation | None = None,
-    ) -> MutableSequence[ExecutionLocation]:
-        common_paths = {}
-        effective_locations = []
-        for location in locations:
-            common_paths, effective_locations = await self._check_effective_location(
-                common_paths, effective_locations, location, dst_path, source_location
-            )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                f"Extracted effective locations {','.join(loc.name for loc in effective_locations)} "
-                f"from initial locations {','.join(loc.name for loc in locations)}"
-            )
-        return effective_locations
-
-    def _get_container_path(self, instance: ContainerInstance, path: str) -> str | None:
-        for volume in instance.volumes.values():
-            if volume.bind is not None and path.startswith(volume.bind):
-                path_processor = os.path if self._wraps_local() else posixpath
-                return posixpath.join(
-                    volume.mount_point,
-                    *path_processor.split(path_processor.relpath(path, volume.bind)),
-                )
-        return None
-
-    def _get_host_path(self, instance: ContainerInstance, path: str) -> str | None:
-        for volume in instance.volumes.values():
-            if volume.bind is not None and path.startswith(volume.mount_point):
-                path_processor = os.path if self._wraps_local() else posixpath
-                return path_processor.join(
-                    volume.bind,
-                    *posixpath.split(posixpath.relpath(path, volume.mount_point)),
-                )
-        return None
-
-    @abstractmethod
-    async def _get_instance(self, location: str) -> ContainerInstance: ...
-
-    @abstractmethod
-    def _get_run_command(
-        self, command: str, location: ExecutionLocation, interactive: bool = False
-    ) -> MutableSequence[str]: ...
-
-    async def _prepare_volumes(
-        self, binds: MutableSequence[str] | None, mounts: MutableSequence[str] | None
-    ):
-        sources = [b.split(":", 2)[0] for b in binds] if binds is not None else []
-        for m in mounts if mounts is not None else []:
-            mount_type = next(
-                part[5:] for part in m.split(",") if part.startswith("type=")
-            )
-            if mount_type == "bind":
-                sources.append(
-                    next(
-                        part[4:]
-                        for part in m.split(",")
-                        if part.startswith("src=") or part.startswith("source=")
-                    )
-                )
-        if self._wraps_local():
-            for src in sources:
-                os.makedirs(src, exist_ok=True)
-        else:
-            await self.connector.run(
-                location=self._get_inner_location(),
-                command=["mkdir", "-p"] + sources,
-            )
-
-    def _wraps_local(self) -> bool:
-        if self._inner_location is None:
-            raise ValueError(
-                f"The _inner_location parameter of {self.__class__.__name__} "
-                "should not be null at this time"
-            )
-        return self._inner_location.local
 
     async def deploy(self, external: bool) -> None:
         # Retrieve the underlying location

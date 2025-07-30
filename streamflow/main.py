@@ -18,6 +18,7 @@ from streamflow.core.exception import WorkflowProvenanceException
 from streamflow.core.provenance import ProvenanceManager
 from streamflow.core.workflow import Workflow
 from streamflow.cwl.main import main as cwl_main
+from streamflow.cwl.provenance import prov_classes
 from streamflow.data import data_manager_classes
 from streamflow.deployment import deployment_manager_classes
 from streamflow.ext.utils import (
@@ -31,7 +32,6 @@ from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.provenance import prov_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
 from streamflow.version import VERSION

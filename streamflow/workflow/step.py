@@ -5,12 +5,7 @@ import logging
 import posixpath
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import (
-    AsyncIterable,
-    MutableMapping,
-    MutableSequence,
-    MutableSet,
-)
+from collections.abc import AsyncIterable, MutableMapping, MutableSequence, MutableSet
 from functools import cmp_to_key
 from types import ModuleType
 from typing import Any, cast

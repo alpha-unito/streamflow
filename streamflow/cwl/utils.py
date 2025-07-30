@@ -1177,12 +1177,12 @@ async def write_remote_file(
     relpath: str,
 ):
     for location in locations:
-        path = StreamFlowPath(path, context=context, location=location)
-        if not await path.exists():
+        sf_path = StreamFlowPath(path, context=context, location=location)
+        if not await sf_path.exists():
             if logger.isEnabledFor(logging.INFO):
                 logger.info(
                     "Creating {path} {location}".format(
-                        path=str(path),
+                        path=str(sf_path),
                         location=(
                             "on local file-system"
                             if location.local
@@ -1190,11 +1190,11 @@ async def write_remote_file(
                         ),
                     )
                 )
-            await path.write_text(content)
+            await sf_path.write_text(content)
             await _register_path(
                 context=context,
                 connector=context.deployment_manager.get_connector(location.deployment),
                 location=location,
-                path=str(path),
+                path=str(sf_path),
                 relpath=relpath,
             )
