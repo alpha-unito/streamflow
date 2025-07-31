@@ -557,9 +557,9 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                 params = [property_value["exampleOfWork"]]
             for param in params:
                 parent = self.param_parent_map[param["@id"]]
-                for action_name, create_actions in self.create_action_map[wf_id][
-                    parent["@id"]
-                ].items():
+                for action_name, create_actions in (
+                    self.create_action_map[wf_id].get(parent["@id"], {}).items()
+                ):
                     if step_name.startswith(action_name):
                         for create_action in create_actions[tag]:
                             if is_input and param["@id"] in [
@@ -1132,18 +1132,22 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
     ) -> MutableMapping[str, Any]:
         # Create entity
         entity_id = _get_cwl_entity_id(cwl_tool.id)
-        path = cwl_tool.id.split("#")[0][7:]
-        if path not in self.files_map:
-            self.graph["./"]["hasPart"].append({"@id": entity_id})
-            self.files_map[path] = os.path.basename(path)
         jsonld_tool = {
             "@id": entity_id,
             "name": entity_id.split("#")[-1],
             "input": [],
             "output": [],
-            "sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False)),
-            "@type": ["SoftwareApplication", "File"],
         }
+        if entity_id.startswith("_:"):
+            jsonld_tool["@type"] = "SoftwareApplication"
+        else:
+            if (path := cwl_tool.id.split("#")[0][7:]) not in self.files_map:
+                self.graph["./"]["hasPart"].append({"@id": entity_id})
+                self.files_map[path] = os.path.basename(path)
+            jsonld_tool["sha1"] = _file_checksum(
+                path, hashlib.new("sha1", usedforsecurity=False)
+            )
+            jsonld_tool["@type"] = ["SoftwareApplication", "File"]
         # Add description
         if cwl_tool.doc:
             jsonld_tool["description"] = cwl_tool.doc
@@ -1158,14 +1162,15 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
     ) -> MutableMapping[str, Any]:
         # Create entity
         entity_id = _get_cwl_entity_id(cwl_workflow.id)
-        path = cwl_workflow.id.split("#")[0][7:]
-        jsonld_workflow = cast(
-            dict[str, Any], _get_workflow_template(entity_id, entity_id.split("#")[-1])
-        ) | {"sha1": _file_checksum(path, hashlib.new("sha1", usedforsecurity=False))}
-        if (path := cwl_workflow.id.split("#")[0][7:]) not in self.files_map:
-            self.graph["./"]["hasPart"].append({"@id": entity_id})
-            self.files_map[path] = os.path.basename(path)
-        cast(MutableSequence, jsonld_workflow["@type"]).append("File")
+        jsonld_workflow = _get_workflow_template(entity_id, entity_id.split("#")[-1])
+        if not entity_id.startswith("_:"):
+            if (path := cwl_workflow.id.split("#")[0][7:]) not in self.files_map:
+                self.graph["./"]["hasPart"].append({"@id": entity_id})
+                self.files_map[path] = os.path.basename(path)
+            jsonld_workflow["sha1"] = _file_checksum(
+                path, hashlib.new("sha1", usedforsecurity=False)
+            )
+            cast(MutableSequence, jsonld_workflow["@type"]).append("File")
         # Add description
         if cwl_workflow.doc:
             jsonld_workflow["description"] = cwl_workflow.doc
