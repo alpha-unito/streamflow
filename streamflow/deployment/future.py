@@ -25,7 +25,7 @@ class FutureConnector(Connector):
         super().__init__(
             deployment_name=name,
             config_dir=config_dir,
-            transferBufferSize=kwargs.get("transferBufferSize", 2**16),
+            transferBufferSize=kwargs.pop("transferBufferSize", 2**16),
         )
         self.type: type[Connector] = connector_type
         self.external: bool = external
@@ -119,7 +119,12 @@ class FutureConnector(Connector):
 
     async def deploy(self, external: bool) -> None:
         # noinspection PyArgumentList
-        connector = self.type(self.deployment_name, self.config_dir, **self.parameters)
+        connector = self.type(
+            deployment_name=self.deployment_name,
+            config_dir=self.config_dir,
+            transferBufferSize=self.transferBufferSize,
+            **self.parameters,
+        )
         if logger.isEnabledFor(logging.INFO):
             if not external:
                 logger.info(f"DEPLOYING {self.deployment_name}")
