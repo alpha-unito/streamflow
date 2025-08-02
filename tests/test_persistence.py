@@ -287,7 +287,7 @@ async def test_list_token(context: StreamFlowContext):
     """Test saving and loading ListToken from database"""
     token = get_full_instantiation(
         cls_=ListToken,
-        value=[Token("list"), Token("test")],
+        value=[Token("list", recoverable=True), Token("test", recoverable=True)],
         tag="0.0",
         recoverable=True,
     )
@@ -298,7 +298,10 @@ async def test_list_token(context: StreamFlowContext):
 async def test_object_token(context: StreamFlowContext):
     """Test saving and loading ObjectToken from database"""
     token = get_full_instantiation(
-        cls_=ObjectToken, value={"test": Token("object")}, tag="0.0", recoverable=True
+        cls_=ObjectToken,
+        value={"test": Token("object", recoverable=True)},
+        tag="0.0",
+        recoverable=True,
     )
     await save_load_and_test(token, context)
 
