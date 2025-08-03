@@ -587,19 +587,10 @@ class Token(PersistableEntity):
         return cls(tag=row["tag"], value=value, recoverable=row["recoverable"])
 
     async def _save_value(self, context: StreamFlowContext):
-        if isinstance(self.value, Token) and not self.value.persistent_id:
-            await self.value.save(context)
-        return (
-            {"token": self.value.persistent_id}
-            if isinstance(self.value, Token)
-            else self.value
-        )
+        return self.value
 
     async def get_weight(self, context: StreamFlowContext) -> int:
-        if isinstance(self.value, Token):
-            return await self.value.get_weight(context)
-        else:
-            return sys.getsizeof(self.value)
+        return sys.getsizeof(self.value)
 
     @classmethod
     async def load(
@@ -615,10 +606,7 @@ class Token(PersistableEntity):
         return token
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        if isinstance(self.value, Token):
-            return self.recoverable and await self.value.is_available(context)
-        else:
-            return self.recoverable
+        return self.recoverable
 
     def retag(self, tag: str, recoverable: bool = False) -> Token:
         return self.__class__(tag=tag, value=self.value, recoverable=recoverable)

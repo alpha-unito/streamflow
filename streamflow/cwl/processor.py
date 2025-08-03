@@ -321,9 +321,6 @@ class CWLTokenProcessor(TokenProcessor):
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
-        # If value is token, propagate the process call
-        if isinstance(token.value, Token):
-            return token.update(await self.process(inputs, token.value))
         # Process file token
         if utils.get_token_class(token.value) in ["File", "Directory"]:
             token = token.update(await self._process_file_token(inputs, token.value))
@@ -778,9 +775,6 @@ class CWLMapTokenProcessor(TokenProcessor):
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
-        # If value is token, propagate the process call
-        if isinstance(token.value, Token):
-            return token.update(await self.process(inputs, token.value))
         # Check if value is None
         if token.value is None:
             if self.optional:
@@ -945,9 +939,6 @@ class CWLObjectTokenProcessor(TokenProcessor):
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
-        # If value is token, propagate the process call
-        if isinstance(token.value, Token):
-            return token.update(await self.process(inputs, token.value))
         # Check if value is None
         if token.value is None:
             if self.optional:
@@ -1230,9 +1221,6 @@ class CWLUnionTokenProcessor(TokenProcessor):
         )
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
-        # If value is token, propagate the process call
-        if isinstance(token.value, Token):
-            return token.update(await self.process(inputs, token.value))
         # Select the correct processor for the evaluation
         processor = self.get_processor(token.value)
         # Propagate evaluation to the selected processor
