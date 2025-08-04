@@ -263,10 +263,10 @@ class DefaultRetagTransformer(DefaultTransformer):
             }
 
     async def _get_next_token(
-        self, token: Token, inputs: MutableMapping[str, Token]
+        self, token: Token | None, inputs: MutableMapping[str, Token]
     ) -> Token:
         # The primary port has no output step, so propagate the default token
-        if token.value is None:
+        if token is None or token.value is None:
             if self.default_token is None:
                 self.default_token = (
                     await self._get_inputs({"__default__": self.default_port})
@@ -313,10 +313,10 @@ class DefaultRetagTransformer(DefaultTransformer):
         # was evaluated previously and was empty
         if self.default_token and self._only_default:
             token = self.default_token.retag(get_tag(inputs.values()), recoverable=True)
-        # There is a single input port: the primary token is already retrieved as it manages the step life-cyc
+        # There is a single input port: the primary token is already retrieved as it manages the step life-cycle
         elif len(self.input_ports) == 1:
             token = await self._get_next_token(next(iter(inputs.values())), inputs)
-        # There are multiple input ports: retrieve the primary token and evaluate the next token for propagation.
+        # There are multiple input ports: retrieve the primary token and evaluate the next token for propagation
         else:
             token = (
                 await self._get_inputs(
@@ -325,7 +325,7 @@ class DefaultRetagTransformer(DefaultTransformer):
             )[self.primary_port]
             if isinstance(token, TerminationToken):
                 self._only_default = True
-                token = Token(value=None)
+                token = None
             token = await self._get_next_token(token, inputs)
         return {self.get_output_name(): token}
 

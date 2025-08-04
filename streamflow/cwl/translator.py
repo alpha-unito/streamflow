@@ -120,23 +120,19 @@ def _adjust_default_ports(
     step_name: str,
     default_ports: MutableMapping[str, Port],
     input_ports: MutableMapping[str, Port],
-    cwl_component_type: str,
+    transformer_prefix: str,
     dependent_ports: MutableSequence[str] | None = None,
 ) -> None:
     dependent_ports = dependent_ports or {}
-    filtered_ports = None
-    if (
-        filtered_ports := {
-            port_name: port
-            for port_name, port in input_ports.items()
-            if port_name not in default_ports.keys()
-            and port_name not in dependent_ports
-        }
-    ) is not None:
+    if filtered_ports := {
+        port_name: port
+        for port_name, port in input_ports.items()
+        if port_name not in default_ports.keys() and port_name not in dependent_ports
+    }:
         for default_name in default_ports.keys():
             transformer = workflow.steps.get(
                 posixpath.join(step_name, default_name)
-                + f"-{cwl_component_type}-default-transformer"
+                + f"-{transformer_prefix}-default-transformer"
             )
             for port_name, port in filtered_ports.items():
                 transformer.add_input_port(
@@ -148,7 +144,6 @@ def _adjust_default_ports(
                     port,
                 )
             default_ports[default_name] = transformer.get_output_port()
-    input_ports |= default_ports
 
 
 def _copy_context(context: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
@@ -1162,14 +1157,8 @@ def _is_optional_port(
         ]
     ),
 ) -> bool:
-    if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
-        return _is_optional_port(port_type.items)
-    elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
-        return _is_optional_port(port_type.symbols)
-    elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
-        return _is_optional_port(port_type.fields)
-    elif isinstance(port_type, MutableSequence):
-        return any(_is_optional_port(e) for e in port_type)
+    if isinstance(port_type, MutableSequence):
+        return "null" in port_type
     elif isinstance(port_type, str):
         return "null" == port_type
     else:
@@ -1450,6 +1439,7 @@ class CWLTranslator:
         global_name: str,
         port_name: str,
         default_ports: MutableMapping[str, Port],
+        default_key: str,
     ) -> Port:
         # Retrieve or create input port
         if global_name not in self.input_ports:
@@ -1471,13 +1461,7 @@ class CWLTranslator:
                 workflow=workflow,
                 value=element_input.default,
             )
-            default_ports[
-                (
-                    global_name
-                    if isinstance(cwl_element, get_args(cwl_utils.parser.Workflow))
-                    else port_name
-                )
-            ] = input_port
+            default_ports[default_key] = input_port
         # Return port
         return input_port
 
@@ -1800,8 +1784,10 @@ class CWLTranslator:
                 global_name=global_name,
                 port_name=port_name,
                 default_ports=default_ports,
+                default_key=port_name,
             )
         _adjust_default_ports(workflow, name_prefix, default_ports, input_ports, "cmd")
+        input_ports |= default_ports
         for element_input in cwl_element.inputs:
             global_name = utils.get_name(name_prefix, cwl_name_prefix, element_input.id)
             port_name = posixpath.relpath(global_name, name_prefix)
@@ -1953,8 +1939,10 @@ class CWLTranslator:
                 global_name=global_name,
                 port_name=port_name,
                 default_ports=default_ports,
+                default_key=global_name,
             )
         _adjust_default_ports(workflow, name_prefix, default_ports, input_ports, "wf")
+        input_ports |= default_ports
         for element_input in cwl_element.inputs:
             global_name = utils.get_name(step_name, cwl_name_prefix, element_input.id)
             port_name = posixpath.relpath(global_name, step_name)
@@ -2161,6 +2149,7 @@ class CWLTranslator:
             "step",
             list(input_dependencies.keys()),
         )
+        input_ports |= default_ports
         # Process loop inputs
         if "Loop" in requirements:
             # Build combinator
@@ -2518,6 +2507,7 @@ class CWLTranslator:
                 "loop-step",
                 list(loop_input_dependencies.keys()),
             )
+            input_ports |= default_ports
             # Process inputs again to attach ports to transformers
             loop_input_ports = _process_loop_transformers(
                 step_name=step_name,
