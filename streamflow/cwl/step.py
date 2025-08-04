@@ -193,6 +193,10 @@ async def build_token(
                     )
                 ),
             )
+    elif isinstance(token_value, Token):
+        return token_value.retag(
+            tag=get_tag(job.inputs.values()), recoverable=token_value.recoverable
+        )
     else:
         return Token(tag=get_tag(job.inputs.values()), value=token_value)
 
@@ -554,13 +558,11 @@ class CWLLoopOutputAllStep(LoopOutputStep):
 
 class CWLLoopOutputLastStep(LoopOutputStep):
     async def _process_output(self, tag: str) -> Token:
-        return Token(
-            tag=tag,
-            value=sorted(
-                self.token_map.get(tag, [Token(value=None)]),
-                key=lambda t: int(t.tag.split(".")[-1]),
-            )[-1],
-        )
+        token = sorted(
+            self.token_map.get(tag, [Token(value=None)]),
+            key=lambda t: int(t.tag.split(".")[-1]),
+        )[-1]
+        return token.retag(tag=tag, recoverable=token.recoverable)
 
 
 class CWLScheduleStep(ScheduleStep):

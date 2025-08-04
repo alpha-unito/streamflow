@@ -1646,9 +1646,7 @@ class ScatterStep(BaseStep):
         }
 
     async def _scatter(self, token: Token) -> Token:
-        if isinstance(token.value, Token):
-            await self._scatter(token.value)
-        elif isinstance(token, ListToken):
+        if isinstance(token, ListToken):
             output_port = self.get_output_port()
             for i, t in enumerate(token.value):
                 output_port.put(

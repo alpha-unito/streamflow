@@ -81,8 +81,6 @@ async def _invalidate_token(context: StreamFlowContext, job: Job, token: Token) 
     elif isinstance(token, ObjectToken):
         for t in token.value.value():
             await _invalidate_token(context, job, t)
-    elif isinstance(token.value, Token):
-        await _invalidate_token(context, job, token.value)
 
 
 async def _register_path(

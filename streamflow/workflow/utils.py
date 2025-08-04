@@ -84,8 +84,6 @@ def get_token_value(token: Token) -> Any:
         return [get_token_value(t) for t in token.value]
     elif isinstance(token, ObjectToken):
         return {k: get_token_value(v) for k, v in token.value.items()}
-    elif isinstance(token.value, Token):
-        return get_token_value(token.value)
     else:
         return token.value
 
