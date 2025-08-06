@@ -341,7 +341,9 @@ async def build_token_value(
         return await asyncio.gather(*value_tasks)
     elif isinstance(token_value, MutableMapping) and (
         token_class := get_token_class(token_value)
-    ) in ["File", "Directory"]:
+    ) in ["File", "Directory", "streaming"]:
+        if token_class == "streaming":
+            return {"class": "streaming", "path": get_path_from_token(token_value)}
         path_processor = get_path_processor(connector)
         # Get filepath
         if (filepath := get_path_from_token(token_value)) is not None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os.path
 import urllib.parse
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
@@ -636,6 +637,8 @@ class CWLTransferStep(TransferStep):
         elif isinstance(token_value, MutableMapping):
             if utils.get_token_class(token_value) in ["File", "Directory"]:
                 return await self._update_file_token(job, token_value)
+            elif utils.get_token_class(token_value) == "streaming":
+                return await self._update_stream_token(job, token_value)
             else:
                 return {
                     k: v
@@ -900,6 +903,41 @@ class CWLTransferStep(TransferStep):
                 )
             # Return the new token value
             return new_token_value
+
+    async def _update_stream_token(
+        self,
+        job: Job,
+        token_value: MutableMapping[str, Any],
+        dst_path: StreamFlowPath | None = None,
+    ) -> MutableMapping[str, Any]:
+        dst_locations = self.workflow.context.scheduler.get_locations(job.name)
+        dst_dir = StreamFlowPath(
+            job.input_directory,
+            context=self.workflow.context,
+            location=next(iter(dst_locations)),
+        )
+        if dst_path is not None and dst_path.is_relative_to(dst_dir):
+            if len((rel_path := dst_path.relative_to(dst_dir)).parts) > 0:
+                dst_dir /= rel_path.parts[0]
+        elif self.prefix_path:
+            dst_dir /= random_name()
+        dir_ = StreamFlowPath(
+            str(dst_path or dst_dir),
+            context=self.workflow.context,
+            location=next(iter(dst_locations)),
+        )
+        await dir_.mkdir(mode=0o777, exist_ok=True)
+        dst_path = dir_ / os.path.basename(token_value["path"])
+        logger.info(f"Create symlink {token_value['path']} -> {dst_path}")
+        await StreamFlowPath(
+            dst_path,
+            context=self.workflow.context,
+            location=next(iter(dst_locations)),
+        ).symlink_to(token_value["path"])
+        return {
+            "class": "streaming",
+            "path": str(dst_path),
+        }
 
     async def transfer(self, job: Job, token: Token) -> Token:
         return token.update(await self._transfer_value(job, token.value))

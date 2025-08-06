@@ -1306,6 +1306,8 @@ def create_command_output_processor_base(
             streamable=getattr(cwl_element, "streamable", None),
         )
     else:
+        if "Directory" in port_type and getattr(cwl_element, "streamable", None):
+            logger.warning("Directory cannot be streamed")
         return CWLCommandOutputProcessor(
             name=port_name,
             workflow=workflow,

@@ -4,6 +4,7 @@ from typing import Any
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
+from streamflow.core.workflow import Token
 from streamflow.cwl import utils
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.workflow.token import FileToken
@@ -59,3 +60,7 @@ class CWLFileToken(FileToken):
 
     async def get_weight(self, context):
         return await _get_file_token_weight(context, self.value)
+
+
+class CWLStreamToken(Token):
+    pass

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os.path
 from collections.abc import Callable, MutableMapping, MutableSequence
 from typing import Any, cast
 
@@ -321,30 +322,34 @@ class CWLTokenProcessor(TokenProcessor):
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
+        # If value is token, propagate the process call
+        if isinstance(token.value, Token):
+            return token.update(await self.process(inputs, token.value))
         # Process file token
         if utils.get_token_class(token.value) in ["File", "Directory"]:
             token = token.update(await self._process_file_token(inputs, token.value))
         # Check type
-        if self.check_type and self.token_type is not None:
-            if isinstance(token.value, MutableSequence):
-                for v in token.value:
+        if not self.streamable:
+            if self.check_type and self.token_type is not None:
+                if isinstance(token.value, MutableSequence):
+                    for v in token.value:
+                        _check_token_type(
+                            name=self.name,
+                            token_value=v,
+                            token_type=self.token_type,
+                            enum_symbols=self.enum_symbols,
+                            optional=self.optional,
+                            check_file=True,
+                        )
+                else:
                     _check_token_type(
                         name=self.name,
-                        token_value=v,
+                        token_value=token.value,
                         token_type=self.token_type,
                         enum_symbols=self.enum_symbols,
                         optional=self.optional,
                         check_file=True,
                     )
-            else:
-                _check_token_type(
-                    name=self.name,
-                    token_value=token.value,
-                    token_type=self.token_type,
-                    enum_symbols=self.enum_symbols,
-                    optional=self.optional,
-                    check_file=True,
-                )
         # Return the token
         return token.update(token.value)
 
@@ -432,7 +437,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         token_value: Any,
     ) -> Token:
         if isinstance(token_value, MutableMapping):
-            if utils.get_token_class(token_value) in ["File", "Directory"]:
+            if utils.get_token_class(token_value) in ["File", "Directory", "streaming"]:
+                if utils.get_token_class(token_value) == "streaming":
+                    return Token(value=token_value, tag=get_tag(job.inputs.values()))
                 connector = self._get_connector(connector, job)
                 locations = await self._get_locations(connector, job)
                 # Register path
@@ -532,6 +539,27 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 )
                 globpaths.extend(
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
+                )
+
+            if self.streamable:
+                return await utils.build_token_value(
+                    context=self.workflow.context,
+                    cwl_version=cwl_workflow.cwl_version,
+                    js_context=context,
+                    full_js=self.full_js,
+                    expression_lib=self.expression_lib,
+                    secondary_files=self.secondary_files,
+                    connector=connector,
+                    locations=locations,
+                    token_value=[
+                        {
+                            "path": os.path.join(job.output_directory, path),
+                            "class": "streaming",
+                        }
+                        for path in globpaths
+                    ],
+                    load_contents=self.load_contents,
+                    load_listing=self.load_listing,
                 )
             # Resolve glob
             resolve_tasks = []
@@ -697,41 +725,42 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             connector,
             context,
         )
-        if isinstance(token_value, MutableSequence):
-            if self.single:
-                if len(token_value) == 1:
-                    token_value = token_value[0]
-                    _check_token_type(
-                        name=self.name,
-                        token_value=token_value,
-                        token_type=self.token_type,
-                        enum_symbols=self.enum_symbols,
-                        optional=self.optional,
-                        check_file=True,
-                    )
+        if not self.streamable:
+            if isinstance(token_value, MutableSequence):
+                if self.single:
+                    if len(token_value) == 1:
+                        token_value = token_value[0]
+                        _check_token_type(
+                            name=self.name,
+                            token_value=token_value,
+                            token_type=self.token_type,
+                            enum_symbols=self.enum_symbols,
+                            optional=self.optional,
+                            check_file=True,
+                        )
+                    else:
+                        raise WorkflowExecutionException(
+                            f"Expected {self.name} token of type {self.token_type}, got list."
+                        )
                 else:
-                    raise WorkflowExecutionException(
-                        f"Expected {self.name} token of type {self.token_type}, got list."
-                    )
+                    for value in token_value:
+                        _check_token_type(
+                            name=self.name,
+                            token_value=value,
+                            token_type=self.token_type,
+                            enum_symbols=self.enum_symbols,
+                            optional=self.optional,
+                            check_file=True,
+                        )
             else:
-                for value in token_value:
-                    _check_token_type(
-                        name=self.name,
-                        token_value=value,
-                        token_type=self.token_type,
-                        enum_symbols=self.enum_symbols,
-                        optional=self.optional,
-                        check_file=True,
-                    )
-        else:
-            _check_token_type(
-                name=self.name,
-                token_value=token_value,
-                token_type=self.token_type,
-                enum_symbols=self.enum_symbols,
-                optional=self.optional,
-                check_file=True,
-            )
+                _check_token_type(
+                    name=self.name,
+                    token_value=token_value,
+                    token_type=self.token_type,
+                    enum_symbols=self.enum_symbols,
+                    optional=self.optional,
+                    check_file=True,
+                )
         return await self._build_token(job, connector, context, token_value)
 
 
@@ -775,6 +804,9 @@ class CWLMapTokenProcessor(TokenProcessor):
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
+        # If value is token, propagate the process call
+        if isinstance(token.value, Token):
+            return token.update(await self.process(inputs, token.value))
         # Check if value is None
         if token.value is None:
             if self.optional:
@@ -939,6 +971,9 @@ class CWLObjectTokenProcessor(TokenProcessor):
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
+        # If value is token, propagate the process call
+        if isinstance(token.value, Token):
+            return token.update(await self.process(inputs, token.value))
         # Check if value is None
         if token.value is None:
             if self.optional:
@@ -1221,6 +1256,9 @@ class CWLUnionTokenProcessor(TokenProcessor):
         )
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
+        # If value is token, propagate the process call
+        if isinstance(token.value, Token):
+            return token.update(await self.process(inputs, token.value))
         # Select the correct processor for the evaluation
         processor = self.get_processor(token.value)
         # Propagate evaluation to the selected processor

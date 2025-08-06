@@ -83,8 +83,8 @@ def create_command(
     )
     # Format stderr
     if stderr == asyncio.subprocess.DEVNULL:
-        stderr = "/dev/null"
-    if stderr == stdout:
+        stderr = " 2> /dev/null"
+    elif stderr == stdout:
         stderr = " 2>&1"
     elif stderr != asyncio.subprocess.STDOUT:
         stderr = f" 2>{shlex.quote(str(stderr))}"
@@ -96,7 +96,7 @@ def create_command(
             f"The `{class_name}` does not support `stdout` pipe redirection."
         )
     elif stdout == asyncio.subprocess.DEVNULL:
-        stdout = "/dev/null"
+        stdout = " > /dev/null"
     elif stdout != asyncio.subprocess.STDOUT:
         stdout = f" > {shlex.quote(str(stdout))}"
     else:
@@ -125,7 +125,7 @@ def create_command(
 
 
 def get_job_step_name(job_name: str) -> str:
-    return PurePosixPath(job_name).parent.name
+    return PurePosixPath(job_name).parent.as_posix()
 
 
 def get_job_tag(job_name: str) -> str:
