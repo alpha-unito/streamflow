@@ -1818,13 +1818,14 @@ class Transformer(BaseStep, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
 
+    def _filter_input_ports(self) -> MutableMapping[str, Port]:
+        return {k: v for k, v in self.get_input_ports().items() if k != "__job__"}
+
     async def run(self) -> None:
         try:
-            if self.input_ports:
+            if input_ports := self._filter_input_ports():
                 inputs_map = {}
-                input_ports = {
-                    k: v for k, v in self.get_input_ports().items() if k != "__job__"
-                }
+
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
