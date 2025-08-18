@@ -188,6 +188,7 @@ class FutureConnector(Connector):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
+        daemon: bool = False,
     ) -> tuple[str, int] | None:
         if self._connector is None:
             if not self.deploying:
@@ -206,6 +207,7 @@ class FutureConnector(Connector):
             capture_output=capture_output,
             timeout=timeout,
             job_name=job_name,
+            daemon=daemon,
         )
 
     async def undeploy(self, external: bool) -> None:

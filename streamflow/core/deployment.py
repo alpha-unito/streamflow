@@ -129,6 +129,7 @@ class Connector(SchemaEntity):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
+        daemon: bool = False,
     ) -> tuple[str, int] | None: ...
 
     @abstractmethod

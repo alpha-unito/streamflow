@@ -678,6 +678,7 @@ class SSHConnector(BaseConnector):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
+        daemon: bool = False,
     ) -> tuple[str, int] | None:
         command = self._get_command(
             location=location,

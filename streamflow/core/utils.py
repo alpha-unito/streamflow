@@ -74,6 +74,7 @@ def create_command(
     stdin: int | str | None = None,
     stdout: int | str = asyncio.subprocess.STDOUT,
     stderr: int | str = asyncio.subprocess.STDOUT,
+    daemon: bool = False,
 ) -> str:
     # Format stdin
     stdin = (
@@ -88,6 +89,8 @@ def create_command(
         stderr = " 2>&1"
     elif stderr != asyncio.subprocess.STDOUT:
         stderr = f" 2>{shlex.quote(str(stderr))}"
+    elif daemon:
+        stderr = " 2>task.err"
     else:
         stderr = ""
     # Format stdout
@@ -99,6 +102,8 @@ def create_command(
         stdout = " > /dev/null"
     elif stdout != asyncio.subprocess.STDOUT:
         stdout = f" > {shlex.quote(str(stdout))}"
+    elif daemon:
+        stdout = " > task.out"
     else:
         stdout = ""
     if stderr == asyncio.subprocess.PIPE:
@@ -107,7 +112,14 @@ def create_command(
         )
     # Build command
     return "".join(
-        "{workdir}" "{environment}" "{command}" "{stdin}" "{stdout}" "{stderr}"
+        "{workdir}"
+        "{environment}"
+        "{nohup}"
+        "{command}"
+        "{stdin}"
+        "{stdout}"
+        "{stderr}"
+        "{echo_pid}"
     ).format(
         workdir=f"cd {workdir} && " if workdir is not None else "",
         environment=(
@@ -121,6 +133,8 @@ def create_command(
         stdin=stdin,
         stdout=stdout,
         stderr=stderr,
+        nohup="(nohup " if daemon else "",
+        echo_pid=" & echo $! )" if daemon else "",
     )
 
 

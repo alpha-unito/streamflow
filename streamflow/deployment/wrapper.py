@@ -119,6 +119,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
+        daemon: bool = False,
     ) -> tuple[str, int] | None:
         return await self.connector.run(
             location=location,
@@ -131,6 +132,7 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
             capture_output=capture_output,
             timeout=timeout,
             job_name=job_name,
+            daemon=daemon,
         )
 
     async def undeploy(self, external: bool) -> None:

@@ -602,6 +602,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
+        daemon: bool = False,
     ) -> tuple[str, int] | None:
         command = utils.create_command(
             self.__class__.__name__,

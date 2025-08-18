@@ -570,6 +570,7 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
+        daemon: bool = False,
     ) -> tuple[str, int] | None:
         if job_name:
             command_str = utils.create_command(
@@ -616,21 +617,26 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
             self._scheduled_jobs[job_id] = location
             async with self._jobs_cache_lock:
                 self._jobs_cache.clear()
-            while True:
-                async with self._jobs_cache_lock:
-                    running_jobs = await self._get_running_jobs(location)
-                if job_id not in running_jobs:
-                    break
-                await asyncio.sleep(self.pollingInterval)
-            self._scheduled_jobs.pop(job_id)
-            return (
-                (
-                    await self._get_output(job_id, location)
-                    if stdout == asyncio.subprocess.STDOUT
-                    else None
-                ),
-                await self._get_returncode(job_id, location),
-            )
+            if daemon:
+                # todo: start an async task which check the job status
+                self._scheduled_jobs.pop(job_id)
+                return "", 0
+            else:
+                while True:
+                    async with self._jobs_cache_lock:
+                        running_jobs = await self._get_running_jobs(location)
+                    if job_id not in running_jobs:
+                        break
+                    await asyncio.sleep(self.pollingInterval)
+                self._scheduled_jobs.pop(job_id)
+                return (
+                    (
+                        await self._get_output(job_id, location)
+                        if stdout == asyncio.subprocess.STDOUT
+                        else None
+                    ),
+                    await self._get_returncode(job_id, location),
+                )
         else:
             return await super().run(
                 location=get_inner_location(location),

@@ -368,15 +368,17 @@ class BaseConnector(Connector, FutureAware, ABC):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
+        daemon: bool = False,
     ) -> tuple[str, int] | None:
         command_str = utils.create_command(
             self.__class__.__name__,
-            command,
-            environment,
-            workdir,
-            stdin,
-            stdout,
-            stderr,
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            daemon=daemon,
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
@@ -386,12 +388,18 @@ class BaseConnector(Connector, FutureAware, ABC):
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        return await utils.run_in_subprocess(
+        res = await utils.run_in_subprocess(
             location=location,
             command=[utils.encode_command(command_str, "sh")],
             capture_output=capture_output,
             timeout=timeout,
         )
+        if capture_output and daemon:
+            output, return_code = res
+            # todo: save pid store in `output`
+            return "", return_code
+        else:
+            return res
 
 
 class BatchConnector(Connector, ABC):

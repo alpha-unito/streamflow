@@ -149,15 +149,17 @@ class LocalConnector(BaseConnector):
         capture_output: bool = False,
         timeout: int | None = None,
         job_name: str | None = None,
+        daemon: bool = False,
     ) -> tuple[str, int] | None:
         command = utils.create_command(
-            self.__class__.__name__,
-            command,
-            environment,
-            workdir,
-            stdin,
-            stdout,
-            stderr,
+            class_name=self.__class__.__name__,
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            daemon=daemon,
         )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
