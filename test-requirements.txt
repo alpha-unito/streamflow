@@ -1,4 +1,4 @@
-cwltest==2.6.20250314152537
+cwltest==2.6.20250818005349
 cwltool==3.1.20250715140722
 pytest==8.4.1
 pytest-asyncio==1.1.0
