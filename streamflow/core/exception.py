@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 
+class ProcessorTypeError(Exception):
+    pass
+
+
 class WorkflowException(Exception):
     pass
 

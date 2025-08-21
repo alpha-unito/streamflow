@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
 import cwl_utils.file_formats
@@ -12,18 +12,22 @@ from typing_extensions import Self
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, LocalTarget, Target
 from streamflow.core.exception import (
-    WorkflowDefinitionException,
+    ProcessorTypeError,
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import flatten_list, get_tag
+from streamflow.core.processor import (
+    CommandOutputProcessor,
+    MapCommandOutputProcessor,
+    ObjectCommandOutputProcessor,
+    TokenProcessor,
+)
+from streamflow.core.utils import eval_processors, flatten_list, get_tag
 from streamflow.core.workflow import (
     CommandOutput,
-    CommandOutputProcessor,
     Job,
     Status,
     Token,
-    TokenProcessor,
 )
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
@@ -32,23 +36,6 @@ from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.token import ListToken, ObjectToken
-
-
-def _check_default_processor(
-    processor: CWLCommandOutputProcessor, token_value: Any
-) -> bool:
-    try:
-        _check_token_type(
-            name=processor.name,
-            token_value=token_value,
-            token_type=processor.token_type,
-            enum_symbols=processor.enum_symbols,
-            optional=processor.optional,
-            check_file=False,
-        )
-        return True
-    except WorkflowExecutionException:
-        return False
 
 
 def _check_token_type(
@@ -67,34 +54,34 @@ def _check_token_type(
                     name, token_value, t, enum_symbols, optional, check_file
                 )
                 return
-            except WorkflowExecutionException as e:
+            except ProcessorTypeError as e:
                 messages.append(str(e))
-        raise WorkflowExecutionException("\n".join(messages))
+        raise ProcessorTypeError("\n".join(messages))
     if isinstance(token_value, Token):
         _check_token_type(
             name, token_value.value, token_type, enum_symbols, optional, check_file
         )
     elif token_type == "Any":  # nosec
         if not optional and token_value is None:
-            raise WorkflowExecutionException(
+            raise ProcessorTypeError(
                 f"Token {name} is of type `Any`: it cannot be null."
             )
     elif token_type == "null":  # nosec
         if token_value is not None:
-            raise WorkflowExecutionException(f"Token {name} should be null.")
+            raise ProcessorTypeError(f"Token {name} should be null.")
     elif token_value is None:
         if not optional:
-            raise WorkflowExecutionException(f"Token {name} is not optional.")
+            raise ProcessorTypeError(f"Token {name} is not optional.")
     elif token_type == "enum":  # nosec
         if token_value not in enum_symbols:
-            raise WorkflowExecutionException(
+            raise ProcessorTypeError(
                 f"Value {token_value} is not valid for token {name}."
             )
     elif (inferred_type := utils.infer_type_from_token(token_value)) != token_type:
         if check_file or token_type not in ["File", "Directory"]:
             # In CWL, long is considered as a subtype of double
             if inferred_type != "long" or token_type != "double":  # nosec
-                raise WorkflowExecutionException(
+                raise ProcessorTypeError(
                     f"Expected {name} token of type {token_type}, got {inferred_type}."
                 )
     return
@@ -735,101 +722,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         return await self._build_token(job, connector, context, token_value)
 
 
-class CWLMapTokenProcessor(TokenProcessor):
-    def __init__(
-        self,
-        name: str,
-        workflow: CWLWorkflow,
-        processor: TokenProcessor,
-        optional: bool = False,
-    ):
-        super().__init__(name, workflow)
-        self.processor: TokenProcessor = processor
-        self.optional: bool = optional
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=cast(
-                CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
-            ),
-            processor=await TokenProcessor.load(
-                context, row["processor"], loading_context
-            ),
-            optional=row["optional"],
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "processor": await self.processor.save(context),
-            "optional": self.optional,
-        }
-
-    async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
-        # Check if value is None
-        if token.value is None:
-            if self.optional:
-                return token.update(token.value)
-            else:
-                raise WorkflowExecutionException(f"Token {self.name} is not optional.")
-        # Check if token value is a list
-        if not isinstance(token, ListToken):
-            raise WorkflowDefinitionException(
-                f"Invalid value {token.value} for token {self.name}: it should be an array"
-            )
-        # Propagate evaluation to the inner processor
-        return token.update(
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(self.processor.process(inputs, v))
-                    for v in token.value
-                )
-            )
-        )
-
-
-class CWLMapCommandOutputProcessor(CommandOutputProcessor):
-    def __init__(
-        self,
-        name: str,
-        workflow: CWLWorkflow,
-        processor: CommandOutputProcessor,
-        target: Target | None = None,
-    ):
-        super().__init__(name, workflow, target)
-        self.processor: CommandOutputProcessor = processor
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=cast(
-                CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
-            ),
-            processor=await CommandOutputProcessor.load(
-                context, row["processor"], loading_context
-            ),
-            target=(
-                await loading_context.load_target(context, row["target"])
-                if row["target"]
-                else None
-            ),
-        )
+class CWLMapCommandOutputProcessor(MapCommandOutputProcessor):
 
     async def process(
         self,
@@ -837,136 +730,24 @@ class CWLMapCommandOutputProcessor(CommandOutputProcessor):
         command_output: CommandOutput,
         connector: Connector | None = None,
     ) -> Token | None:
-        if (
-            isinstance(command_output.value, MutableMapping)
-            and self.name in command_output.value
-        ):
-            value = command_output.value[self.name]
-            command_output = (
-                command_output.update([{self.name: v} for v in value])
-                if isinstance(value, MutableMapping)
-                else command_output.update(value)
-            )
-        if isinstance(command_output.value, MutableSequence):
-            token = ListToken(
-                value=await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self.processor.process(
-                                job, command_output.update(value), connector
-                            )
-                        )
-                        for value in command_output.value
-                    )
-                ),
-                tag=get_tag(job.inputs.values()),
-            )
-        else:
-            token = await self.processor.process(job, command_output, connector)
-        if not isinstance(token, ListToken):
-            token = ListToken(
-                value=[token] if token.value is not None else [], tag=token.tag
-            )
-        return token.update(token.value)
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "processor": await self.processor.save(context)
-        }
-
-
-class CWLObjectTokenProcessor(TokenProcessor):
-    def __init__(
-        self,
-        name: str,
-        workflow: CWLWorkflow,
-        processors: MutableMapping[str, TokenProcessor],
-        optional: bool = False,
-    ):
-        super().__init__(name, workflow)
-        self.processors: MutableMapping[str, TokenProcessor] = processors
-        self.optional: bool = optional
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=cast(
-                CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+        process_tasks = [
+            asyncio.create_task(
+                super().process(
+                    job=job, command_output=command_output, connector=connector
+                )
             ),
-            processors={
-                k: v
-                for k, v in zip(
-                    row["processors"].keys(),
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(
-                                TokenProcessor.load(context, v, loading_context)
-                            )
-                            for v in row["processors"].values()
-                        )
-                    ),
+            asyncio.create_task(
+                self.processor.process(
+                    job=job, command_output=command_output, connector=connector
                 )
-            },
-            optional=row["optional"],
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "processors": {
-                k: v
-                for k, v in zip(
-                    self.processors.keys(),
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(p.save(context))
-                            for p in self.processors.values()
-                        )
-                    ),
-                )
-            },
-            "optional": self.optional,
-        }
-
-    async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
-        # Check if value is None
-        if token.value is None:
-            if self.optional:
-                return token.update(token.value)
-            else:
-                raise WorkflowExecutionException(f"Token {self.name} is not optional.")
-        # Check if token value is a dictionary
-        if not isinstance(token.value, MutableMapping):
-            raise WorkflowDefinitionException(
-                f"Invalid value {token.value} for token {self.name}: it should be a record"
-            )
-        # Propagate evaluation to the inner processors
-        return token.update(
-            dict(
-                zip(
-                    token.value,
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(self.processors[k].process(inputs, v))
-                            for k, v in token.value.items()
-                        )
-                    ),
-                )
-            )
+            ),
+        ]
+        return await eval_processors(
+            process_tasks, name=self.name, value=command_output.value
         )
 
 
-class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
+class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
     def __init__(
         self,
         name: str,
@@ -977,8 +758,9 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
         output_eval: str | None = None,
         target: Target | None = None,
     ):
-        super().__init__(name, workflow, target)
-        self.processors: MutableMapping[str, CommandOutputProcessor] = processors
+        super().__init__(
+            name=name, processors=processors, workflow=workflow, target=target
+        )
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
         self.output_eval: str | None = output_eval
@@ -1020,22 +802,27 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
             output_eval=row["output_eval"],
         )
 
+    async def _propagate(
+        self,
+        job: Job,
+        command_output: CommandOutput,
+        connector: Connector | None = None,
+    ) -> ObjectToken:
+        token_tasks = {
+            k: asyncio.create_task(p.process(job, command_output, connector))
+            for k, p in self.processors.items()
+        }
+        return ObjectToken(
+            value=dict(
+                zip(token_tasks.keys(), await asyncio.gather(*token_tasks.values()))
+            ),
+            tag=get_tag(job.inputs.values()),
+        )
+
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "processors": {
-                k: v
-                for k, v in zip(
-                    self.processors.keys(),
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(p.save(context))
-                            for p in self.processors.values()
-                        )
-                    ),
-                )
-            },
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,
             "output_eval": self.output_eval,
@@ -1070,266 +857,19 @@ class CWLObjectCommandOutputProcessor(CommandOutputProcessor):
                     expression_lib=self.expression_lib,
                 )
             )
-        if isinstance(command_output.value, MutableMapping):
-            if self.name in command_output.value:
-                return await self.process(
-                    job,
-                    command_output.update(command_output.value[self.name]),
-                    connector,
+        # Process output
+        process_tasks = [
+            asyncio.create_task(
+                super().process(
+                    job=job, command_output=command_output, connector=connector
                 )
-            else:
-                token_tasks = {
-                    k: asyncio.create_task(
-                        p.process(
-                            job,
-                            command_output.update(command_output.value[k]),
-                            connector,
-                        )
-                    )
-                    for k, p in self.processors.items()
-                    if k in command_output.value
-                }
-                return ObjectToken(
-                    value=dict(
-                        zip(
-                            token_tasks.keys(),
-                            await asyncio.gather(*token_tasks.values()),
-                        )
-                    ),
-                    tag=get_tag(job.inputs.values()),
+            ),
+            asyncio.create_task(
+                self._propagate(
+                    job=job, command_output=command_output, connector=connector
                 )
-        else:
-            token_tasks = {
-                k: asyncio.create_task(p.process(job, command_output, connector))
-                for k, p in self.processors.items()
-            }
-            return ObjectToken(
-                value=dict(
-                    zip(token_tasks.keys(), await asyncio.gather(*token_tasks.values()))
-                ),
-                tag=get_tag(job.inputs.values()),
-            )
-
-
-class CWLUnionTokenProcessor(TokenProcessor):
-    def __init__(
-        self,
-        name: str,
-        workflow: CWLWorkflow,
-        processors: MutableSequence[TokenProcessor],
-    ):
-        super().__init__(name, workflow)
-        self.processors: MutableSequence[TokenProcessor] = processors
-        self.check_processor: MutableMapping[
-            type[TokenProcessor], Callable[[TokenProcessor, Any], bool]
-        ] = {
-            CWLTokenProcessor: self._check_default_processor,
-            CWLObjectTokenProcessor: self._check_object_processor,
-            CWLMapTokenProcessor: self._check_map_processor,
-            CWLUnionTokenProcessor: self._check_union_processor,
-        }
-
-    # noinspection PyMethodMayBeStatic
-    def _check_default_processor(
-        self, processor: CWLTokenProcessor, token_value: Any
-    ) -> bool:
-        try:
-            _check_token_type(
-                name=processor.name,
-                token_value=token_value,
-                token_type=processor.token_type,
-                enum_symbols=processor.enum_symbols,
-                optional=processor.optional,
-                check_file=True,
-            )
-            return True
-        except WorkflowExecutionException:
-            return False
-
-    def _check_map_processor(
-        self, processor: CWLMapTokenProcessor, token_value: Any
-    ) -> bool:
-        if isinstance(token_value, MutableSequence):
-            if len(token_value) > 0:
-                return self.check_processor[type(processor.processor)](
-                    processor.processor, token_value[0]
-                )
-            else:
-                return True
-        else:
-            return False
-
-    def _check_object_processor(
-        self, processor: CWLObjectTokenProcessor, token_value: Any
-    ) -> bool:
-        return isinstance(token_value, MutableMapping) and all(
-            k in processor.processors
-            and self.check_processor[type(processor.processors[k])](
-                processor.processors[k], v
-            )
-            for k, v in token_value.items()
-        )
-
-    def _check_union_processor(
-        self, processor: CWLUnionTokenProcessor, token_value: Any
-    ) -> bool:
-        return any(
-            self.check_processor[type(p)](p, token_value) for p in processor.processors
-        )
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=cast(
-                CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
             ),
-            processors=cast(
-                MutableSequence[TokenProcessor],
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            TokenProcessor.load(context, p, loading_context)
-                        )
-                        for p in row["processors"]
-                    )
-                ),
-            ),
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "processors": await asyncio.gather(
-                *(asyncio.create_task(v.save(context)) for v in self.processors)
-            )
-        }
-
-    def get_processor(self, token_value: Any) -> TokenProcessor:
-        for processor in self.processors:
-            if self.check_processor[type(processor)](processor, token_value):
-                return processor
-        raise WorkflowDefinitionException(
-            "No suitable command output processors for value " + str(token_value)
-        )
-
-    async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
-        # Select the correct processor for the evaluation
-        processor = self.get_processor(token.value)
-        # Propagate evaluation to the selected processor
-        return await processor.process(inputs, token)
-
-
-class CWLUnionCommandOutputProcessor(CommandOutputProcessor):
-    def __init__(
-        self,
-        name: str,
-        workflow: CWLWorkflow,
-        processors: MutableSequence[CommandOutputProcessor],
-    ):
-        super().__init__(name, workflow)
-        self.processors: MutableSequence[CommandOutputProcessor] = processors
-        self.check_processor: MutableMapping[
-            type[CommandOutputProcessor], Callable[[CommandOutputProcessor, Any], bool]
-        ] = {
-            CWLCommandOutputProcessor: _check_default_processor,
-            CWLObjectCommandOutputProcessor: self._check_object_processor,
-            CWLMapCommandOutputProcessor: self._check_map_processor,
-            CWLUnionCommandOutputProcessor: self._check_union_processor,
-        }
-
-    # noinspection PyMethodMayBeStatic
-    def _check_map_processor(
-        self, processor: CWLMapCommandOutputProcessor, token_value: Any
-    ) -> bool:
-        if isinstance(token_value, MutableSequence):
-            if len(token_value) > 0:
-                return self.check_processor[type(processor.processor)](
-                    processor.processor, token_value[0]
-                )
-            else:
-                return True
-        else:
-            return False
-
-    def _check_object_processor(
-        self, processor: CWLObjectCommandOutputProcessor, token_value: Any
-    ) -> bool:
-        return isinstance(token_value, MutableMapping) and all(
-            k in processor.processors
-            and self.check_processor[type(processor.processors[k])](
-                processor.processors[k], v
-            )
-            for k, v in token_value.items()
-        )
-
-    def _check_union_processor(
-        self, processor: CWLUnionCommandOutputProcessor, token_value: Any
-    ) -> bool:
-        return any(
-            self.check_processor[type(p)](p, token_value) for p in processor.processors
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "processors": await asyncio.gather(
-                *(asyncio.create_task(v.save(context)) for v in self.processors)
-            )
-        }
-
-    def get_processor(self, token_value: Any) -> CommandOutputProcessor:
-        for processor in self.processors:
-            if self.check_processor[type(processor)](processor, token_value):
-                return processor
-        raise WorkflowDefinitionException(
-            "No suitable token processors for value " + str(token_value)
-        )
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=cast(
-                CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
-            ),
-            processors=cast(
-                MutableSequence[CommandOutputProcessor],
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            CommandOutputProcessor.load(context, p, loading_context)
-                        )
-                        for p in row["processors"]
-                    )
-                ),
-            ),
-        )
-
-    async def process(
-        self,
-        job: Job,
-        command_output: CommandOutput,
-        connector: Connector | None = None,
-    ) -> Token | None:
-        token_value = command_output.value
-        # If `token_value` is a dictionary, directly extract the token value from it
-        if isinstance(token_value, MutableMapping) and self.name in token_value:
-            token_value = token_value[self.name]
-        return await self.get_processor(token_value).process(
-            job, command_output, connector
+        ]
+        return await eval_processors(
+            process_tasks, name=self.name, value=command_output.value
         )

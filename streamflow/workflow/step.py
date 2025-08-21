@@ -33,13 +33,13 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import compare_tags, get_entity_ids
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
-    CommandOutputProcessor,
     Job,
     Port,
     Status,

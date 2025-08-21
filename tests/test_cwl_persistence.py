@@ -12,7 +12,14 @@ from streamflow.core import utils
 from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import FilterConfig, LocalTarget
-from streamflow.core.workflow import CommandOutputProcessor, CommandTokenProcessor, Step
+from streamflow.core.processor import (
+    CommandOutputProcessor,
+    MapTokenProcessor,
+    ObjectTokenProcessor,
+    UnionCommandOutputProcessor,
+    UnionTokenProcessor,
+)
+from streamflow.core.workflow import CommandTokenProcessor, Step
 from streamflow.cwl.combinator import ListMergeCombinator
 from streamflow.cwl.command import (
     CWLCommand,
@@ -26,12 +33,8 @@ from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
     CWLFileToken,
     CWLMapCommandOutputProcessor,
-    CWLMapTokenProcessor,
     CWLObjectCommandOutputProcessor,
-    CWLObjectTokenProcessor,
     CWLTokenProcessor,
-    CWLUnionCommandOutputProcessor,
-    CWLUnionTokenProcessor,
 )
 from streamflow.cwl.step import (
     CWLConditionalStep,
@@ -351,7 +354,7 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
             )
         elif output_type == "union":
             processor = get_full_instantiation(
-                cls_=CWLUnionCommandOutputProcessor,
+                cls_=UnionCommandOutputProcessor,
                 name=utils.random_name(),
                 workflow=workflow,
                 processors=[
@@ -359,6 +362,7 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
                         name=utils.random_name(), workflow=workflow
                     ),
                 ],
+                target=LocalTarget("/shared"),
             )
         else:
             raise Exception(f"Unknown output type: {output_type}")
@@ -694,11 +698,10 @@ async def test_cwl_map_token_transformer(context: StreamFlowContext):
         name=utils.random_name() + "-transformer",
         port_name=port.name,
         processor=get_full_instantiation(
-            cls_=CWLMapTokenProcessor,
+            cls_=MapTokenProcessor,
             name=port.name,
             workflow=workflow,
             processor=_create_cwl_token_processor(port.name, workflow),
-            optional=True,
         ),
         workflow=workflow,
     )
@@ -722,13 +725,12 @@ async def test_cwl_object_token_transformer(context: StreamFlowContext):
         name=utils.random_name() + "-transformer",
         port_name=port.name,
         processor=get_full_instantiation(
-            cls_=CWLObjectTokenProcessor,
+            cls_=ObjectTokenProcessor,
             name=port.name,
             workflow=workflow,
             processors={
                 utils.random_name(): _create_cwl_token_processor(port.name, workflow)
             },
-            optional=True,
         ),
         workflow=workflow,
     )
@@ -753,7 +755,7 @@ async def test_cwl_union_token_transformer(context: StreamFlowContext):
         name=name + "-transformer",
         port_name=port.name,
         processor=get_full_instantiation(
-            cls_=CWLUnionTokenProcessor,
+            cls_=UnionTokenProcessor,
             name=port.name,
             workflow=workflow,
             processors=[_create_cwl_token_processor(port.name, workflow)],
