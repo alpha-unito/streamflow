@@ -808,13 +808,19 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         command_output: CommandOutput,
         connector: Connector | None = None,
     ) -> ObjectToken:
-        token_tasks = {
-            k: asyncio.create_task(p.process(job, command_output, connector))
-            for k, p in self.processors.items()
-        }
         return ObjectToken(
             value=dict(
-                zip(token_tasks.keys(), await asyncio.gather(*token_tasks.values()))
+                zip(
+                    self.processors.keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                p.process(job, command_output, connector)
+                            )
+                            for p in self.processors.values()
+                        )
+                    ),
+                )
             ),
             tag=get_tag(job.inputs.values()),
         )

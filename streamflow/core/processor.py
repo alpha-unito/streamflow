@@ -49,7 +49,7 @@ class CommandOutputProcessor(ABC):
             name=row["name"],
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             target=(
-                (await loading_context.load_target(context, row["workflow"]))
+                (await loading_context.load_target(context, row["target"]))
                 if row["target"]
                 else None
             ),
@@ -545,7 +545,11 @@ class UnionCommandOutputProcessor(CommandOutputProcessor):
                     )
                 ),
             ),
-            target=row["target"],
+            target=(
+                (await loading_context.load_target(context, row["target"]))
+                if row["target"]
+                else None
+            ),
         )
 
     async def process(
