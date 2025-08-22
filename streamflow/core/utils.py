@@ -150,19 +150,21 @@ async def eval_processors(unfinished: Iterable[Task], name: str, value: Any) -> 
         finished, unfinished = await asyncio.wait(
             unfinished, return_when=asyncio.FIRST_COMPLETED
         )
+        selected_task = None
         for task in finished:
             if isinstance(task.exception(), ProcessorTypeError):
-                if task.get_name():
-                    error_msg += f"\nTried {task.get_name()}, but received error `{task.exception()}`"
-                else:
-                    error_msg += f"\nReceived error `{task.exception()}`"
+                error_msg += (
+                    f"\nTried {task.get_name()}, but received error {task.exception()}"
+                )
             else:
                 for remaining in unfinished:
                     remaining.cancel()
-                if task.exception() is not None:
-                    raise task.exception()
-                else:
-                    return task.result()
+                selected_task = task
+        if selected_task is not None:
+            if selected_task.exception() is not None:
+                raise selected_task.exception()
+            else:
+                return selected_task.result()
     raise ProcessorTypeError(
         f"No suitable token processors in {name} for value {value}:{error_msg}"
     )

@@ -697,7 +697,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                         check_file=True,
                     )
                 else:
-                    raise WorkflowExecutionException(
+                    raise ProcessorTypeError(
                         f"Expected {self.name} token of type {self.token_type}, got list."
                     )
             else:
@@ -724,6 +724,24 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
 
 class CWLMapCommandOutputProcessor(MapCommandOutputProcessor):
 
+    async def _propagate(
+        self,
+        job: Job,
+        command_output: CommandOutput,
+        connector: Connector | None = None,
+    ) -> ListToken:
+        token = await self.processor.process(
+            job=job, command_output=command_output, connector=connector
+        )
+        if isinstance(token, ListToken):
+            return token
+        else:
+            return ListToken(
+                value=[token] if token.value is not None else [],
+                tag=token.tag,
+                recoverable=token.recoverable,
+            )
+
     async def process(
         self,
         job: Job,
@@ -737,7 +755,7 @@ class CWLMapCommandOutputProcessor(MapCommandOutputProcessor):
                 )
             ),
             asyncio.create_task(
-                self.processor.process(
+                self._propagate(
                     job=job, command_output=command_output, connector=connector
                 )
             ),
