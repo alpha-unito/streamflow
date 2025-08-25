@@ -23,14 +23,22 @@ from streamflow.core.deployment import (
     Target,
 )
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.core.processor import (
+    CommandOutputProcessor,
+    MapTokenProcessor,
+    NullTokenProcessor,
+    ObjectTokenProcessor,
+    PopCommandOutputProcessor,
+    TokenProcessor,
+    UnionCommandOutputProcessor,
+    UnionTokenProcessor,
+)
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import (
-    CommandOutputProcessor,
     CommandTokenProcessor,
     Port,
     Step,
     Token,
-    TokenProcessor,
     Workflow,
 )
 from streamflow.cwl import utils
@@ -47,12 +55,8 @@ from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
     CWLMapCommandOutputProcessor,
-    CWLMapTokenProcessor,
     CWLObjectCommandOutputProcessor,
-    CWLObjectTokenProcessor,
     CWLTokenProcessor,
-    CWLUnionCommandOutputProcessor,
-    CWLUnionTokenProcessor,
 )
 from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
 from streamflow.cwl.requirement.docker.translator import (
@@ -383,11 +387,14 @@ def _create_command_output_processor(
                         single=single,
                     )
                 )
-            return CWLUnionCommandOutputProcessor(
-                name=port_name,
-                workflow=workflow,
-                processors=processors,
-            )
+            if len(processors) > 1:
+                return UnionCommandOutputProcessor(
+                    name=port_name,
+                    workflow=workflow,
+                    processors=processors,
+                )
+            else:
+                return processors[0]
     # Complex type -> Extract from schema definitions and propagate
     elif "#" in port_type:
         return _create_command_output_processor(
@@ -573,7 +580,7 @@ def _create_token_processor(
 ) -> TokenProcessor:
     # Array type: -> MapTokenProcessor
     if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
-        return CWLMapTokenProcessor(
+        processor = MapTokenProcessor(
             name=port_name,
             workflow=workflow,
             processor=_create_token_processor(
@@ -589,8 +596,17 @@ def _create_token_processor(
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
             ),
-            optional=optional,
         )
+        if optional:
+            processor = UnionTokenProcessor(
+                name=port_name,
+                workflow=workflow,
+                processors=[
+                    NullTokenProcessor(name=port_name, workflow=workflow),
+                    processor,
+                ],
+            )
+        return processor
     # Enum type: -> create output processor
     elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
         # Process InlineJavascriptRequirement
@@ -624,7 +640,7 @@ def _create_token_processor(
         if (type_name := getattr(port_type, "name", port_name)).startswith("_:"):
             type_name = cwl_name_prefix
         record_name_prefix = utils.get_name(posixpath.sep, posixpath.sep, type_name)
-        return CWLObjectTokenProcessor(
+        processor = ObjectTokenProcessor(
             name=port_name,
             workflow=workflow,
             processors={
@@ -647,8 +663,17 @@ def _create_token_processor(
                 )
                 for port_type in port_type.fields
             },
-            optional=optional,
         )
+        if optional:
+            processor = UnionTokenProcessor(
+                name=port_name,
+                workflow=workflow,
+                processors=[
+                    NullTokenProcessor(name=port_name, workflow=workflow),
+                    processor,
+                ],
+            )
+        return processor
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
         types = [t for t in filter(lambda x: x != "null", port_type)]
@@ -669,7 +694,7 @@ def _create_token_processor(
             )
         # List of types: -> UnionOutputProcessor
         else:
-            return CWLUnionTokenProcessor(
+            return UnionTokenProcessor(
                 name=port_name,
                 workflow=workflow,
                 processors=[
@@ -1870,18 +1895,30 @@ class CWLTranslator:
             else:
                 port_type = element_output.type_
             # Add output port to ExecuteStep
+            output_processor = _create_command_output_processor(
+                port_name=port_name,
+                workflow=workflow,
+                port_target=port_target,
+                port_type=port_type,
+                cwl_element=element_output,
+                cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
+                schema_def_types=schema_def_types,
+                context=context,
+            )
             step.add_output_port(
                 name=port_name,
                 port=output_port,
-                output_processor=_create_command_output_processor(
-                    port_name=port_name,
+                output_processor=UnionCommandOutputProcessor(
+                    name=port_name,
                     workflow=workflow,
-                    port_target=port_target,
-                    port_type=port_type,
-                    cwl_element=element_output,
-                    cwl_name_prefix=posixpath.join(cwl_name_prefix, port_name),
-                    schema_def_types=schema_def_types,
-                    context=context,
+                    processors=[
+                        PopCommandOutputProcessor(
+                            name=port_name,
+                            workflow=workflow,
+                            processor=output_processor,
+                        ),
+                        output_processor,
+                    ],
                 ),
             )
         if isinstance(cwl_element, get_args(cwl_utils.parser.CommandLineTool)):

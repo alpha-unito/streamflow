@@ -388,7 +388,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             value_type=row["value_type"],
             target=(
-                (await loading_context.load_target(context, row["workflow"]))
+                (await loading_context.load_target(context, row["target"]))
                 if row["target"]
                 else None
             ),

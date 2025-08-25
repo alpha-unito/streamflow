@@ -17,11 +17,11 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.utils import get_entity_ids, get_tag, random_name
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
-    CommandOutputProcessor,
     Job,
     Port,
     Token,

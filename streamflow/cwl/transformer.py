@@ -12,8 +12,9 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.processor import TokenProcessor
 from streamflow.core.utils import get_tag
-from streamflow.core.workflow import Port, Token, TokenProcessor
+from streamflow.core.workflow import Port, Token
 from streamflow.cwl import utils
 from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow

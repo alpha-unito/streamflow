@@ -9,11 +9,12 @@ import os
 import posixpath
 import shlex
 import uuid
+from asyncio import Task
 from collections.abc import Iterable, MutableMapping, MutableSequence
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.exception import ProcessorTypeError, WorkflowExecutionException
 from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
@@ -141,6 +142,32 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
 
 def encode_command(command: str, shell: str = "sh") -> str:
     return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | {shell}"
+
+
+async def eval_processors(unfinished: Iterable[Task], name: str, value: Any) -> Token:
+    error_msg = ""
+    while unfinished:
+        finished, unfinished = await asyncio.wait(
+            unfinished, return_when=asyncio.FIRST_COMPLETED
+        )
+        selected_task = None
+        for task in finished:
+            if isinstance(task.exception(), ProcessorTypeError):
+                error_msg += (
+                    f"\nTried {task.get_name()}, but received error {task.exception()}"
+                )
+            else:
+                for remaining in unfinished:
+                    remaining.cancel()
+                selected_task = task
+        if selected_task is not None:
+            if selected_task.exception() is not None:
+                raise selected_task.exception()
+            else:
+                return selected_task.result()
+    raise ProcessorTypeError(
+        f"No suitable token processors in {name} for value {value}:{error_msg}"
+    )
 
 
 def flatten_list(hierarchical_list):

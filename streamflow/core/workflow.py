@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, TypeVar, cast
 from typing_extensions import Self
 
 from streamflow.core import utils
-from streamflow.core.deployment import Connector, ExecutionLocation, Target
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import (
     DatabaseLoadingContext,
@@ -80,79 +79,6 @@ class CommandOutput:
 
     def update(self, value: Any) -> CommandOutput:
         return CommandOutput(value=value, status=self.status)
-
-
-class CommandOutputProcessor(ABC):
-    def __init__(self, name: str, workflow: Workflow, target: Target | None = None):
-        self.name: str = name
-        self.workflow: Workflow = workflow
-        self.target: Target | None = target
-
-    def _get_connector(self, connector: Connector | None, job: Job) -> Connector:
-        return connector or self.workflow.context.scheduler.get_connector(job.name)
-
-    async def _get_locations(
-        self, connector: Connector | None, job: Job
-    ) -> MutableSequence[ExecutionLocation]:
-        if self.target:
-            available_locations = await connector.get_available_locations(
-                service=self.target.service
-            )
-            return [loc.location for loc in available_locations.values()]
-        else:
-            return self.workflow.context.scheduler.get_locations(job.name)
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            target=(
-                (await loading_context.load_target(context, row["workflow"]))
-                if row["target"]
-                else None
-            ),
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        if self.target:
-            await self.target.save(context)
-        return {
-            "name": self.name,
-            "workflow": self.workflow.persistent_id,
-            "target": self.target.persistent_id if self.target else None,
-        }
-
-    @classmethod
-    async def load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context)
-
-    @abstractmethod
-    async def process(
-        self,
-        job: Job,
-        command_output: CommandOutput,
-        connector: Connector | None = None,
-    ) -> Token | None: ...
-
-    async def save(self, context: StreamFlowContext):
-        return {
-            "type": utils.get_class_fullname(type(self)),
-            "params": await self._save_additional_params(context),
-        }
 
 
 class CommandToken:
@@ -629,50 +555,6 @@ class Token(PersistableEntity):
 
     def update(self, value: Any, recoverable: bool = False) -> Token:
         return self.__class__(tag=self.tag, value=value, recoverable=recoverable)
-
-
-class TokenProcessor(ABC):
-    def __init__(self, name: str, workflow: Workflow):
-        self.name: str = name
-        self.workflow: Workflow = workflow
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        return {"name": self.name, "workflow": self.workflow.persistent_id}
-
-    @classmethod
-    async def load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context)
-
-    @abstractmethod
-    async def process(
-        self, inputs: MutableMapping[str, Token], token: Token
-    ) -> Token: ...
-
-    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
-        return {
-            "type": utils.get_class_fullname(type(self)),
-            "params": await self._save_additional_params(context),
-        }
 
 
 if TYPE_CHECKING:

@@ -25,11 +25,15 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.processor import (
+    CommandOutputProcessor,
+    MapCommandOutputProcessor,
+    UnionCommandOutputProcessor,
+)
 from streamflow.core.utils import flatten_list
 from streamflow.core.workflow import (
     Command,
     CommandOptions,
-    CommandOutputProcessor,
     CommandToken,
     CommandTokenProcessor,
     Job,
@@ -42,9 +46,7 @@ from streamflow.cwl import utils
 from streamflow.cwl.processor import (
     CWLCommandOutput,
     CWLCommandOutputProcessor,
-    CWLMapCommandOutputProcessor,
     CWLObjectCommandOutputProcessor,
-    CWLUnionCommandOutputProcessor,
 )
 from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow
@@ -173,10 +175,10 @@ def _build_command_output_processor(
     name: str, step: Step, value: Any
 ) -> CommandOutputProcessor:
     if isinstance(value, MutableSequence):
-        return CWLMapCommandOutputProcessor(
+        return MapCommandOutputProcessor(
             name=name,
             workflow=cast(CWLWorkflow, step.workflow),
-            processor=CWLUnionCommandOutputProcessor(
+            processor=UnionCommandOutputProcessor(
                 name=name,
                 workflow=cast(CWLWorkflow, step.workflow),
                 processors=[
