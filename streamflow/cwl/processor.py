@@ -22,7 +22,7 @@ from streamflow.core.processor import (
     ObjectCommandOutputProcessor,
     TokenProcessor,
 )
-from streamflow.core.utils import eval_processors, flatten_list, get_tag
+from streamflow.core.utils import eval_processors, flatten_list, get_tag, make_future
 from streamflow.core.workflow import (
     CommandOutput,
     Job,
@@ -476,13 +476,14 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     async def _process_command_output(
         self,
         job: Job,
-        command_output: CWLCommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None,
         context: MutableMapping[str, Any],
     ):
         connector = self._get_connector(connector, job)
         locations = await self._get_locations(connector, job)
-        token_value = command_output.value
+        result = cast(CWLCommandOutput, await command_output)
+        token_value = result.value
         cwl_workflow = cast(CWLWorkflow, self.workflow)
         # If `token_value` is a dictionary, directly extract the token value from it
         if isinstance(token_value, MutableMapping) and self.name in token_value:
@@ -604,7 +605,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 )
         if self.output_eval is not None:
             # Fill context with exit code
-            context["runtime"]["exitCode"] = command_output.exit_code
+            context["runtime"]["exitCode"] = result.exit_code
             # Evaluate output
             token = utils.eval_expression(
                 expression=self.output_eval,
@@ -665,7 +666,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CWLCommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
         # Remap output and tmp directories when target is specified
@@ -727,7 +728,7 @@ class CWLMapCommandOutputProcessor(MapCommandOutputProcessor):
     async def _propagate(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> ListToken:
         token = await self.processor.process(
@@ -745,7 +746,7 @@ class CWLMapCommandOutputProcessor(MapCommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
         process_tasks = [
@@ -760,9 +761,7 @@ class CWLMapCommandOutputProcessor(MapCommandOutputProcessor):
                 )
             ),
         ]
-        return await eval_processors(
-            process_tasks, name=self.name, value=command_output.value
-        )
+        return await eval_processors(process_tasks, name=self.name)
 
 
 class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
@@ -823,7 +822,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
     async def _propagate(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> ObjectToken:
         return ObjectToken(
@@ -855,7 +854,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
         # Remap output and tmp directories when target is specified
@@ -869,16 +868,17 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                 tmp_directory=tmp_directory,
                 hardware=self.workflow.context.scheduler.get_hardware(job.name),
             )
-            context["runtime"]["exitCode"] = cast(
-                CWLCommandOutput, command_output
-            ).exit_code
+            result = await command_output
+            context["runtime"]["exitCode"] = cast(CWLCommandOutput, result).exit_code
             # Evaluate output
-            command_output = command_output.update(
-                utils.eval_expression(
-                    expression=self.output_eval,
-                    context=context,
-                    full_js=self.full_js,
-                    expression_lib=self.expression_lib,
+            command_output = make_future(
+                result.update(
+                    utils.eval_expression(
+                        expression=self.output_eval,
+                        context=context,
+                        full_js=self.full_js,
+                        expression_lib=self.expression_lib,
+                    )
                 )
             )
         # Process output
@@ -894,6 +894,4 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                 )
             ),
         ]
-        return await eval_processors(
-            process_tasks, name=self.name, value=command_output.value
-        )
+        return await eval_processors(process_tasks, name=self.name)
