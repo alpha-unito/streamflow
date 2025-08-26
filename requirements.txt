@@ -12,5 +12,5 @@ kubernetes_asyncio==33.3.0
 psutil==7.0.0
 referencing==0.36.2
 rdflib==7.1.4
-typing-extensions==4.14.1
+typing-extensions==4.15.0
 yattag==1.16.1
