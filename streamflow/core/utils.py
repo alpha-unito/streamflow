@@ -9,7 +9,6 @@ import os
 import posixpath
 import shlex
 import uuid
-from asyncio import Task
 from collections.abc import Iterable, MutableMapping, MutableSequence
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -18,8 +17,12 @@ from streamflow.core.exception import ProcessorTypeError, WorkflowExecutionExcep
 from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
+    from typing import TypeVar
+
     from streamflow.core.deployment import Connector, ExecutionLocation
     from streamflow.core.workflow import Token
+
+    T = TypeVar("T")
 
 
 class NamesStack:
@@ -144,7 +147,7 @@ def encode_command(command: str, shell: str = "sh") -> str:
     return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | {shell}"
 
 
-async def eval_processors(unfinished: Iterable[Task], name: str, value: Any) -> Token:
+async def eval_processors(unfinished: Iterable[asyncio.Task], name: str) -> Token:
     error_msg = ""
     while unfinished:
         finished, unfinished = await asyncio.wait(
@@ -165,9 +168,7 @@ async def eval_processors(unfinished: Iterable[Task], name: str, value: Any) -> 
                 raise selected_task.exception()
             else:
                 return selected_task.result()
-    raise ProcessorTypeError(
-        f"No suitable token processors in {name} for value {value}:{error_msg}"
-    )
+    raise ProcessorTypeError(f"No suitable token processors in {name}:{error_msg}")
 
 
 def flatten_list(hierarchical_list):
@@ -305,6 +306,12 @@ def get_tag(tokens: Iterable[Token]) -> str:
         if len(tag) > len(output_tag):
             output_tag = tag
     return output_tag
+
+
+def make_future(obj: T) -> asyncio.Future[T]:
+    future = asyncio.Future()
+    future.set_result(obj)
+    return future
 
 
 def random_name() -> str:

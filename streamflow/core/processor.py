@@ -12,7 +12,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation, Target
 from streamflow.core.exception import ProcessorTypeError
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import eval_processors, get_tag
+from streamflow.core.utils import eval_processors, get_tag, make_future
 from streamflow.core.workflow import CommandOutput, Job, Token, Workflow
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.token import ListToken, ObjectToken
@@ -80,7 +80,7 @@ class CommandOutputProcessor(ABC):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None: ...
 
@@ -169,12 +169,14 @@ class MapCommandOutputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
-        if not isinstance(command_output.value, MutableSequence):
+        result = await command_output
+        values = result.value
+        if not isinstance(values, MutableSequence):
             raise ProcessorTypeError(
-                f"Invalid value {command_output.value} "
+                f"Invalid value {values} "
                 f"for {self.name} command output: expected list"
             )
         return ListToken(
@@ -182,10 +184,10 @@ class MapCommandOutputProcessor(CommandOutputProcessor):
                 *(
                     asyncio.create_task(
                         self.processor.process(
-                            job, command_output.update(value), connector
+                            job, make_future(result.update(value)), connector
                         )
                     )
-                    for value in command_output.value
+                    for value in values
                 )
             ),
             tag=get_tag(job.inputs.values()),
@@ -324,30 +326,32 @@ class ObjectCommandOutputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
-        if not isinstance(command_output.value, MutableMapping):
+        result = await command_output
+        values = result.value
+        if not isinstance(values, MutableMapping):
             raise ProcessorTypeError(
-                f"Invalid value {command_output.value} "
+                f"Invalid value {values} "
                 f"for {self.name} command output: expected object"
             )
-        for key in command_output.value:
+        for key in values:
             if key not in self.processors.keys():
                 raise ProcessorTypeError(
-                    f"Invalid value {command_output.value} "
+                    f"Invalid value {values} "
                     f"for {self.name} command output: unexpected key {key}"
                 )
         token_tasks = {
             k: asyncio.create_task(
                 p.process(
                     job,
-                    command_output.update(command_output.value[k]),
+                    make_future(result.update(values[k])),
                     connector,
                 )
             )
             for k, p in self.processors.items()
-            if k in command_output.value
+            if k in values
         }
         return ObjectToken(
             value=dict(
@@ -484,22 +488,24 @@ class PopCommandOutputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
-        if not isinstance(command_output.value, MutableMapping):
+        result = await command_output
+        values = result.value
+        if not isinstance(values, MutableMapping):
             raise ProcessorTypeError(
-                f"Invalid value {command_output.value} "
+                f"Invalid value {values} "
                 f"for {self.name} command output: expected object"
             )
-        if self.name not in command_output.value:
+        if self.name not in values:
             raise ProcessorTypeError(
-                f"Invalid value {command_output.value} "
+                f"Invalid value {values} "
                 f"for {self.name} command output: expected key {self.name}"
             )
         return await self.processor.process(
             job=job,
-            command_output=command_output.update(command_output.value[self.name]),
+            command_output=make_future(result.update(values[self.name])),
             connector=connector,
         )
 
@@ -555,7 +561,7 @@ class UnionCommandOutputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
         process_tasks = [
@@ -565,9 +571,7 @@ class UnionCommandOutputProcessor(CommandOutputProcessor):
             )
             for p in self.processors
         ]
-        return await eval_processors(
-            process_tasks, name=self.name, value=command_output.value
-        )
+        return await eval_processors(process_tasks, name=self.name)
 
 
 class UnionTokenProcessor(TokenProcessor):
@@ -623,4 +627,4 @@ class UnionTokenProcessor(TokenProcessor):
             )
             for p in self.processors
         ]
-        return await eval_processors(process_tasks, name=self.name, value=token.value)
+        return await eval_processors(process_tasks, name=self.name)

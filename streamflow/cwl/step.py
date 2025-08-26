@@ -455,7 +455,7 @@ class CWLExecuteStep(ExecuteStep):
         job: Job,
         output_name: str,
         output_port: Port,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> None:
         if (

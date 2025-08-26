@@ -455,10 +455,12 @@ class DefaultCommandOutputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
-        return Token(tag=utils.get_tag(job.inputs.values()), value=command_output.value)
+        return Token(
+            tag=utils.get_tag(job.inputs.values()), value=(await command_output).value
+        )
 
 
 class DeployStep(BaseStep):
@@ -666,7 +668,7 @@ class ExecuteStep(BaseStep):
         job: Job,
         output_name: str,
         output_port: Port,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> None:
         if (
@@ -694,28 +696,29 @@ class ExecuteStep(BaseStep):
     async def _execute_command(
         self, job: Job, connectors: MutableMapping[str, Connector]
     ):
-        command_output = await self.command.execute(job)
-        if command_output.status == Status.FAILED:
-            logger.error(f"FAILED Job {job.name} with error:\n\t{command_output.value}")
-            raise WorkflowExecutionException(
-                f"FAILED Job {job.name} with error:\n\t{command_output.value}"
+        command_task = asyncio.create_task(self.command.execute(job))
+        output_tasks = (
+            asyncio.create_task(
+                self._retrieve_output(
+                    job=job,
+                    output_name=output_name,
+                    output_port=self.workflow.ports[output_port],
+                    command_output=command_task,
+                    connector=connectors.get(output_name),
+                )
             )
-        elif command_output.status != Status.CANCELLED:
-            # Retrieve output tokens
-            if not self.terminated:
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._retrieve_output(
-                                job=job,
-                                output_name=output_name,
-                                output_port=self.workflow.ports[output_port],
-                                command_output=command_output,
-                                connector=connectors.get(output_name),
-                            )
-                        )
-                        for output_name, output_port in self.output_ports.items()
-                    )
+            for output_name, output_port in self.output_ports.items()
+        )
+        if (
+            command_output := await command_task
+        ).status == Status.COMPLETED and not self.terminated:
+            await asyncio.gather(*output_tasks)
+        else:
+            for output_task in output_tasks:
+                output_task.cancel()
+            if command_output.status == Status.FAILED:
+                raise WorkflowExecutionException(
+                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
                 )
 
     async def _run_job(

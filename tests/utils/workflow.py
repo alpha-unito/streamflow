@@ -406,11 +406,11 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> Token | None:
         context = self.workflow.context
-        value = command_output.value
+        value = (await command_output).value
         if self.value_type == "file":
             locations = context.scheduler.get_locations(job.name)
             await _register_path(
