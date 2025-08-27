@@ -14,7 +14,6 @@ from streamflow.core.exception import ProcessorTypeError
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.utils import eval_processors, get_tag, make_future
 from streamflow.core.workflow import CommandOutput, Job, Token, Workflow
-from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.token import ListToken, ObjectToken
 
 
@@ -205,7 +204,7 @@ class MapTokenProcessor(TokenProcessor):
     def __init__(
         self,
         name: str,
-        workflow: CWLWorkflow,
+        workflow: Workflow,
         processor: TokenProcessor,
     ):
         super().__init__(name, workflow)
@@ -220,10 +219,7 @@ class MapTokenProcessor(TokenProcessor):
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=cast(
-                CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             processor=await TokenProcessor.load(
                 context, row["processor"], loading_context
             ),
@@ -368,7 +364,7 @@ class ObjectTokenProcessor(TokenProcessor):
     def __init__(
         self,
         name: str,
-        workflow: CWLWorkflow,
+        workflow: Workflow,
         processors: MutableMapping[str, TokenProcessor],
     ):
         super().__init__(name, workflow)
@@ -383,10 +379,7 @@ class ObjectTokenProcessor(TokenProcessor):
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=cast(
-                CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             processors={
                 k: v
                 for k, v in zip(
@@ -578,7 +571,7 @@ class UnionTokenProcessor(TokenProcessor):
     def __init__(
         self,
         name: str,
-        workflow: CWLWorkflow,
+        workflow: Workflow,
         processors: MutableSequence[TokenProcessor],
     ):
         super().__init__(name, workflow)
@@ -593,10 +586,7 @@ class UnionTokenProcessor(TokenProcessor):
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=cast(
-                CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
-            ),
+            workflow=await loading_context.load_workflow(context, row["workflow"]),
             processors=cast(
                 MutableSequence[TokenProcessor],
                 await asyncio.gather(

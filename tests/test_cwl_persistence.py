@@ -34,7 +34,6 @@ from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
     CWLFileToken,
-    CWLMapCommandOutputProcessor,
     CWLObjectCommandOutputProcessor,
     CWLTokenProcessor,
 )
@@ -150,7 +149,6 @@ def _create_cwl_token_processor(name: str, workflow: CWLWorkflow) -> CWLTokenPro
         name=name,
         workflow=workflow,
         token_type="enum",
-        check_type=False,
         enum_symbols=["path1", "path2"],
         expression_lib=["expr_lib1", "expr_lib2"],
         file_format="directory",
@@ -158,7 +156,6 @@ def _create_cwl_token_processor(name: str, workflow: CWLWorkflow) -> CWLTokenPro
         load_contents=True,
         load_listing=LoadListing.no_listing,
         only_propagate_secondary_files=False,
-        optional=True,
         secondary_files=[
             get_full_instantiation(cls_=SecondaryFile, pattern="file1", required=True)
         ],
@@ -299,7 +296,7 @@ async def test_cwl_expression_command(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "output_type", ["no_output", "default", "primitive", "map", "object", "union"]
+    "output_type", ["no_output", "default", "primitive", "object", "union"]
 )
 async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
     """Test saving and loading CWLExecuteStep from database"""
@@ -328,16 +325,6 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
         elif output_type == "primitive":
             processor = _create_cwl_command_output_processor(
                 name=utils.random_name(), workflow=workflow
-            )
-        elif output_type == "map":
-            processor = get_full_instantiation(
-                cls_=CWLMapCommandOutputProcessor,
-                name=utils.random_name(),
-                workflow=workflow,
-                processor=_create_cwl_command_output_processor(
-                    name=utils.random_name(), workflow=workflow
-                ),
-                target=LocalTarget(workdir="/home"),
             )
         elif output_type == "object":
             processor = get_full_instantiation(

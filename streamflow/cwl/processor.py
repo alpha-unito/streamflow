@@ -18,7 +18,6 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import (
     CommandOutputProcessor,
-    MapCommandOutputProcessor,
     ObjectCommandOutputProcessor,
     TokenProcessor,
 )
@@ -105,8 +104,7 @@ class CWLTokenProcessor(TokenProcessor):
         self,
         name: str,
         workflow: CWLWorkflow,
-        token_type: str | None = None,
-        check_type: bool = True,
+        token_type: str | MutableSequence[str] | None = None,
         enum_symbols: MutableSequence[str] | None = None,
         expression_lib: MutableSequence[str] | None = None,
         file_format: str | None = None,
@@ -114,13 +112,11 @@ class CWLTokenProcessor(TokenProcessor):
         load_contents: bool | None = None,
         load_listing: LoadListing | None = None,
         only_propagate_secondary_files: bool = True,
-        optional: bool = False,
         secondary_files: MutableSequence[SecondaryFile] | None = None,
         streamable: bool = False,
     ):
         super().__init__(name, workflow)
-        self.token_type: str | None = token_type
-        self.check_type: bool = check_type
+        self.token_type: str | MutableSequence[str] | None = token_type
         self.enum_symbols: MutableSequence[str] = enum_symbols or []
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.file_format: str | None = file_format
@@ -128,7 +124,6 @@ class CWLTokenProcessor(TokenProcessor):
         self.load_contents: bool | None = load_contents
         self.load_listing: LoadListing | None = load_listing
         self.only_propagate_secondary_files: bool = only_propagate_secondary_files
-        self.optional: bool = optional
         self.secondary_files: MutableSequence[SecondaryFile] = secondary_files or []
         self.streamable: bool = streamable
 
@@ -146,7 +141,6 @@ class CWLTokenProcessor(TokenProcessor):
                 await loading_context.load_workflow(context, row["workflow"]),
             ),
             token_type=row["token_type"],
-            check_type=row["check_type"],
             enum_symbols=row["enum_symbols"],
             expression_lib=row["expression_lib"],
             file_format=row["file_format"],
@@ -158,7 +152,6 @@ class CWLTokenProcessor(TokenProcessor):
                 else None
             ),
             only_propagate_secondary_files=row["only_propagate_secondary_files"],
-            optional=row["optional"],
             secondary_files=[
                 SecondaryFile(sf["pattern"], sf["required"])
                 for sf in row["secondary_files"]
@@ -292,7 +285,6 @@ class CWLTokenProcessor(TokenProcessor):
     ) -> MutableMapping[str, Any]:
         return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "token_type": self.token_type,
-            "check_type": self.check_type,
             "enum_symbols": self.enum_symbols,
             "expression_lib": self.expression_lib,
             "file_format": self.file_format,
@@ -300,7 +292,6 @@ class CWLTokenProcessor(TokenProcessor):
             "load_contents": self.load_contents,
             "load_listing": self.load_listing.value if self.load_listing else None,
             "only_propagate_secondary_files": self.only_propagate_secondary_files,
-            "optional": self.optional,
             "secondary_files": await asyncio.gather(
                 *(asyncio.create_task(s.save(context)) for s in self.secondary_files)
             ),
@@ -312,26 +303,14 @@ class CWLTokenProcessor(TokenProcessor):
         if utils.get_token_class(token.value) in ["File", "Directory"]:
             token = token.update(await self._process_file_token(inputs, token.value))
         # Check type
-        if self.check_type and self.token_type is not None:
-            if isinstance(token.value, MutableSequence):
-                for v in token.value:
-                    _check_token_type(
-                        name=self.name,
-                        token_value=v,
-                        token_type=self.token_type,
-                        enum_symbols=self.enum_symbols,
-                        optional=self.optional,
-                        check_file=True,
-                    )
-            else:
-                _check_token_type(
-                    name=self.name,
-                    token_value=token.value,
-                    token_type=self.token_type,
-                    enum_symbols=self.enum_symbols,
-                    optional=self.optional,
-                    check_file=True,
-                )
+        _check_token_type(
+            name=self.name,
+            token_value=token.value,
+            token_type=self.token_type,
+            enum_symbols=self.enum_symbols,
+            optional=False,
+            check_file=True,
+        )
         # Return the token
         return token.update(token.value)
 
@@ -482,26 +461,8 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     ):
         connector = self._get_connector(connector, job)
         locations = await self._get_locations(connector, job)
-        result = cast(CWLCommandOutput, await command_output)
-        token_value = result.value
         cwl_workflow = cast(CWLWorkflow, self.workflow)
-        # If `token_value` is a dictionary, directly extract the token value from it
-        if isinstance(token_value, MutableMapping) and self.name in token_value:
-            token = token_value[self.name]
-            return await utils.build_token_value(
-                context=self.workflow.context,
-                cwl_version=cwl_workflow.cwl_version,
-                js_context=context,
-                full_js=self.full_js,
-                expression_lib=self.expression_lib,
-                secondary_files=self.secondary_files,
-                connector=connector,
-                locations=locations,
-                token_value=token,
-                load_contents=self.load_contents,
-                load_listing=self.load_listing,
-            )
-        # Otherwise, generate the output object as described in `outputs` field
+        # Generate the output object as described in `outputs` field
         if self.glob is not None:
             # Adjust glob path
             globpaths = []
@@ -521,36 +482,41 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 globpaths.extend(
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
-            # Resolve glob
-            resolve_tasks = []
+            # Wait for command to finish and resolve glob
+            await command_output
             for location in locations:
-                for path in globpaths:
-                    resolve_tasks.append(
-                        asyncio.create_task(
-                            utils.expand_glob(
-                                connector=connector,
-                                workflow=self.workflow,
-                                location=location,
-                                input_directory=(
-                                    self.target.workdir
-                                    if self.target
-                                    else job.input_directory
-                                ),
-                                output_directory=(
-                                    self.target.workdir
-                                    if self.target
-                                    else job.output_directory
-                                ),
-                                tmp_directory=(
-                                    self.target.workdir
-                                    if self.target
-                                    else job.tmp_directory
-                                ),
-                                path=cast(str, path),
+                globpaths = dict(
+                    flatten_list(
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(
+                                    utils.expand_glob(
+                                        connector=connector,
+                                        workflow=self.workflow,
+                                        location=location,
+                                        input_directory=(
+                                            self.target.workdir
+                                            if self.target
+                                            else job.input_directory
+                                        ),
+                                        output_directory=(
+                                            self.target.workdir
+                                            if self.target
+                                            else job.output_directory
+                                        ),
+                                        tmp_directory=(
+                                            self.target.workdir
+                                            if self.target
+                                            else job.tmp_directory
+                                        ),
+                                        path=cast(str, path),
+                                    )
+                                )
+                                for path in globpaths
                             )
                         )
                     )
-                globpaths = dict(flatten_list(await asyncio.gather(*resolve_tasks)))
+                )
                 # Get token class from paths
                 globpaths = [
                     {"path": p, "class": c}
@@ -605,7 +571,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 )
         if self.output_eval is not None:
             # Fill context with exit code
-            context["runtime"]["exitCode"] = result.exit_code
+            context["runtime"]["exitCode"] = cast(
+                CWLCommandOutput, await command_output
+            ).exit_code
             # Evaluate output
             token = utils.eval_expression(
                 expression=self.output_eval,
@@ -628,6 +596,11 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 load_listing=LoadListing.no_listing,
             )
         # As the default value (no return path is met in previous code), simply process the command output
+        token_value = cast(CWLCommandOutput, await command_output).value
+        if isinstance(token_value, MutableMapping) and self.name in token_value:
+            raise ProcessorTypeError(
+                f"Token {self.name} should be extracted by a `PopCommandOutputProcessor` before being evaluated"
+            )
         return await utils.build_token_value(
             context=self.workflow.context,
             cwl_version=cwl_workflow.cwl_version,
@@ -685,56 +658,44 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             connector,
             context,
         )
-        if isinstance(token_value, MutableSequence):
-            if self.single:
-                if len(token_value) == 1:
-                    token_value = token_value[0]
-                    _check_token_type(
-                        name=self.name,
-                        token_value=token_value,
-                        token_type=self.token_type,
-                        enum_symbols=self.enum_symbols,
-                        optional=self.optional,
-                        check_file=True,
-                    )
+        if self.token_type != "Any":  # nosec
+            if isinstance(token_value, MutableSequence):
+                if self.single:
+                    if len(token_value) == 1:
+                        token_value = token_value[0]
+                        _check_token_type(
+                            name=self.name,
+                            token_value=token_value,
+                            token_type=self.token_type,
+                            enum_symbols=self.enum_symbols,
+                            optional=self.optional,
+                            check_file=True,
+                        )
+                    else:
+                        raise ProcessorTypeError(
+                            f"Expected {self.name} token of type {self.token_type}, got list."
+                        )
                 else:
-                    raise ProcessorTypeError(
-                        f"Expected {self.name} token of type {self.token_type}, got list."
-                    )
+                    for value in token_value:
+                        _check_token_type(
+                            name=self.name,
+                            token_value=value,
+                            token_type=self.token_type,
+                            enum_symbols=self.enum_symbols,
+                            optional=self.optional,
+                            check_file=True,
+                        )
             else:
-                for value in token_value:
-                    _check_token_type(
-                        name=self.name,
-                        token_value=value,
-                        token_type=self.token_type,
-                        enum_symbols=self.enum_symbols,
-                        optional=self.optional,
-                        check_file=True,
-                    )
-        else:
-            _check_token_type(
-                name=self.name,
-                token_value=token_value,
-                token_type=self.token_type,
-                enum_symbols=self.enum_symbols,
-                optional=self.optional,
-                check_file=True,
-            )
-        return await self._build_token(job, connector, context, token_value)
-
-
-class CWLMapCommandOutputProcessor(MapCommandOutputProcessor):
-
-    async def _propagate(
-        self,
-        job: Job,
-        command_output: asyncio.Future[CommandOutput],
-        connector: Connector | None = None,
-    ) -> ListToken:
-        token = await self.processor.process(
-            job=job, command_output=command_output, connector=connector
-        )
-        if isinstance(token, ListToken):
+                _check_token_type(
+                    name=self.name,
+                    token_value=token_value,
+                    token_type=self.token_type,
+                    enum_symbols=self.enum_symbols,
+                    optional=self.optional,
+                    check_file=True,
+                )
+        token = await self._build_token(job, connector, context, token_value)
+        if self.single or isinstance(token, ListToken):
             return token
         else:
             return ListToken(
@@ -742,26 +703,6 @@ class CWLMapCommandOutputProcessor(MapCommandOutputProcessor):
                 tag=token.tag,
                 recoverable=token.recoverable,
             )
-
-    async def process(
-        self,
-        job: Job,
-        command_output: asyncio.Future[CommandOutput],
-        connector: Connector | None = None,
-    ) -> Token | None:
-        process_tasks = [
-            asyncio.create_task(
-                super().process(
-                    job=job, command_output=command_output, connector=connector
-                )
-            ),
-            asyncio.create_task(
-                self._propagate(
-                    job=job, command_output=command_output, connector=connector
-                )
-            ),
-        ]
-        return await eval_processors(process_tasks, name=self.name)
 
 
 class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
