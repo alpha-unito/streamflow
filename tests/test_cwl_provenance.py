@@ -297,6 +297,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=step_name,
                 workflow=cast(CWLWorkflow, workflow),
+                token_type="string",
             ),
         },
         token_list=token_list,
@@ -330,6 +331,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=in_port.name,
                 workflow=cast(CWLWorkflow, workflow),
+                token_type="long",
             ),
             "port_name": in_port.name,
             "full_js": True,
@@ -707,6 +709,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         processor=CWLTokenProcessor(
             name=in_port.name,
             workflow=cast(CWLWorkflow, workflow),
+            token_type="long",
         ),
         port_name=port_name,
         full_js=True,
