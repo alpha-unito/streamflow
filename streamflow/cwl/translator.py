@@ -330,9 +330,8 @@ def _create_command_output_processor(
         )
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
-        types = [t for t in filter(lambda x: x != "null", port_type)]
         # Optional type (e.g. ['null', Type]) -> Equivalent to Type?
-        if len(types) == 1:
+        if len(types := [t for t in filter(lambda x: x != "null", port_type)]) == 1:
             return _create_command_output_processor(
                 port_name=port_name,
                 workflow=workflow,
@@ -345,7 +344,7 @@ def _create_command_output_processor(
                 optional=optional,
                 single=single,
             )
-        # Any type (e.g. ['Any', Type] -> Equivalent to Any
+        # Any type (e.g. ['Any', Type]) -> Equivalent to Any
         elif "Any" in types:
             return _create_command_output_processor(
                 port_name=port_name,
@@ -519,7 +518,7 @@ def _get_command_token_processor_from_input(
         )
     elif isinstance(port_type, MutableSequence):
         types = [t for t in filter(lambda x: x != "null", port_type)]
-        # Optional type (e.g. ['null', Type] -> propagate
+        # Optional type (e.g. ['null', Type]) -> propagate
         if len(types) == 1:
             return _get_command_token_processor_from_input(
                 cwl_element=cwl_element,
@@ -530,17 +529,19 @@ def _get_command_token_processor_from_input(
             )
         # List of types: -> UnionCommandToken
         else:
-            processors = [
-                _get_command_token_processor_from_input(
-                    cwl_element=cwl_element,
-                    port_type=port_type,
-                    input_name=input_name,
-                    is_shell_command=is_shell_command,
-                    schema_def_types=schema_def_types,
-                )
-                for port_type in types
-            ]
-            return UnionCommandTokenProcessor(name=input_name, processors=processors)
+            return UnionCommandTokenProcessor(
+                name=input_name,
+                processors=[
+                    _get_command_token_processor_from_input(
+                        cwl_element=cwl_element,
+                        port_type=port_type,
+                        input_name=input_name,
+                        is_shell_command=is_shell_command,
+                        schema_def_types=schema_def_types,
+                    )
+                    for port_type in types
+                ],
+            )
     elif isinstance(port_type, str):
         # Complex type -> Extract from schema definitions and propagate
         if "#" in port_type:
@@ -815,7 +816,7 @@ def _create_token_processor(
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
         types = [t for t in filter(lambda x: x != "null", port_type)]
-        # Optional type (e.g. ['null', Type] -> Equivalent to Type?
+        # Optional type (e.g. ['null', Type]) -> Equivalent to Type?
         if len(types) == 1:
             return _create_token_processor(
                 port_name=port_name,
@@ -829,7 +830,7 @@ def _create_token_processor(
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
             )
-        # Any type (e.g. ['Any', Type] -> Equivalent to Any
+        # Any type (e.g. ['Any', Type]) -> Equivalent to Any
         elif "Any" in types:
             return _create_token_processor(
                 port_name=port_name,
@@ -982,8 +983,8 @@ def _create_token_processor_base(
 def _create_token_processor_optional(
     processor: TokenProcessor, optional: bool
 ) -> TokenProcessor:
-    if optional:
-        return UnionTokenProcessor(
+    return (
+        UnionTokenProcessor(
             name=processor.name,
             workflow=processor.workflow,
             processors=[
@@ -994,8 +995,9 @@ def _create_token_processor_optional(
                 processor,
             ],
         )
-    else:
-        return processor
+        if optional
+        else processor
+    )
 
 
 def _create_token_transformer(
