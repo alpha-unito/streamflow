@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 
 from streamflow.core.config import BindingConfig, Config
 from streamflow.core.deployment import BindingFilter, Connector, FilterConfig, Target
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import (
     Hardware,
     HardwareRequirement,
@@ -160,7 +161,7 @@ class DefaultScheduler(Scheduler):
                                     }
                                 )
                             )
-                        except Exception as err:
+                        except WorkflowExecutionException as err:
                             logger.warning(
                                 f"Impossible to retrieve the actual storage usage in "
                                 f"the {job_allocation.job} job working directories: {err}"
