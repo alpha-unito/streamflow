@@ -207,9 +207,7 @@ async def build_token(
                 ),
             )
     elif isinstance(token_value, Token):
-        return token_value.retag(
-            tag=get_tag(job.inputs.values()), recoverable=token_value.recoverable
-        )
+        return token_value.retag(tag=get_tag(job.inputs.values()))
     else:
         return Token(
             tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
@@ -483,7 +481,7 @@ class CWLExecuteStep(ExecuteStep):
             )
             output_port.put(
                 await self._persist_token(
-                    token=token.update(token.value),
+                    token=token,
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
@@ -576,7 +574,7 @@ class CWLLoopOutputLastStep(LoopOutputStep):
             self.token_map.get(tag, [Token(value=None)]),
             key=lambda t: int(t.tag.split(".")[-1]),
         )[-1]
-        return token.retag(tag=tag, recoverable=token.recoverable)
+        return token.retag(tag=tag)
 
 
 class CWLScheduleStep(ScheduleStep):
