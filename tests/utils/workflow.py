@@ -322,9 +322,12 @@ async def build_token(
     if isinstance(token_value, MutableSequence):
         return ListToken(
             tag=get_tag(job.inputs.values()),
-            value=[
-                await build_token(job, v, context, recoverable) for v in token_value
-            ],
+            value=await asyncio.gather(
+                *(
+                    asyncio.create_task(build_token(job, v, context, recoverable))
+                    for v in token_value
+                )
+            ),
         )
     elif isinstance(token_value, MutableMapping):
         if get_token_class(token_value) in ["File", "Directory"]:
@@ -351,10 +354,19 @@ async def build_token(
         else:
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
-                value={
-                    k: await build_token(job, v, context, recoverable)
-                    for k, v in token_value.items()
-                },
+                value=dict(
+                    zip(
+                        token_value.keys(),
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(
+                                    build_token(job, v, context, recoverable)
+                                )
+                                for v in token_value.values()
+                            )
+                        ),
+                    )
+                ),
             )
     elif isinstance(token_value, FileToken):
         return token_value.update(token_value.value, recoverable=recoverable)
@@ -833,9 +845,8 @@ class InjectorFailureTransferStep(TransferStep):
             )
         elif isinstance(token, ObjectToken):
             return token.update(
-                value={
-                    k: v
-                    for k, v in zip(
+                value=dict(
+                    zip(
                         token.value.keys(),
                         await asyncio.gather(
                             *(
@@ -844,7 +855,7 @@ class InjectorFailureTransferStep(TransferStep):
                             )
                         ),
                     )
-                },
+                ),
                 recoverable=False,
             )
         elif isinstance(token, FileToken):
