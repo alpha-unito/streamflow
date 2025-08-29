@@ -460,7 +460,9 @@ class DefaultCommandOutputProcessor(CommandOutputProcessor):
         recoverable: bool = False,
     ) -> Token | None:
         return Token(
-            tag=utils.get_tag(job.inputs.values()), value=(await command_output).value
+            tag=utils.get_tag(job.inputs.values()),
+            value=(await command_output).value,
+            recoverable=recoverable,
         )
 
 
