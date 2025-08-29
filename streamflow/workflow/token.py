@@ -183,17 +183,18 @@ class ListToken(Token):
         )
 
     def update(self, value: Any, recoverable: bool | None = None) -> Token:
-        token = self.__class__(tag=self.tag, value=value)
-        token.value = [
-            t.update(
-                value=t.value,
-                recoverable=(
-                    recoverable if recoverable is not None else self.recoverable
-                ),
-            )
-            for t in token.value
-        ]
-        return token
+        return self.__class__(
+            tag=self.tag,
+            value=[
+                t.update(
+                    value=t.value,
+                    recoverable=(
+                        recoverable if recoverable is not None else self.recoverable
+                    ),
+                )
+                for t in self.value
+            ],
+        )
 
 
 class ObjectToken(Token):
@@ -262,23 +263,23 @@ class ObjectToken(Token):
             )
         )
 
-    def update(self, value: Any, recoverable: bool | None = None) -> Token:
-        token = self.__class__(tag=self.tag, value=value)
-        token.value = dict(
-            zip(
-                token.value.keys(),
-                (
-                    t.update(
-                        value=t.value,
-                        recoverable=(
-                            recoverable if recoverable is not None else self.recoverable
-                        ),
-                    )
-                    for t in token.value.values()
-                ),
-            )
-        )
-        return token
+    # def update(self, value: Any, recoverable: bool | None = None) -> Token:
+    #     token = self.__class__(tag=self.tag, value=value)
+    #     token.value = dict(
+    #         zip(
+    #             token.value.keys(),
+    #             (
+    #                 t.update(
+    #                     value=t.value,
+    #                     recoverable=(
+    #                         recoverable if recoverable is not None else self.recoverable
+    #                     ),
+    #                 )
+    #                 for t in token.value.values()
+    #             ),
+    #         )
+    #     )
+    #     return token
 
 
 class TerminationToken(Token):

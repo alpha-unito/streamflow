@@ -164,10 +164,10 @@ async def build_token(
                 *(
                     asyncio.create_task(
                         build_token(
-                            job,
-                            v,
-                            cwl_version,
-                            streamflow_context,
+                            job=job,
+                            token_value=v,
+                            cwl_version=cwl_version,
+                            streamflow_context=streamflow_context,
                             recoverable=recoverable,
                         )
                     )
@@ -180,34 +180,39 @@ async def build_token(
             return CWLFileToken(
                 tag=get_tag(job.inputs.values()),
                 value=await _process_file_token(
-                    job,
-                    token_value,
-                    cwl_version,
-                    streamflow_context,
+                    job=job,
+                    token_value=token_value,
+                    cwl_version=cwl_version,
+                    streamflow_context=streamflow_context,
                     check_contents=True,
                 ),
                 recoverable=recoverable,
             )
         else:
-            token_tasks = {
-                k: asyncio.create_task(
-                    build_token(
-                        job, v, cwl_version, streamflow_context, recoverable=recoverable
-                    )
-                )
-                for k, v in token_value.items()
-            }
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
                 value=dict(
                     zip(
-                        token_tasks.keys(),
-                        await asyncio.gather(*token_tasks.values()),
+                        token_value.keys(),
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(
+                                    build_token(
+                                        job=job,
+                                        token_value=v,
+                                        cwl_version=cwl_version,
+                                        streamflow_context=streamflow_context,
+                                        recoverable=recoverable,
+                                    )
+                                )
+                                for v in token_value.values()
+                            )
+                        ),
                     )
                 ),
             )
     elif isinstance(token_value, Token):
-        return token_value.retag(tag=get_tag(job.inputs.values()))
+        return token_value.update(value=token_value, recoverable=recoverable)
     else:
         return Token(
             tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
