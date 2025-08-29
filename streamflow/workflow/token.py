@@ -183,18 +183,29 @@ class ListToken(Token):
         )
 
     def update(self, value: Any, recoverable: bool | None = None) -> Token:
-        return self.__class__(
-            tag=self.tag,
-            value=[
-                t.update(
-                    value=t.value,
-                    recoverable=(
-                        recoverable if recoverable is not None else self.recoverable
-                    ),
+        if not isinstance(value, MutableSequence):
+            raise WorkflowExecutionException("ListToken must contain a list")
+        curr_recoverable = self.recoverable
+        if all(t.persistent_id is None for t in value):
+            token = self.__class__(tag=self.tag, value=value)
+            for t in value:
+                t.recoverable = (
+                    recoverable if recoverable is not None else curr_recoverable
                 )
-                for t in self.value
-            ],
-        )
+            return token
+        else:
+            return self.__class__(
+                tag=self.tag,
+                value=[
+                    t.update(
+                        value=t.value,
+                        recoverable=(
+                            recoverable if recoverable is not None else curr_recoverable
+                        ),
+                    )
+                    for t in value
+                ],
+            )
 
 
 class ObjectToken(Token):
@@ -263,23 +274,29 @@ class ObjectToken(Token):
             )
         )
 
-    # def update(self, value: Any, recoverable: bool | None = None) -> Token:
-    #     token = self.__class__(tag=self.tag, value=value)
-    #     token.value = dict(
-    #         zip(
-    #             token.value.keys(),
-    #             (
-    #                 t.update(
-    #                     value=t.value,
-    #                     recoverable=(
-    #                         recoverable if recoverable is not None else self.recoverable
-    #                     ),
-    #                 )
-    #                 for t in token.value.values()
-    #             ),
-    #         )
-    #     )
-    #     return token
+    def update(self, value: Any, recoverable: bool | None = None) -> Token:
+        if not isinstance(value, MutableMapping):
+            raise WorkflowExecutionException("ObjectToken must contain a mapping")
+        curr_recoverable = self.recoverable
+        return self.__class__(
+            tag=self.tag,
+            value=dict(
+                zip(
+                    value.keys(),
+                    (
+                        t.update(
+                            value=t.value,
+                            recoverable=(
+                                recoverable
+                                if recoverable is not None
+                                else curr_recoverable
+                            ),
+                        )
+                        for t in value.values()
+                    ),
+                )
+            ),
+        )
 
 
 class TerminationToken(Token):
