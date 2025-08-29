@@ -212,7 +212,9 @@ async def build_token(
                 ),
             )
     elif isinstance(token_value, Token):
-        return token_value.update(value=token_value, recoverable=recoverable)
+        return token_value.retag(tag=get_tag(job.inputs.values())).update(
+            value=token_value.value, recoverable=recoverable
+        )
     else:
         return Token(
             tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
