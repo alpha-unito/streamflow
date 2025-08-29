@@ -266,7 +266,7 @@ class DefaultRetagTransformer(DefaultTransformer):
                 self.default_token = (
                     await self._get_inputs({"__default__": self.default_port})
                 )["__default__"]
-            return self.default_token.retag(get_tag(inputs.values()), recoverable=True)
+            return self.default_token.retag(get_tag(inputs.values()))
         # Propagate the primary token
         else:
             return token.update(token.value).retag(get_tag(inputs.values()))
@@ -307,7 +307,7 @@ class DefaultRetagTransformer(DefaultTransformer):
         # If the default token is present, it means the primary token
         # was evaluated previously and was empty
         if self.default_token and self._only_default:
-            token = self.default_token.retag(get_tag(inputs.values()), recoverable=True)
+            token = self.default_token.retag(get_tag(inputs.values()))
         # There is a single input port: the primary token is already retrieved as it manages the step life-cycle
         elif len(self.input_ports) == 1:
             token = await self._get_next_token(next(iter(inputs.values())), inputs)

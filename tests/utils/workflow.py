@@ -425,12 +425,12 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
         recoverable: bool = False,
     ) -> Token | None:
         context = self.workflow.context
-        value = command_output.value
+        value = (await command_output).value
         if self.value_type == "file":
             locations = context.scheduler.get_locations(job.name)
             connector = connector or context.scheduler.get_connector(job.name)
@@ -441,11 +441,11 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
                     f"Job {job.name} output does not exist: File {value}"
                 )
             await _register_path(
-                context,
-                connector,
-                next(iter(locations)),
-                value,
-                os.path.relpath(value, job.output_directory),
+                context=context,
+                connector=connector,
+                location=next(iter(locations)),
+                path=value,
+                relpath=os.path.relpath(value, job.output_directory),
             )
             return BaseFileToken(
                 tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
@@ -470,72 +470,6 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
             return Token(
                 tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
             )
-
-
-class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
-    def __init__(
-        self,
-        name: str,
-        workflow: Workflow,
-        value_type: str,
-        target: Target | None = None,
-    ):
-        super().__init__(name, workflow, target)
-        self.value_type: str = value_type.lower()
-
-    @classmethod
-    async def _load(
-        cls,
-        context: StreamFlowContext,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            value_type=row["value_type"],
-            target=(
-                (await loading_context.load_target(context, row["target"]))
-                if row["target"]
-                else None
-            ),
-        )
-
-    async def _save_additional_params(
-        self, context: StreamFlowContext
-    ) -> MutableMapping[str, Any]:
-        if self.target:
-            await self.target.save(context)
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "value_type": self.value_type,
-        }
-
-    async def process(
-        self,
-        job: Job,
-        command_output: asyncio.Future[CommandOutput],
-        connector: Connector | None = None,
-    ) -> Token | None:
-        context = self.workflow.context
-        value = (await command_output).value
-        if self.value_type == "file":
-            locations = context.scheduler.get_locations(job.name)
-            await _register_path(
-                context, connector, next(iter(locations)), value, value
-            )
-            return BaseFileToken(tag=get_tag(job.inputs.values()), value=value)
-        elif self.value_type == "list":
-            return ListToken(
-                tag=get_tag(job.inputs.values()),
-                value=[await build_token(job, v, context) for v in value],
-            )
-        elif self.value_type == "dict":
-            return ObjectToken(
-                tag=get_tag(job.inputs.values()),
-                value={k: await build_token(job, v, context) for k, v in value.items()},
-            )
-        else:
-            return await build_token(job, token.value, self.workflow.context)
 
 
 class InjectorFailureCommand(Command):
