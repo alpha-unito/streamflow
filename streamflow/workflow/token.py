@@ -159,6 +159,9 @@ class ListToken(Token):
             ),
         )
 
+    def _save_recoverable(self) -> bool:
+        return False
+
     async def _save_value(self, context: StreamFlowContext):
         await asyncio.gather(
             *(asyncio.create_task(t.save(context)) for t in self.value)
@@ -198,9 +201,6 @@ class ObjectToken(Token):
 
     @property
     def recoverable(self):
-        for t in self.value.values():
-            if not t.recoverable:
-                return False
         return all(t.recoverable for t in self.value.values())
 
     @recoverable.setter
@@ -232,6 +232,9 @@ class ObjectToken(Token):
                 )
             },
         )
+
+    def _save_recoverable(self) -> bool:
+        return False
 
     async def _save_value(self, context: StreamFlowContext):
         await asyncio.gather(

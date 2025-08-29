@@ -731,14 +731,15 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     optional=self.optional,
                     check_file=True,
                 )
-        token = await self._build_token(job, connector, context, token_value)
+        token = await self._build_token(
+            job, connector, context, token_value, recoverable
+        )
         if self.single or isinstance(token, ListToken):
             return token
         else:
             return ListToken(
                 value=[token] if token.value is not None else [],
                 tag=token.tag,
-                recoverable=token.recoverable,
             )
 
 
@@ -802,6 +803,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> ObjectToken:
         return ObjectToken(
             value=dict(
@@ -810,7 +812,12 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
-                                p.process(job, command_output, connector)
+                                p.process(
+                                    job=job,
+                                    command_output=command_output,
+                                    connector=connector,
+                                    recoverable=recoverable,
+                                )
                             )
                             for p in self.processors.values()
                         )
@@ -869,12 +876,18 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         process_tasks = [
             asyncio.create_task(
                 super().process(
-                    job=job, command_output=command_output, connector=connector
+                    job=job,
+                    command_output=command_output,
+                    connector=connector,
+                    recoverable=recoverable,
                 )
             ),
             asyncio.create_task(
                 self._propagate(
-                    job=job, command_output=command_output, connector=connector
+                    job=job,
+                    command_output=command_output,
+                    connector=connector,
+                    recoverable=recoverable,
                 )
             ),
         ]
