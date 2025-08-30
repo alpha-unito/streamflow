@@ -496,9 +496,9 @@ class Token(PersistableEntity):
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
-        self.recoverable: bool = recoverable
         self.value: Any = value
         self.tag: str = tag
+        self.recoverable: bool = recoverable
 
     @classmethod
     async def _load(
@@ -507,10 +507,7 @@ class Token(PersistableEntity):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        value = row["value"]
-        if isinstance(value, MutableMapping) and "token" in value:
-            value = await loading_context.load_token(context, value["token"])
-        return cls(tag=row["tag"], value=value, recoverable=row["recoverable"])
+        return cls(tag=row["tag"], value=row["value"], recoverable=row["recoverable"])
 
     def _save_recoverable(self) -> bool:
         return self.recoverable
