@@ -138,7 +138,8 @@ class ListToken(Token):
 
     @recoverable.setter
     def recoverable(self, value: bool):
-        pass
+        for t in self.value:
+            t.recoverable = value
 
     @classmethod
     async def _load(
@@ -149,14 +150,16 @@ class ListToken(Token):
     ) -> Token:
         # The `recoverable` attribute is computed based on the
         # inner tokens, so it is not necessary to pass it
+        value = await asyncio.gather(
+            *(
+                asyncio.create_task(loading_context.load_token(context, t))
+                for t in row["value"]
+            )
+        )
         return cls(
             tag=row["tag"],
-            value=await asyncio.gather(
-                *(
-                    asyncio.create_task(loading_context.load_token(context, t))
-                    for t in row["value"]
-                )
-            ),
+            value=value,
+            recoverable=all(t.recoverable for t in value),
         )
 
     def _save_recoverable(self) -> bool:
@@ -183,29 +186,11 @@ class ListToken(Token):
         )
 
     def update(self, value: Any, recoverable: bool | None = None) -> Token:
-        if not isinstance(value, MutableSequence):
-            raise WorkflowExecutionException("ListToken must contain a list")
-        curr_recoverable = self.recoverable
-        if all(t.persistent_id is None for t in value):
-            token = self.__class__(tag=self.tag, value=value)
-            for t in value:
-                t.recoverable = (
-                    recoverable if recoverable is not None else curr_recoverable
-                )
-            return token
-        else:
-            return self.__class__(
-                tag=self.tag,
-                value=[
-                    t.update(
-                        value=t.value,
-                        recoverable=(
-                            recoverable if recoverable is not None else curr_recoverable
-                        ),
-                    )
-                    for t in value
-                ],
-            )
+        return self.__class__(
+            tag=self.tag,
+            value=value,
+            recoverable=(recoverable if recoverable is not None else self.recoverable),
+        )
 
 
 class ObjectToken(Token):
@@ -217,7 +202,8 @@ class ObjectToken(Token):
 
     @recoverable.setter
     def recoverable(self, value: bool):
-        pass
+        for t in self.value.values():
+            t.recoverable = value
 
     @classmethod
     async def _load(
@@ -226,23 +212,23 @@ class ObjectToken(Token):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        value = row["value"]
         # The `recoverable` attribute is computed based on the
         # inner tokens, so it is not necessary to pass it
+        value = dict(
+            zip(
+                row["value"].keys(),
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(loading_context.load_token(context, v))
+                        for v in row["value"].values()
+                    )
+                ),
+            )
+        )
         return cls(
             tag=row["tag"],
-            value={
-                k: v
-                for k, v in zip(
-                    value.keys(),
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(loading_context.load_token(context, v))
-                            for v in value.values()
-                        )
-                    ),
-                )
-            },
+            value=value,
+            recoverable=all(t.recoverable for t in value.values()),
         )
 
     def _save_recoverable(self) -> bool:
@@ -275,27 +261,10 @@ class ObjectToken(Token):
         )
 
     def update(self, value: Any, recoverable: bool | None = None) -> Token:
-        if not isinstance(value, MutableMapping):
-            raise WorkflowExecutionException("ObjectToken must contain a mapping")
-        curr_recoverable = self.recoverable
         return self.__class__(
             tag=self.tag,
-            value=dict(
-                zip(
-                    value.keys(),
-                    (
-                        t.update(
-                            value=t.value,
-                            recoverable=(
-                                recoverable
-                                if recoverable is not None
-                                else curr_recoverable
-                            ),
-                        )
-                        for t in value.values()
-                    ),
-                )
-            ),
+            value=value,
+            recoverable=(recoverable if recoverable is not None else self.recoverable),
         )
 
 
