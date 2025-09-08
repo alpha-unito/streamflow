@@ -540,7 +540,7 @@ async def expand_glob(
     outdir = StreamFlowPath(
         output_directory, context=workflow.context, location=location
     )
-    paths = sorted([p async for p in outdir.glob(path)])
+    paths = sorted(await outdir.glob(path))
     effective_paths = await asyncio.gather(
         *(asyncio.create_task(p.resolve()) for p in paths)
     )

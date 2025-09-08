@@ -21,7 +21,13 @@ from streamflow.core.processor import (
     ObjectCommandOutputProcessor,
     TokenProcessor,
 )
-from streamflow.core.utils import eval_processors, flatten_list, get_tag, make_future
+from streamflow.core.utils import (
+    eval_processors,
+    flatten_list,
+    get_tag,
+    is_glob,
+    make_future,
+)
 from streamflow.core.workflow import (
     CommandOutput,
     Job,
@@ -469,21 +475,19 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             for glob in (
                 self.glob if isinstance(self.glob, MutableSequence) else [self.glob]
             ):
-                globpath = (
-                    utils.eval_expression(
-                        expression=glob,
-                        context=context,
-                        full_js=self.full_js,
-                        expression_lib=self.expression_lib,
-                    )
-                    if "$(" in glob or "${" in glob
-                    else glob
+                globpath = utils.eval_expression(
+                    expression=glob,
+                    context=context,
+                    full_js=self.full_js,
+                    expression_lib=self.expression_lib,
                 )
                 globpaths.extend(
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
-            # Wait for command to finish and resolve glob
-            await command_output
+            # If any glob path needs to be resolved, wait for command to finish
+            if not self.streamable or any(is_glob(globpath) for globpath in globpaths):
+                await command_output
+            # Resolve glob paths
             for location in locations:
                 globpaths = dict(
                     flatten_list(

@@ -308,6 +308,48 @@ def get_tag(tokens: Iterable[Token]) -> str:
     return output_tag
 
 
+def is_glob(
+    path: str,
+) -> bool:
+    """
+    Check if the argument string is a glob with wildcards.
+
+    :param path: the string to be checked
+    :return: `True` if the string contains any wildcards, `False` otherwise
+    """
+    DEFAULT = 0
+    BRACKET_FIRST = 1
+    BRACKET = 2
+    BACKSLASH = 3
+
+    i = 0
+    stack = [DEFAULT]
+    wildcards = ["*", "?"]
+    while i < len(path):
+        state = stack[-1]
+        c = path[i]
+
+        if state == DEFAULT:
+            if c in wildcards:
+                return True
+            elif c == "[":
+                stack.append(BRACKET_FIRST)
+            elif c == "\\":
+                stack.append(BACKSLASH)
+        elif state == BRACKET_FIRST:
+            stack.pop()
+            stack.append(BRACKET)
+        elif state == BRACKET:
+            if c == "]":
+                return True
+            elif c == "\\":
+                stack.append(BACKSLASH)
+        elif state == BACKSLASH:
+            stack.pop()
+        i += 1
+    return False
+
+
 def make_future(obj: T) -> asyncio.Future[T]:
     future = asyncio.Future()
     future.set_result(obj)

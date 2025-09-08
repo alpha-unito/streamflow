@@ -240,7 +240,7 @@ async def test_inject_remote_input(context: StreamFlowContext, config: str) -> N
 
     if file_type == "Directory":
         remote_files = sorted(
-            [p async for p in remote_path.glob("*")],
+            await remote_path.glob("*"),
             key=lambda x: os.path.basename(x),
         )
         assert len(remote_files) == 1
@@ -251,7 +251,7 @@ async def test_inject_remote_input(context: StreamFlowContext, config: str) -> N
         assert len(wf_files) == 1
     else:
         remote_files = sorted(
-            [p async for p in remote_path.parent.glob("*")],
+            await remote_path.parent.glob("*"),
             key=lambda x: os.path.basename(x),
         )
         assert len(remote_files) == 2
