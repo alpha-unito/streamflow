@@ -21,6 +21,7 @@ from typing_extensions import Self
 
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.utils import is_glob
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -163,9 +164,10 @@ class StreamFlowPath(PurePath, ABC):
     async def exists(self) -> bool: ...
 
     @abstractmethod
-    def glob(
-        self, pattern, *, case_sensitive=None
-    ) -> AsyncIterator[StreamFlowPath]: ...
+    async def glob(self, pattern) -> MutableSequence[StreamFlowPath]: ...
+
+    @abstractmethod
+    def iglob(self, pattern) -> AsyncIterator[StreamFlowPath]: ...
 
     @abstractmethod
     async def is_dir(self) -> bool: ...
@@ -325,10 +327,13 @@ class LocalStreamFlowPath(
     async def exists(self) -> bool:
         return cast(Path, super()).exists()
 
-    async def glob(
+    async def glob(self, pattern) -> MutableSequence[LocalStreamFlowPath]:
+        return [p async for p in self.iglob(pattern)]
+
+    async def iglob(
         self, pattern, *, case_sensitive=None
     ) -> AsyncIterator[LocalStreamFlowPath]:
-        for path in glob.glob(str(self / pattern)):
+        for path in glob.iglob(str(self / pattern)):
             yield self.with_segments(path)
 
     async def is_dir(self) -> bool:
@@ -559,11 +564,12 @@ class RemoteStreamFlowPath(
         else:
             return await self._test(command=(["-e", f"'{self.__str__()}'"]))
 
-    async def glob(
-        self, pattern, *, case_sensitive=None
-    ) -> AsyncIterator[RemoteStreamFlowPath]:
+    async def glob(self, pattern) -> MutableSequence[RemoteStreamFlowPath]:
+        return [p async for p in self.iglob(pattern)]
+
+    async def iglob(self, pattern) -> AsyncIterator[RemoteStreamFlowPath]:
         if (inner_path := await self._get_inner_path()) != self:
-            async for path in inner_path.glob(pattern, case_sensitive=case_sensitive):
+            async for path in inner_path.iglob(pattern):
                 yield _get_outer_path(
                     context=self.context,
                     location=self.location,
@@ -572,26 +578,29 @@ class RemoteStreamFlowPath(
         else:
             if not pattern:
                 raise ValueError(f"Unacceptable pattern: {pattern!r}")
-            command = [
-                "printf",
-                '"%s\\0"',
-                str(self / pattern),
-                "|",
-                "xargs",
-                "-0",
-                "-I{}",
-                "sh",
-                "-c",
-                '"if [ -e \\"{}\\" ]; then echo \\"{}\\"; fi"',
-                "|",
-                "sort",
-            ]
-            result, status = await self.connector.run(
-                location=self.location, command=command, capture_output=True
-            )
-            _check_status(command, self.location, result, status)
-            for path in result.split():
-                yield self.with_segments(path)
+            if is_glob(pattern):
+                command = [
+                    "printf",
+                    '"%s\\0"',
+                    str(self / pattern),
+                    "|",
+                    "xargs",
+                    "-0",
+                    "-I{}",
+                    "sh",
+                    "-c",
+                    '"if [ -e \\"{}\\" ]; then echo \\"{}\\"; fi"',
+                    "|",
+                    "sort",
+                ]
+                result, status = await self.connector.run(
+                    location=self.location, command=command, capture_output=True
+                )
+                _check_status(command, self.location, result, status)
+                for path in result.split():
+                    yield self.with_segments(path)
+            elif await (self / pattern).exists():
+                yield self.with_segments(self, pattern)
 
     async def is_dir(self) -> bool:
         if (inner_path := await self._get_inner_path()) != self:

@@ -8,6 +8,7 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.utils import is_glob
 from streamflow.data import remotepath
 from streamflow.data.remotepath import StreamFlowPath
 from tests.utils.deployment import get_docker_deployment_config, get_location
@@ -148,20 +149,33 @@ async def test_glob(context, connector, location):
         await (path / "dir1" / "dir2" / "file1.txt").write_text("StreamFlow")
         await (path / "dir1" / "dir2" / "file2.csv").write_text("StreamFlow")
         # Test *.txt
-        result = [p async for p in path.glob("*.txt")]
+        result = await path.glob("*.txt")
         assert len(result) == 1
         assert path / "file1.txt" in result
         # Test file*
-        result = [p async for p in path.glob("file*")]
+        result = await path.glob("file*")
         assert len(result) == 2
         assert path / "file1.txt" in result
         assert path / "file2.csv" in result
         # Test */*.txt
-        result = [p async for p in path.glob("*/*.txt")]
+        result = await path.glob("*/*.txt")
         assert len(result) == 1
         assert path / "dir1" / "file1.txt" in result
     finally:
         await path.rmtree()
+
+
+def test_is_glob():
+    assert is_glob("*.txt") is True
+    assert is_glob("?.txt") is True
+    assert is_glob("test*.txt") is True
+    assert is_glob("test?.txt") is True
+    assert is_glob("test[.txt") is False
+    assert is_glob("test[].txt") is False
+    assert is_glob("test[]].txt") is True
+    assert is_glob("test[abc].txt") is True
+    assert is_glob("test[1-9].txt") is True
+    assert is_glob("test.txt") is False
 
 
 @pytest.mark.asyncio
