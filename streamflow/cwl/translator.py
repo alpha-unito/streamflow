@@ -661,6 +661,59 @@ def _create_list_merger(
         return combinator
 
 
+def _create_loop_condition(
+    condition: str,
+    expression_lib: MutableSequence[str] | None,
+    full_js: bool,
+    input_ports: MutableMapping[str, Port],
+    step_name: str,
+    workflow: CWLWorkflow,
+) -> CWLLoopConditionalStep:
+    # Build combinator
+    loop_combinator = LoopCombinator(
+        workflow=workflow, name=step_name + "-loop-combinator"
+    )
+    for global_name in input_ports:
+        # Decouple loop ports through a forwarder
+        port_name = posixpath.relpath(global_name, step_name)
+        loop_forwarder = workflow.create_step(
+            cls=ForwardTransformer,
+            name=global_name + "-input-forward-transformer",
+        )
+        loop_forwarder.add_input_port(port_name, input_ports[global_name])
+        input_ports[global_name] = workflow.create_port()
+        loop_forwarder.add_output_port(port_name, input_ports[global_name])
+        # Add item to combinator
+        loop_combinator.add_item(posixpath.relpath(global_name, step_name))
+    # Create a combinator step and add all inputs to it
+    combinator_step = workflow.create_step(
+        cls=LoopCombinatorStep,
+        name=step_name + "-loop-combinator",
+        combinator=loop_combinator,
+    )
+    for global_name in input_ports:
+        port_name = posixpath.relpath(global_name, step_name)
+        combinator_step.add_input_port(port_name, input_ports[global_name])
+        combinator_step.add_output_port(port_name, workflow.create_port())
+    # Create loop conditional step
+    loop_conditional_step = workflow.create_step(
+        cls=CWLLoopConditionalStep,
+        name=step_name + "-loop-when",
+        expression=condition,
+        expression_lib=expression_lib,
+        full_js=full_js,
+    )
+    # Add inputs to conditional step
+    for global_name in input_ports:
+        port_name = posixpath.relpath(global_name, step_name)
+        loop_conditional_step.add_input_port(
+            port_name, combinator_step.get_output_port(port_name)
+        )
+        input_ports[global_name] = workflow.create_port()
+        loop_conditional_step.add_output_port(port_name, input_ports[global_name])
+    return loop_conditional_step
+
+
 def _create_nested_size_tag(
     size_ports: MutableMapping[str, Port],
     replicas_port: MutableMapping[str, Port],
@@ -1129,6 +1182,30 @@ def _get_load_listing(
             if context["version"] == "v1.0"
             else LoadListing.no_listing
         )
+
+
+def _get_loop(
+    cwl_element: cwl_utils.parser.WorkflowStep, requirements: MutableMapping[str, Any]
+) -> MutableMapping[str, Any] | None:
+    if "Loop" in requirements:
+        loop = cast(cwl_utils.parser.cwl_v1_2.Loop, requirements["Loop"])
+        return {
+            "loop": loop.loop,
+            "outputMethod": (
+                loop.outputMethod == "all_iterations"
+                if loop.outputMethod == "all"
+                else "last_iteration"
+            ),
+            "when": loop.loopWhen,
+        }
+    elif isinstance(cwl_element, cwl_utils.parser.LoopWorkflowStep):
+        return {
+            "outputMethod": cwl_element.outputMethod or "last_iteration",
+            "loop": cwl_element.loop,
+            "when": None,
+        }
+    else:
+        return None
 
 
 def _get_path(element_id: str) -> str:
@@ -1719,11 +1796,14 @@ class CWLTranslator:
                         "The `cwltool:Loop` clause is not compatible "
                         f"with the `{cwl_element.__class__.__name__}` class."
                     )
-                if cwl_element.scatter is not None:
+                if (
+                    cast(cwl_utils.parser.ScatterWorkflowStep, cwl_element).scatter
+                    is not None
+                ):
                     raise WorkflowDefinitionException(
                         "The `cwltool:Loop` clause is not compatible with the `scatter` directive."
                     )
-                if context["version"] == "v1.2" and cwl_element.when is not None:
+                if cwl_element.when is not None:
                     raise WorkflowDefinitionException(
                         "The `cwltool:Loop` clause is not compatible with the `when` directive."
                     )
@@ -1777,7 +1857,7 @@ class CWLTranslator:
         else:
             raise WorkflowDefinitionException(
                 "Definition of type "
-                + type(cwl_element).__class__.__name__
+                + cwl_element.__class__.__name__
                 + " not supported"
             )
 
@@ -2209,15 +2289,18 @@ class CWLTranslator:
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Find scatter elements
-        if isinstance(cwl_element.scatter, str):
-            scatter_inputs = [
-                utils.get_name(step_name, cwl_step_name, cwl_element.scatter)
-            ]
+        if isinstance(cwl_element, get_args(cwl_utils.parser.ScatterWorkflowStep)):
+            if isinstance(cwl_element.scatter, str):
+                scatter_inputs = [
+                    utils.get_name(step_name, cwl_step_name, cwl_element.scatter)
+                ]
+            else:
+                scatter_inputs = [
+                    utils.get_name(step_name, cwl_step_name, n)
+                    for n in cwl_element.scatter or []
+                ]
         else:
-            scatter_inputs = [
-                utils.get_name(step_name, cwl_step_name, n)
-                for n in cwl_element.scatter or []
-            ]
+            scatter_inputs = []
 
         # Process inner element
         run_command, inner_cwl_name_prefix, inner_context = process_embedded_tool(
@@ -2240,6 +2323,7 @@ class CWLTranslator:
                 context=context,
                 element_id=cwl_element.id,
                 element_input=element_input,
+                element_source=element_input.source,
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix,
                 requirements=requirements,
@@ -2257,56 +2341,25 @@ class CWLTranslator:
             list(input_dependencies.keys()),
         )
         input_ports |= default_ports
-        # Process loop inputs
-        if "Loop" in requirements:
-            # Build combinator
-            loop_combinator = LoopCombinator(
-                workflow=workflow, name=step_name + "-loop-combinator"
-            )
-            for global_name in input_ports:
-                # Decouple loop ports through a forwarder
-                port_name = posixpath.relpath(global_name, step_name)
-                loop_forwarder = workflow.create_step(
-                    cls=ForwardTransformer,
-                    name=global_name + "-input-forward-transformer",
-                )
-                loop_forwarder.add_input_port(port_name, input_ports[global_name])
-                input_ports[global_name] = workflow.create_port()
-                loop_forwarder.add_output_port(port_name, input_ports[global_name])
-                # Add item to combinator
-                loop_combinator.add_item(posixpath.relpath(global_name, step_name))
-            # Create a combinator step and add all inputs to it
-            combinator_step = workflow.create_step(
-                cls=LoopCombinatorStep,
-                name=step_name + "-loop-combinator",
-                combinator=loop_combinator,
-            )
-            for global_name in input_ports:
-                port_name = posixpath.relpath(global_name, step_name)
-                combinator_step.add_input_port(port_name, input_ports[global_name])
-                combinator_step.add_output_port(port_name, workflow.create_port())
+        # Get loop if present
+        if (loop := _get_loop(cwl_element, requirements)) is not None:
             # Create loop conditional step
-            loop_conditional_step = workflow.create_step(
-                cls=CWLLoopConditionalStep,
-                name=step_name + "-loop-when",
-                expression=requirements["Loop"].loopWhen,
-                expression_lib=expression_lib,
-                full_js=full_js,
-            )
-            # Add inputs to conditional step
-            for global_name in input_ports:
-                port_name = posixpath.relpath(global_name, step_name)
-                loop_conditional_step.add_input_port(
-                    port_name, combinator_step.get_output_port(port_name)
+            if loop["when"] is not None:
+                _create_loop_condition(
+                    condition=loop["when"],
+                    expression_lib=expression_lib,
+                    full_js=full_js,
+                    input_ports=input_ports,
+                    step_name=step_name,
+                    workflow=workflow,
                 )
-                input_ports[global_name] = workflow.create_port()
-                loop_conditional_step.add_output_port(
-                    port_name, input_ports[global_name]
-                )
-        # Retrieve scatter method (default to dotproduct)
-        scatter_method = cwl_element.scatterMethod or "dotproduct"
         # If there are scatter inputs
         if scatter_inputs:
+            # Retrieve scatter method (default to dotproduct)
+            scatter_method = (
+                cast(cwl_utils.parser.ScatterWorkflowStep, cwl_element).scatterMethod
+                or "dotproduct"
+            )
             # If any scatter input is null, propagate an empty array on the output ports
             empty_scatter_conditional_step = workflow.create_step(
                 cls=CWLEmptyScatterConditionalStep,
@@ -2420,24 +2473,36 @@ class CWLTranslator:
             None if context["version"] in ["v1.0", "v1.1"] else cwl_element.when
         )
         if cwl_condition is not None:
-            # Create conditional step
-            conditional_step = workflow.create_step(
-                cls=CWLConditionalStep,
-                name=step_name + "-when",
-                expression=cwl_condition,
-                expression_lib=expression_lib,
-                full_js=full_js,
-            )
-            # Add inputs and outputs to conditional step
-            for global_name in input_ports:
-                port_name = posixpath.relpath(global_name, step_name)
-                conditional_step.add_input_port(
-                    port_name, self.input_ports[global_name]
+            if loop is not None:
+                # Create loop conditional step
+                conditional_step = _create_loop_condition(
+                    condition=cwl_condition,
+                    expression_lib=expression_lib,
+                    full_js=full_js,
+                    input_ports=input_ports,
+                    step_name=step_name,
+                    workflow=workflow,
                 )
-                self.input_ports[global_name] = workflow.create_port()
-                conditional_step.add_output_port(
-                    port_name, self.input_ports[global_name]
+                self.input_ports |= input_ports
+            else:
+                # Create conditional step
+                conditional_step = workflow.create_step(
+                    cls=CWLConditionalStep,
+                    name=step_name + "-when",
+                    expression=cwl_condition,
+                    expression_lib=expression_lib,
+                    full_js=full_js,
                 )
+                # Add inputs and outputs to conditional step
+                for global_name in input_ports:
+                    port_name = posixpath.relpath(global_name, step_name)
+                    conditional_step.add_input_port(
+                        port_name, self.input_ports[global_name]
+                    )
+                    self.input_ports[global_name] = workflow.create_port()
+                    conditional_step.add_output_port(
+                        port_name, self.input_ports[global_name]
+                    )
         # Process outputs
         external_output_ports = {}
         internal_output_ports = {}
@@ -2451,6 +2516,13 @@ class CWLTranslator:
             internal_output_ports[global_name] = self.output_ports[global_name]
             # If there are scatter inputs
             if scatter_inputs:
+                # Retrieve scatter method (default to dotproduct)
+                scatter_method = (
+                    cast(
+                        cwl_utils.parser.ScatterWorkflowStep, cwl_element
+                    ).scatterMethod
+                    or "dotproduct"
+                )
                 # Perform a gather on the outputs
                 if scatter_method == "nested_crossproduct":
                     gather_steps = []
@@ -2522,14 +2594,13 @@ class CWLTranslator:
                 empty_scatter_conditional_step.add_skip_port(
                     port_name, external_output_ports[global_name]
                 )
-            # Add skip ports if there is a condition
-            if cwl_condition:
+            # Add skip ports if there is a condition without a loop
+            if cwl_condition and loop is None:
                 cast(CWLConditionalStep, conditional_step).add_skip_port(
                     port_name, internal_output_ports[global_name]
                 )
         # Process loop outputs
-        if "Loop" in requirements:
-            output_method = requirements["Loop"].outputMethod
+        if loop is not None:
             # Retrieve loop steps
             loop_conditional_step = cast(
                 CWLLoopConditionalStep, workflow.steps[step_name + "-loop-when"]
@@ -2567,7 +2638,7 @@ class CWLTranslator:
                 loop_output_step = workflow.create_step(
                     cls=(
                         CWLLoopOutputLastStep
-                        if output_method == "last"
+                        if loop["outputMethod"] == "last_iteration"
                         else CWLLoopOutputAllStep
                     ),
                     name=global_name + "-loop-output",
@@ -2590,12 +2661,26 @@ class CWLTranslator:
             loop_default_ports = {}
             loop_value_from_transformers = {}
             loop_input_dependencies = {}
-            for loop_input in requirements["Loop"].loop or []:
+            for loop_input in loop["loop"] or []:
+                # Extract element source
+                if "Loop" in requirements:
+                    element_source = (
+                        loop_input.loopSource
+                        if loop_input.loopSource is not None
+                        else loop_input.id
+                    )
+                else:
+                    element_source = (
+                        loop_input.outputSource
+                        if loop_input.outputSource is not None
+                        else loop_input.id
+                    )
                 self._translate_workflow_step_input(
                     workflow=workflow,
                     context=context,
                     element_id=cwl_element.id,
                     element_input=loop_input,
+                    element_source=element_source,
                     name_prefix=name_prefix,
                     cwl_name_prefix=cwl_name_prefix,
                     requirements=requirements,
@@ -2640,14 +2725,14 @@ class CWLTranslator:
                 loop_forwarder.add_output_port(
                     port_name, combinator_step.get_input_port(port_name)
                 )
-        # Add skip ports if there is a condition
-        if cwl_condition:
+        # Add skip ports if there is a condition without a loop
+        if cwl_condition and loop is None:
             for element_output in cwl_element.out:
                 global_name = utils.get_name(step_name, cwl_step_name, element_output)
                 port_name = posixpath.relpath(global_name, step_name)
                 skip_port = (
                     external_output_ports[global_name]
-                    if "Loop" in requirements
+                    if loop is not None
                     else internal_output_ports[global_name]
                 )
                 cast(CWLConditionalStep, conditional_step).add_skip_port(
@@ -2672,6 +2757,7 @@ class CWLTranslator:
         context: MutableMapping[str, Any],
         element_id: str,
         element_input: cwl_utils.parser.WorkflowStepInput,
+        element_source: str,
         name_prefix: str,
         cwl_name_prefix: str,
         requirements: MutableMapping[str, Any],
@@ -2684,16 +2770,6 @@ class CWLTranslator:
     ) -> None:
         # Extract custom types if present
         schema_def_types = _get_schema_def_types(requirements)
-        # Extract element source
-        element_source = (
-            (
-                element_input.loopSource
-                if element_input.loopSource is not None
-                else element_input.id
-            )
-            if isinstance(element_input, cwl_utils.parser.cwl_v1_2.LoopInput)
-            else element_input.source
-        )
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Extract names
