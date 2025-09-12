@@ -355,7 +355,8 @@ async def test_gather_order(context: StreamFlowContext) -> None:
         prev_tag = token.tag
 
 
-def test_workdir_inheritance() -> None:
+@pytest.mark.asyncio
+async def test_workdir_inheritance() -> None:
     """Test the workdir inheritance of deployments, wrapped deployments and targets"""
     streamflow_config = _get_streamflow_config()
     streamflow_config["workflows"]["test"].setdefault("bindings", []).append(

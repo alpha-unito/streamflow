@@ -59,7 +59,7 @@ def pytest_configure(config):
     )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def chosen_deployment_types(request):
     return request.config.getoption("--deploys")
 
@@ -67,19 +67,19 @@ def chosen_deployment_types(request):
 def pytest_generate_tests(metafunc):
     if "deployment" in metafunc.fixturenames:
         metafunc.parametrize(
-            "deployment", metafunc.config.getoption("deploys"), scope="module"
+            "deployment", metafunc.config.getoption("deploys"), scope="session"
         )
     if "deployment_src" in metafunc.fixturenames:
         metafunc.parametrize(
             "deployment_src",
             metafunc.config.getoption("deploys"),
-            scope="module",
+            scope="session",
         )
     if "deployment_dst" in metafunc.fixturenames:
         metafunc.parametrize(
             "deployment_dst",
             metafunc.config.getoption("deploys"),
-            scope="module",
+            scope="session",
         )
     if "communication_pattern" in metafunc.fixturenames:
         fst_remote = next(
@@ -122,7 +122,7 @@ def pytest_generate_tests(metafunc):
             "communication_pattern",
             comm_pattern,
             ids=["-".join(locs) for locs in comm_pattern],
-            scope="module",
+            scope="session",
         )
 
 
@@ -133,7 +133,7 @@ def all_deployment_types():
     return deployments_
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="session")
 async def context(chosen_deployment_types) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {

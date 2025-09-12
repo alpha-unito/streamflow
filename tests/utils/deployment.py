@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import tempfile
 from collections.abc import MutableSequence
 from importlib.resources import files
@@ -24,6 +25,17 @@ from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job
 from streamflow.deployment import DefaultDeploymentManager
 from tests.utils.data import get_data_path
+
+
+def _get_free_tcp_port() -> int:
+    """
+    Return a free TCP port to be used for publishing services.
+    """
+    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp.bind(("", 0))
+    addr, port = tcp.getsockname()
+    tcp.close()
+    return port
 
 
 def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
@@ -81,7 +93,8 @@ def get_docker_compose_deployment_config():
         config={
             "files": [
                 str(get_data_path("deployment", "docker-compose", "docker-compose.yml"))
-            ]
+            ],
+            "projectName": random_name(),
         },
         external=False,
         lazy=False,
@@ -224,7 +237,7 @@ async def get_slurm_deployment_config(_context: StreamFlowContext):
         type="docker-compose",
         config={
             "files": [str(get_data_path("deployment", "slurm", "docker-compose.yml"))],
-            "projectName": "slurm",
+            "projectName": random_name(),
         },
         external=False,
     )
@@ -256,6 +269,7 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
     public_key = skey.export_public_key().decode("utf-8")
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         skey.write_private_key(f.name)
+    ssh_port = _get_free_tcp_port()
     docker_config = DeploymentConfig(
         name="linuxserver-ssh-docker",
         type="docker",
@@ -263,7 +277,7 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
             "image": "lscr.io/linuxserver/openssh-server",
             "env": [f"PUBLIC_KEY={public_key}"],
             "init": False,
-            "publish": ["2222:2222"],
+            "publish": [f"{ssh_port}:2222"],
         },
         external=False,
         lazy=False,
@@ -277,7 +291,7 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
             "nodes": [
                 {
                     "checkHostKey": False,
-                    "hostname": "127.0.0.1:2222",
+                    "hostname": f"127.0.0.1:{ssh_port}",
                     "sshKey": f.name,
                     "username": "linuxserver.io",
                     "retries": 2,
