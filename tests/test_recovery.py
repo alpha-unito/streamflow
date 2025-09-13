@@ -421,10 +421,11 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
             assert retry_request.version == 1
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "value_type", ["primitive", "file", "list", "object", "token", "job"]
 )
-def test_token_recoverable(value_type: str) -> None:
+async def test_token_recoverable(value_type: str) -> None:
     """Test recoverable property of tokens."""
     if value_type == "primitive":
         token_cls = Token
