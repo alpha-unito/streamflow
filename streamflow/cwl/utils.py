@@ -511,8 +511,8 @@ def eval_expression(
     timeout: int | None = None,
     strip_whitespace: bool = True,
 ) -> Any:
-    if isinstance(expression, str) and ("$(" in expression or "${" in expression):
-        return cwl_utils.expression.interpolate(
+    return (
+        cwl_utils.expression.interpolate(
             expression,
             context,
             jslib=(
@@ -524,8 +524,9 @@ def eval_expression(
             strip_whitespace=strip_whitespace,
             timeout=timeout,
         )
-    else:
-        return expression
+        if is_expression(expression)
+        else expression
+    )
 
 
 async def expand_glob(
@@ -700,6 +701,10 @@ def infer_type_from_token(token_value: Any) -> str:
         return "Any"
 
 
+def is_expression(expression: Any) -> bool:
+    return isinstance(expression, str) and ("$(" in expression or "${" in expression)
+
+
 class LoadListing(Enum):
     no_listing = 0
     shallow_listing = 1
@@ -781,7 +786,7 @@ async def process_secondary_files(
     sf_tasks, sf_specs = [], []
     for secondary_file in secondary_files:
         # If pattern is an expression, evaluate it and process result
-        if "$(" in secondary_file.pattern or "${" in secondary_file.pattern:
+        if is_expression(secondary_file.pattern):
             sf_value = eval_expression(
                 expression=secondary_file.pattern,
                 context=js_context,
@@ -1001,12 +1006,25 @@ def resolve_dependencies(
     expression: str,
     full_js: bool = False,
     expression_lib: MutableSequence[str] | None = None,
-    timeout: int | None = None,
+    context_key: str | None = None,
     strip_whitespace: bool = True,
 ) -> set[str]:
-    if isinstance(expression, str) and ("$(" in expression or "${" in expression):
+    """
+    Resolves the dependencies used in the CWL context (e.g., inputs, self, or runtime) of a given expression.
+    Dependencies refer to context values that are used in the specified expression, based on the provided context key.
+
+    :param expression: The expression whose dependencies are to be resolved.
+    :param full_js: A boolean flag indicating whether to use full JavaScript evaluation.
+    :param expression_lib: A list of JavaScript libraries to include in the evaluation.
+    :param context_key: The context key to use when resolving dependencies. If None, the "inputs" key is used by default.
+    :param strip_whitespace: A boolean flag indicating whether to strip whitespace from the expression.
+
+    :returns: A set of resolved dependencies (i.e., contextual values) used in the expression.
+    """
+    if is_expression(expression):
+        context_key = context_key or "inputs"
         context: MutableMapping[str, Any] = {"inputs": {}, "self": {}, "runtime": {}}
-        engine = DependencyResolver()
+        engine = DependencyResolver(context_key)
         cwl_utils.expression.interpolate(
             expression,
             context,
@@ -1017,7 +1035,6 @@ def resolve_dependencies(
             ),
             fullJS=full_js,
             strip_whitespace=strip_whitespace,
-            timeout=timeout,
             resolve_dependencies=True,
             js_engine=engine,
         )

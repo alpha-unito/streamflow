@@ -30,7 +30,12 @@ from streamflow.core.workflow import (
 )
 from streamflow.cwl import utils
 from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.utils import LoadListing, SecondaryFile
+from streamflow.cwl.utils import (
+    LoadListing,
+    SecondaryFile,
+    is_expression,
+    resolve_dependencies,
+)
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
@@ -84,6 +89,25 @@ def _check_token_type(
                     f"Expected {name} token of type {token_type}, got {inferred_type}."
                 )
     return
+
+
+async def _fill_context(
+    context: MutableMapping[str, Any],
+    command_output: asyncio.Future[CommandOutput],
+    output_eval: str,
+    full_js: bool,
+    expression_lib: MutableSequence[str] | None,
+):
+    # Fill context with exit code if required
+    if "exitCode" in resolve_dependencies(
+        expression=output_eval,
+        full_js=full_js,
+        expression_lib=expression_lib,
+        context_key="runtime",
+    ):
+        context["runtime"]["exitCode"] = cast(
+            CWLCommandOutput, await command_output
+        ).exit_code
 
 
 class CWLCommandOutput(CommandOutput):
@@ -476,7 +500,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                         full_js=self.full_js,
                         expression_lib=self.expression_lib,
                     )
-                    if "$(" in glob or "${" in glob
+                    if is_expression(glob)
                     else glob
                 )
                 globpaths.extend(
@@ -570,10 +594,13 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     load_listing=self.load_listing,
                 )
         if self.output_eval is not None:
-            # Fill context with exit code
-            context["runtime"]["exitCode"] = cast(
-                CWLCommandOutput, await command_output
-            ).exit_code
+            await _fill_context(
+                context=context,
+                command_output=command_output,
+                output_eval=self.output_eval,
+                full_js=self.full_js,
+                expression_lib=self.expression_lib,
+            )
             # Evaluate output
             token = utils.eval_expression(
                 expression=self.output_eval,
@@ -809,11 +836,16 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                 tmp_directory=tmp_directory,
                 hardware=self.workflow.context.scheduler.get_hardware(job.name),
             )
-            result = await command_output
-            context["runtime"]["exitCode"] = cast(CWLCommandOutput, result).exit_code
+            await _fill_context(
+                context=context,
+                command_output=command_output,
+                output_eval=self.output_eval,
+                full_js=self.full_js,
+                expression_lib=self.expression_lib,
+            )
             # Evaluate output
             command_output = make_future(
-                result.update(
+                (await command_output).update(
                     utils.eval_expression(
                         expression=self.output_eval,
                         context=context,

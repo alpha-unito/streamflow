@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import MutableSequence
+from collections.abc import MutableSequence, MutableSet
 from typing import Any
 
 import antlr4
@@ -89,8 +89,9 @@ class CWLDependencyListener(ECMAScriptListener):
 
 
 class DependencyResolver:
-    def __init__(self) -> None:
-        self.deps = set()
+    def __init__(self, context_key: str) -> None:
+        self.deps: MutableSet[str] = set()
+        self.context_key: str = context_key
 
     def eval(self, scan: str, jslib: str = "", **kwargs: Any) -> None:
         code = code_fragment_to_js(scan, jslib)
@@ -108,7 +109,7 @@ class DependencyResolver:
         current_value: Any,
         **kwargs: Any,
     ) -> None:
-        if parsed_string != "inputs":
+        if parsed_string != self.context_key:
             return None
         elif remaining_string:
             if not (m := segment_re.match(remaining_string)):
