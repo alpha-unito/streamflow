@@ -78,12 +78,12 @@ def _prepare_connector(
     )
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="session")
 async def deployment_config(context, deployment) -> DeploymentConfig:
     return await get_deployment_config(context, deployment)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def service(context, deployment) -> str | None:
     return get_service(context, deployment)
 

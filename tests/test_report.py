@@ -12,7 +12,7 @@ from streamflow.report import create_report
 from tests.utils.data import get_data_path
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="session")
 async def context() -> StreamFlowContext:
     _context = build_context(
         {
