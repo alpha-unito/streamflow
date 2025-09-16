@@ -1657,6 +1657,7 @@ class SingularityConnector(ContainerConnector):
             "singularity",
             "exec",
             get_option("cleanenv", self.cleanenv),
+            get_option("contain", self.contain),
             f"instance://{location.name}",
             "sh",
             "-c",
