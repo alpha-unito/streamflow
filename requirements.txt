@@ -9,7 +9,7 @@ importlib-metadata==8.7.0
 Jinja2==3.1.6
 jsonschema==4.25.1
 kubernetes_asyncio==33.3.0
-psutil==7.0.0
+psutil==7.1.0
 referencing==0.36.2
 rdflib==7.1.4
 typing-extensions==4.15.0
