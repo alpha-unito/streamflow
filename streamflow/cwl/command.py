@@ -49,6 +49,7 @@ from streamflow.cwl.processor import (
     CWLObjectCommandOutputProcessor,
 )
 from streamflow.cwl.step import build_token
+from streamflow.cwl.utils import validate_file
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
@@ -421,6 +422,7 @@ async def _prepare_work_dir(
                 )
             # Otherwise create a File or a Directory in the remote path
             else:
+                validate_file(listing_class, listing, options.job.name)
                 if dst_path is None:
                     dst_path = base_path
                 if src_path is not None:
@@ -520,9 +522,9 @@ async def _prepare_work_dir(
                 # The entryname field overrides the value of basename of the File or Directory object
                 if (
                     isinstance(entry, MutableMapping)
+                    and utils.get_token_class(entry) in ["File", "Directory"]
                     and "path" not in entry
                     and "location" not in entry
-                    and "basename" in entry
                 ):
                     entry["basename"] = dst_path
                 if not path_processor.isabs(dst_path):

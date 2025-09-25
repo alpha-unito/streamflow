@@ -34,6 +34,7 @@ from streamflow.cwl.utils import (
     get_path_from_token,
     get_token_class,
     register_data,
+    validate_file,
 )
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data import remotepath
@@ -82,8 +83,8 @@ async def _process_file_token(
     token_value: Any,
     cwl_version: str,
     streamflow_context: StreamFlowContext,
-    check_contents: bool = False,
 ) -> MutableMapping[str, Any]:
+    validate_file(get_token_class(token_value), token_value, job.name)
     connector = streamflow_context.scheduler.get_connector(job.name)
     locations = streamflow_context.scheduler.get_locations(job.name)
     path_processor = get_path_processor(connector)
@@ -100,7 +101,6 @@ async def _process_file_token(
             filepath=filepath,
             file_format=token_value.get("format"),
             basename=token_value.get("basename"),
-            check_content=check_contents,
             contents=token_value.get("contents"),
         )
         if "secondaryFiles" in token_value:
@@ -112,23 +112,11 @@ async def _process_file_token(
                             token_value=sf,
                             cwl_version=cwl_version,
                             streamflow_context=streamflow_context,
-                            check_contents=check_contents,
                         )
                     )
                     for sf in token_value["secondaryFiles"]
                 )
             )
-    elif (
-        get_token_class(token_value) == "File"
-        and check_contents
-        and (
-            token_value.get("basename") is not None
-            and token_value.get("contents") is None
-        )
-    ):
-        raise WorkflowExecutionException(
-            f"Job {job.name} cannot process file. Anonymous file object must have 'contents' and 'basename' fields."
-        )
     if "listing" in token_value:
         new_token_value |= {
             "listing": await asyncio.gather(
@@ -184,7 +172,6 @@ async def build_token(
                     token_value=token_value,
                     cwl_version=cwl_version,
                     streamflow_context=streamflow_context,
-                    check_contents=True,
                 ),
                 recoverable=recoverable,
             )
