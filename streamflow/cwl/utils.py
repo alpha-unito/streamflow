@@ -588,7 +588,6 @@ async def get_file_token(
     token_class: str,
     filepath: str,
     basename: str | None = None,
-    check_content: bool = False,
     contents: str | None = None,
     file_format: str | None = None,
     load_contents: bool = False,
@@ -609,8 +608,9 @@ async def get_file_token(
             token["format"] = file_format
         token["nameroot"], token["nameext"] = path_processor.splitext(basename)
         for location in locations:
-            path = StreamFlowPath(filepath, context=context, location=location)
-            if real_path := await path.resolve():
+            if real_path := await StreamFlowPath(
+                filepath, context=context, location=location
+            ).resolve():
                 token["size"] = await real_path.size()
                 if load_contents:
                     token["contents"] = await _get_contents(
@@ -626,8 +626,7 @@ async def get_file_token(
                     )
                 break
         else:
-            if check_content and contents is None:
-                raise WorkflowExecutionException(f"File {filepath} does not exist")
+            raise WorkflowExecutionException(f"File {filepath} does not exist")
         if contents and not load_contents:
             token["contents"] = contents
     elif token_class == "Directory" and load_listing != LoadListing.no_listing:  # nosec
@@ -1184,6 +1183,26 @@ async def update_file_token(
                     ]
                 }
     return token_value
+
+
+def validate_file(
+    file_class: str, file_value: MutableMapping[str, Any], job_name: str
+) -> None:
+    if not ("path" in file_value or "location" in file_value):
+        if file_class == "File" and ("contents" not in file_value):
+            # The file can have the `contents` field without the `basename` field
+            # but cannot have the `basename` field without the `contents` field
+            raise WorkflowDefinitionException(
+                f"Job {job_name} cannot process the file. "
+                f"Anonymous file object must have 'contents' and 'basename' fields."
+            )
+        if file_class == "Directory" and (
+            "listing" not in file_value or "basename" not in file_value
+        ):
+            raise WorkflowDefinitionException(
+                f"Job {job_name} cannot process the file. "
+                f"Anonymous directory object must have 'listing' and 'basename' fields."
+            )
 
 
 async def write_remote_file(
