@@ -33,8 +33,8 @@ from streamflow.cwl.utils import (
     get_file_token,
     get_path_from_token,
     get_token_class,
+    is_literal_file,
     register_data,
-    validate_file,
 )
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data import remotepath
@@ -84,7 +84,7 @@ async def _process_file_token(
     cwl_version: str,
     streamflow_context: StreamFlowContext,
 ) -> MutableMapping[str, Any]:
-    validate_file(get_token_class(token_value), token_value, job.name)
+    is_literal = is_literal_file(get_token_class(token_value), token_value, job.name)
     connector = streamflow_context.scheduler.get_connector(job.name)
     locations = streamflow_context.scheduler.get_locations(job.name)
     path_processor = get_path_processor(connector)
@@ -102,6 +102,7 @@ async def _process_file_token(
             file_format=token_value.get("format"),
             basename=token_value.get("basename"),
             contents=token_value.get("contents"),
+            is_literal=is_literal,
         )
         if "secondaryFiles" in token_value:
             new_token_value["secondaryFiles"] = await asyncio.gather(
@@ -128,13 +129,14 @@ async def _process_file_token(
                 )
             )
         }
-    await register_data(
-        context=streamflow_context,
-        connector=connector,
-        locations=locations,
-        base_path=job.output_directory,
-        token_value=new_token_value,
-    )
+    if not is_literal:
+        await register_data(
+            context=streamflow_context,
+            connector=connector,
+            locations=locations,
+            base_path=job.output_directory,
+            token_value=new_token_value,
+        )
     return new_token_value
 
 
