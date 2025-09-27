@@ -421,8 +421,7 @@ async def _prepare_work_dir(
                     dst_path=dst_path,
                 )
             # Otherwise create a File or a Directory in the remote path
-            else:
-                _ = is_literal_file(listing_class, listing, options.job.name)
+            elif is_literal_file(listing_class, listing, options.job.name):
                 if dst_path is None:
                     dst_path = base_path
                 if src_path is not None:
@@ -448,6 +447,11 @@ async def _prepare_work_dir(
                         path=dst_path,
                         relpath=path_processor.relpath(dst_path, base_path),
                     )
+            # The file is not literal; it has a path, but no specific data locations are available.
+            else:
+                raise WorkflowExecutionException(
+                    f"Impossible to copy the {src_path} file in the working directory: No data locations found"
+                )
             # If `listing` is present, recursively process folder contents
             if "listing" in listing:
                 if "basename" in listing:
