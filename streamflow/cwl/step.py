@@ -889,7 +889,6 @@ class CWLTransferStep(TransferStep):
                 load_contents="contents" in token_value,
                 load_listing=LoadListing.no_listing,
             )
-
             if (
                 "checksum" in token_value
                 and new_token_value["checksum"] != token_value["checksum"]
@@ -899,6 +898,20 @@ class CWLTransferStep(TransferStep):
                         token_value["path"],
                         new_token_value["path"],
                         [str(loc) for loc in dst_locations],
+                    )
+                )
+            # Check secondary files
+            if "secondaryFiles" in token_value:
+                new_token_value["secondaryFiles"] = await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self._update_file_token(
+                                job=job,
+                                token_value=element,
+                                dst_path=filepath.parent,
+                            )
+                        )
+                        for element in token_value["secondaryFiles"]
                     )
                 )
 
