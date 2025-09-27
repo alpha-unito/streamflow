@@ -165,8 +165,10 @@ async def test_glob(context, connector, location):
 
 
 @pytest.mark.asyncio
-async def test_mkdir_failure(context):
+async def test_mkdir_failure(chosen_deployment_types, context):
     """Test on `mkdir` function failure"""
+    if "docker" not in chosen_deployment_types:
+        pytest.skip("Deployment docker was not activated")
     deployment_config = get_docker_deployment_config()
     location = await get_location(context, deployment_config.type)
 

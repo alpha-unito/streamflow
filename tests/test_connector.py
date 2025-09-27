@@ -137,12 +137,15 @@ async def test_future_connector_multiple_request_fail(
 
 @pytest.mark.asyncio
 async def test_ssh_connector_channel_open_error(
-    caplog, context: StreamFlowContext
+    caplog, chosen_deployment_types, context: StreamFlowContext
 ) -> None:
     """
     Test SSHConnector on a channel open error which close the ssh connection.
     The SSHConnector retry mechanism will retry on a new ssh connection
     """
+    if "ssh" not in chosen_deployment_types:
+        pytest.skip("Deployment ssh was not activated")
+
     caplog.set_level(logging.WARNING)
     caplog_handler = caplog.handler
     logger.addHandler(caplog_handler)
@@ -160,8 +163,12 @@ async def test_ssh_connector_channel_open_error(
 
 
 @pytest.mark.asyncio
-async def test_ssh_connector_multiple_request_fail(context: StreamFlowContext) -> None:
+async def test_ssh_connector_multiple_request_fail(
+    chosen_deployment_types, context: StreamFlowContext
+) -> None:
     """Test SSHConnector with multiple requests but the deployment fails"""
+    if "ssh" not in chosen_deployment_types:
+        pytest.skip("Deployment ssh was not activated")
     deployment_config = await get_ssh_deployment_config(context)
     # changed username to get an exception for the test
     deployment_config.config["nodes"][0]["username"] = "test"
