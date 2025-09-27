@@ -457,9 +457,12 @@ class DefaultCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         return Token(
-            tag=utils.get_tag(job.inputs.values()), value=(await command_output).value
+            tag=utils.get_tag(job.inputs.values()),
+            value=(await command_output).value,
+            recoverable=recoverable,
         )
 
 
@@ -673,7 +676,7 @@ class ExecuteStep(BaseStep):
     ) -> None:
         if (
             token := await self.output_processors[output_name].process(
-                job, command_output, connector
+                job, command_output, connector, recoverable=True
             )
         ) is not None:
             job_token = get_job_token(
