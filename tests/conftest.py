@@ -83,7 +83,7 @@ def pytest_generate_tests(metafunc):
         )
     if "communication_pattern" in metafunc.fixturenames:
         fst_remote = next(
-            d for d in metafunc.config.getoption("deploys") if d != "local"
+            (d for d in metafunc.config.getoption("deploys") if d != "local"), None
         )
         test_local = "local" in metafunc.config.getoption("deploys")
         comm_pattern = [
@@ -107,15 +107,23 @@ def pytest_generate_tests(metafunc):
             *((d, d) for d in metafunc.config.getoption("deploys") if d != "local"),
             # Remote to Remote testing the data receiving
             *(
-                (fst_remote, d)
-                for d in metafunc.config.getoption("deploys")
-                if d != fst_remote and d != "local"
+                (
+                    (fst_remote, d)
+                    for d in metafunc.config.getoption("deploys")
+                    if d != fst_remote and d != "local"
+                )
+                if fst_remote
+                else ()
             ),
             # Remote to Remote testing the data sending
             *(
-                (d, fst_remote)
-                for d in metafunc.config.getoption("deploys")
-                if d != fst_remote and d != "local"
+                (
+                    (d, fst_remote)
+                    for d in metafunc.config.getoption("deploys")
+                    if d != fst_remote and d != "local"
+                )
+                if fst_remote
+                else ()
             ),
         ]
         metafunc.parametrize(
