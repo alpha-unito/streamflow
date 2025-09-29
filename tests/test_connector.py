@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+from pytest import LogCaptureFixture
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation
@@ -79,7 +80,7 @@ async def test_connector_run_command(
 @pytest.mark.asyncio
 async def test_connector_run_command_fails(
     curr_connector: Connector, curr_location: ExecutionLocation
-):
+) -> None:
     """Test connector run method on a job with an invalid command"""
     _, returncode = await curr_connector.run(
         curr_location, ["ls -2"], capture_output=True, job_name="job_test"
@@ -137,12 +138,16 @@ async def test_future_connector_multiple_request_fail(
 
 @pytest.mark.asyncio
 async def test_ssh_connector_channel_open_error(
-    caplog, context: StreamFlowContext
+    caplog: LogCaptureFixture,
+    chosen_deployment_types: MutableSequence[str],
+    context: StreamFlowContext,
 ) -> None:
     """
     Test SSHConnector on a channel open error which close the ssh connection.
     The SSHConnector retry mechanism will retry on a new ssh connection
     """
+    if "ssh" not in chosen_deployment_types:
+        pytest.skip("Deployment ssh was not activated")
     caplog.set_level(logging.WARNING)
     caplog_handler = caplog.handler
     logger.addHandler(caplog_handler)
@@ -160,8 +165,12 @@ async def test_ssh_connector_channel_open_error(
 
 
 @pytest.mark.asyncio
-async def test_ssh_connector_multiple_request_fail(context: StreamFlowContext) -> None:
+async def test_ssh_connector_multiple_request_fail(
+    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+) -> None:
     """Test SSHConnector with multiple requests but the deployment fails"""
+    if "ssh" not in chosen_deployment_types:
+        pytest.skip("Deployment ssh was not activated")
     deployment_config = await get_ssh_deployment_config(context)
     # changed username to get an exception for the test
     deployment_config.config["nodes"][0]["username"] = "test"

@@ -89,8 +89,13 @@ def service(context, deployment) -> str | None:
 
 
 @pytest.mark.asyncio
-async def test_bind_volumes(context: StreamFlowContext):
+async def test_bind_volumes(
+    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+) -> None:
     """Test the binding of volumes in stacked locations"""
+    for deployment in ["docker", "local"]:
+        if deployment not in chosen_deployment_types:
+            pytest.skip(f"Deployment {deployment} was not activated")
     local_deployment = get_local_deployment_config()
     local_connector = context.deployment_manager.get_connector(local_deployment.name)
     local_location = next(
@@ -146,8 +151,13 @@ async def test_bind_volumes(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_binding_filter(context: StreamFlowContext):
+async def test_binding_filter(
+    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+) -> None:
     """Test Binding Filter using a job with two targets both free. With the CustomBindingFilter the scheduling will choose the second target"""
+    for deployment in ["docker", "local"]:
+        if deployment not in chosen_deployment_types:
+            pytest.skip(f"Deployment {deployment} was not activated")
     job = Job(
         name=random_job_name(),
         workflow_id=0,
@@ -194,7 +204,7 @@ async def test_binding_filter(context: StreamFlowContext):
     await _notify_status_and_test(context, job, Status.COMPLETED)
 
 
-def test_hardware():
+def test_hardware() -> None:
     """Test Hardware arithmetic operations"""
     testing_mount_point = os.path.join(os.sep, "tmp")
     main_hardware = Hardware(
@@ -264,8 +274,13 @@ def test_hardware():
 
 
 @pytest.mark.asyncio
-async def test_multi_env(context: StreamFlowContext):
+async def test_multi_env(
+    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+) -> None:
     """Test scheduling two jobs on two different environments."""
+    for deployment in ["docker", "local"]:
+        if deployment not in chosen_deployment_types:
+            pytest.skip(f"Deployment {deployment} was not activated")
     hardware_requirement, target = _prepare_connector(context)
     docker_config = get_docker_deployment_config()
     docker_target = Target(
@@ -310,8 +325,13 @@ async def test_multi_env(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_multi_targets_one_job(context: StreamFlowContext):
+async def test_multi_targets_one_job(
+    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+) -> None:
     """Test scheduling one jobs with two targets: Local and Docker Image. The job will be scheduled in the first"""
+    for deployment in ["docker", "local"]:
+        if deployment not in chosen_deployment_types:
+            pytest.skip(f"Deployment {deployment} was not activated")
     hardware_requirement, target = _prepare_connector(context)
     # Create fake job with two targets and schedule it
     job = Job(
@@ -358,11 +378,16 @@ async def test_multi_targets_one_job(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_multi_targets_two_jobs(context: StreamFlowContext):
+async def test_multi_targets_two_jobs(
+    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+) -> None:
     """
     Test scheduling two jobs with two same targets: Local and Docker Image.
     The first job will be scheduled in the local target and the second job in the docker target because the local resources will be full.
     """
+    for deployment in ["docker", "local"]:
+        if deployment not in chosen_deployment_types:
+            pytest.skip(f"Deployment {deployment} was not activated")
     hardware_requirement, target = _prepare_connector(context)
     # Create fake jobs with two same targets and schedule them
     jobs = [
@@ -421,7 +446,7 @@ async def test_scheduling(
     context: StreamFlowContext,
     deployment_config: DeploymentConfig,
     service: str | None,
-):
+) -> None:
     """Test scheduling a job on a remote environment."""
     job = Job(
         name=random_job_name(),
@@ -440,7 +465,7 @@ async def test_scheduling(
 
 
 @pytest.mark.asyncio
-async def test_single_env_enough_resources(context: StreamFlowContext):
+async def test_single_env_enough_resources(context: StreamFlowContext) -> None:
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
     num_jobs = 2
     hardware_requirement, target = _prepare_connector(context, num_jobs=num_jobs)
@@ -494,7 +519,7 @@ async def test_single_env_enough_resources(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_single_env_few_resources(context: StreamFlowContext):
+async def test_single_env_few_resources(context: StreamFlowContext) -> None:
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
     num_jobs = 2
     hardware_requirement, target = _prepare_connector(
