@@ -142,7 +142,9 @@ def all_deployment_types():
 
 
 @pytest_asyncio.fixture(scope="session")
-async def context(chosen_deployment_types) -> AsyncGenerator[StreamFlowContext, Any]:
+async def context(
+    chosen_deployment_types: MutableSequence[str],
+) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
             "database": {"type": "default", "config": {"connection": ":memory:"}},

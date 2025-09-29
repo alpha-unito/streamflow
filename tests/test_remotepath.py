@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import MutableSequence
 
 import pytest
 import pytest_asyncio
 
 from streamflow.core import utils
+from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.data import remotepath
@@ -24,7 +26,9 @@ def connector(context, location) -> Connector:
 
 
 @pytest.mark.asyncio
-async def test_directory(context, connector, location):
+async def test_directory(
+    context: StreamFlowContext, connector: Connector, location: ExecutionLocation
+) -> None:
     """Test directory creation and deletion."""
     path = StreamFlowPath(
         tempfile.gettempdir() if location.local else "/tmp",
@@ -60,7 +64,9 @@ async def test_directory(context, connector, location):
 
 
 @pytest.mark.asyncio
-async def test_download(context, connector, location):
+async def test_download(
+    context: StreamFlowContext, connector: Connector, location: ExecutionLocation
+) -> None:
     """Test remote file download."""
     urls = [
         "https://raw.githubusercontent.com/alpha-unito/streamflow/master/LICENSE",
@@ -88,7 +94,9 @@ async def test_download(context, connector, location):
 
 
 @pytest.mark.asyncio
-async def test_file(context, connector, location):
+async def test_file(
+    context: StreamFlowContext, connector: Connector, location: ExecutionLocation
+) -> None:
     """Test file creation, size, checksum and deletion."""
     path = StreamFlowPath(
         tempfile.gettempdir() if location.local else "/tmp",
@@ -121,7 +129,9 @@ async def test_file(context, connector, location):
 
 
 @pytest.mark.asyncio
-async def test_glob(context, connector, location):
+async def test_glob(
+    context: StreamFlowContext, connector: Connector, location: ExecutionLocation
+) -> None:
     """Test glob resolution."""
     path = StreamFlowPath(
         tempfile.gettempdir() if location.local else "/tmp",
@@ -165,7 +175,9 @@ async def test_glob(context, connector, location):
 
 
 @pytest.mark.asyncio
-async def test_mkdir_failure(chosen_deployment_types, context):
+async def test_mkdir_failure(
+    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+) -> None:
     """Test on `mkdir` function failure"""
     if "docker" not in chosen_deployment_types:
         pytest.skip("Deployment docker was not activated")
@@ -188,7 +200,9 @@ async def test_mkdir_failure(chosen_deployment_types, context):
 
 
 @pytest.mark.asyncio
-async def test_symlink(context, connector, location):
+async def test_symlink(
+    context: StreamFlowContext, connector: Connector, location: ExecutionLocation
+) -> None:
     """Test symlink creation, resolution and deletion."""
     src = StreamFlowPath(
         tempfile.gettempdir() if location.local else "/tmp",

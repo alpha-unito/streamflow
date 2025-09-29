@@ -3,7 +3,7 @@ import os
 import posixpath
 import random
 import tempfile
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from pathlib import PurePosixPath
 from typing import Any, cast
 
@@ -73,7 +73,9 @@ def _get_workflow_config(streamflow_config) -> WorkflowConfig:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("config", ["File", "Directory:literal", "Directory:concrete"])
 async def test_inject_remote_input(
-    chosen_deployment_types, context: StreamFlowContext, config: str
+    chosen_deployment_types: MutableSequence[str],
+    context: StreamFlowContext,
+    config: str,
 ) -> None:
     """Test injection of remote input data through the port targets in the StreamFlow file"""
     if "docker" not in chosen_deployment_types:

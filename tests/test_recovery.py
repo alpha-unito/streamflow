@@ -2,7 +2,7 @@ import itertools
 import os
 import posixpath
 import tempfile
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, MutableSequence
 from typing import Any
 
 import pytest
@@ -63,7 +63,7 @@ async def _assert_token_result(
 
 @pytest_asyncio.fixture(scope="module")
 async def fault_tolerant_context(
-    chosen_deployment_types,
+    chosen_deployment_types: MutableSequence[str],
 ) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
