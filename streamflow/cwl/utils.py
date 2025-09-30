@@ -347,37 +347,39 @@ async def build_token_value(
         token_class := get_token_class(token_value)
     ) in ["File", "Directory"]:
         path_processor = get_path_processor(connector)
-        is_literal = is_literal_file(token_class, token_value)
-        # Get filepath
-        if (filepath := get_path_from_token(token_value)) is not None:
-            # Process secondary files in token value
-            sf_map = {}
-            if "secondaryFiles" in token_value:
-                sf_tasks = []
-                for sf in token_value.get("secondaryFiles", []):
-                    sf_token_class = get_token_class(sf)
-                    sf_tasks.append(
-                        asyncio.create_task(
-                            get_file_token(
-                                context=context,
-                                connector=connector,
-                                cwl_version=cwl_version,
-                                locations=locations,
-                                token_class=sf_token_class,
-                                filepath=get_path_from_token(sf),
-                                file_format=sf.get("format"),
-                                basename=sf.get("basename"),
-                                is_literal=is_literal_file(sf_token_class, sf),
-                                load_contents=load_contents,
-                                load_listing=load_listing,
-                            )
+        # Process secondary files in token value
+        sf_map = {}
+        if "secondaryFiles" in token_value:
+            sf_tasks = []
+            for sf in token_value.get("secondaryFiles", []):
+                sf_token_class = get_token_class(sf)
+                sf_tasks.append(
+                    asyncio.create_task(
+                        get_file_token(
+                            context=context,
+                            connector=connector,
+                            cwl_version=cwl_version,
+                            locations=locations,
+                            token_class=sf_token_class,
+                            filepath=get_path_from_token(sf)
+                            or path_processor.join(
+                                js_context["runtime"]["outdir"], sf.get("basename")
+                            ),
+                            file_format=sf.get("format"),
+                            basename=sf.get("basename"),
+                            contents=sf.get("contents"),
+                            is_literal=is_literal_file(sf_token_class, sf),
+                            load_contents=load_contents,
+                            load_listing=load_listing,
                         )
                     )
-                sf_map = {
-                    get_path_from_token(sf): sf
-                    for sf in await asyncio.gather(*sf_tasks)
-                }
-            # Compute the new token value
+                )
+            sf_map = {
+                get_path_from_token(sf): sf for sf in await asyncio.gather(*sf_tasks)
+            }
+        # Get filepath
+        is_literal = is_literal_file(token_class, token_value)
+        if (filepath := get_path_from_token(token_value)) is not None:
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
@@ -391,39 +393,18 @@ async def build_token_value(
                 load_contents=load_contents,
                 load_listing=load_listing,
             )
-            # Compute new secondary files from port specification
-            sf_context = cast(dict[str, Any], js_context) | {"self": token_value}
-            if secondary_files:
-                await process_secondary_files(
-                    context=context,
-                    cwl_version=cwl_version,
-                    secondary_files=secondary_files,
-                    sf_map=sf_map,
-                    js_context=sf_context,
-                    full_js=full_js,
-                    expression_lib=expression_lib,
-                    connector=connector,
-                    locations=locations,
-                    token_value=token_value,
-                    load_contents=load_contents,
-                    load_listing=load_listing,
-                )
-                # Add all secondary files to the token
-                if sf_map:
-                    token_value["secondaryFiles"] = list(sf_map.values())
         # If there is only a 'contents' field, propagate the parameter
         elif "contents" in token_value:
-            filepath = path_processor.join(
-                js_context["runtime"]["outdir"],
-                token_value.get("basename", random_name()),
-            )
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
                 cwl_version=cwl_version,
                 locations=locations,
                 token_class=token_class,
-                filepath=filepath,
+                filepath=path_processor.join(
+                    js_context["runtime"]["outdir"],
+                    token_value.get("basename", random_name()),
+                ),
                 file_format=token_value.get("format"),
                 basename=token_value.get("basename"),
                 contents=token_value.get("contents"),
@@ -476,6 +457,25 @@ async def build_token_value(
                 load_listing=load_listing,
             )
             token_value["listing"] = listing_tokens
+        # Compute new secondary files from port specification
+        if secondary_files:
+            await process_secondary_files(
+                context=context,
+                cwl_version=cwl_version,
+                secondary_files=secondary_files,
+                sf_map=sf_map,
+                js_context=cast(dict[str, Any], js_context) | {"self": token_value},
+                full_js=full_js,
+                expression_lib=expression_lib,
+                connector=connector,
+                locations=locations,
+                token_value=token_value,
+                load_contents=load_contents,
+                load_listing=load_listing,
+            )
+        # Add all secondary files to the token
+        if sf_map:
+            token_value["secondaryFiles"] = list(sf_map.values())
     return token_value
 
 
