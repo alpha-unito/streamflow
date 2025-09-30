@@ -543,9 +543,10 @@ class Token(PersistableEntity):
         async with self.persistence_lock:
             if not self.persistent_id:
                 try:
-                    # There are extension token classes where the value of `recoverable` depends on internal tokens
-                    # (e.g., ListToken). These classes have the private `_recoverable` attribute set to `False`.
-                    # In the database, it is saved only the private because the public is computed at runtime.
+                    # There are classes that extend the `Token` class where the value of `recoverable` depends
+                    # on internal tokens (e.g., ListToken). These classes have the private `_recoverable` attribute
+                    # set to `False`. In the database, it is saved only the private because the public is
+                    # computed at runtime.
                     self.persistent_id = await context.database.add_token(
                         port=port_id,
                         recoverable=self._recoverable,
