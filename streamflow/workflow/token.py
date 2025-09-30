@@ -57,7 +57,7 @@ class IterationTerminationToken(Token):
     def get_weight(self, context: StreamFlowContext) -> int:
         return 0
 
-    def update(self, value: Any, recoverable: bool | None = None) -> Token:
+    def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag)
 
     def retag(self, tag: str) -> Token:
@@ -81,7 +81,7 @@ class FileToken(Token, ABC):
 
     async def is_available(self, context: StreamFlowContext) -> bool:
         """The `FileToken` is available if all its paths exist in at least one location."""
-        if not self.recoverable:
+        if not self.get_recoverable():
             return False
         else:
             for path in await self.get_paths(context):
@@ -132,14 +132,12 @@ class JobToken(Token):
 class ListToken(Token):
     __slots__ = ()
 
-    @property
-    def recoverable(self):
-        return all(t.recoverable for t in self.value)
-
-    @recoverable.setter
-    def recoverable(self, value: bool):
-        for t in self.value:
-            t.recoverable = value
+    def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
+        if recoverable:
+            raise WorkflowExecutionException(
+                "The recoverable value of the ListToken depends solely on the recoverable values of the inner tokens."
+            )
+        super().__init__(value=value, tag=tag, recoverable=False)
 
     @classmethod
     async def _load(
@@ -148,28 +146,24 @@ class ListToken(Token):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Token:
-        # The `recoverable` attribute is computed based on the
-        # inner tokens, so it is not necessary to pass it
-        value = await asyncio.gather(
-            *(
-                asyncio.create_task(loading_context.load_token(context, t))
-                for t in row["value"]
-            )
-        )
         return cls(
             tag=row["tag"],
-            value=value,
-            recoverable=all(t.recoverable for t in value),
+            value=await asyncio.gather(
+                *(
+                    asyncio.create_task(loading_context.load_token(context, t))
+                    for t in row["value"]
+                )
+            ),
         )
-
-    def _save_recoverable(self) -> bool:
-        return False
 
     async def _save_value(self, context: StreamFlowContext):
         await asyncio.gather(
             *(asyncio.create_task(t.save(context)) for t in self.value)
         )
         return [t.persistent_id for t in self.value]
+
+    def get_recoverable(self) -> bool:
+        return all(t.get_recoverable() for t in self.value)
 
     async def get_weight(self, context: StreamFlowContext) -> int:
         return sum(
@@ -179,31 +173,30 @@ class ListToken(Token):
         )
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return self.recoverable and all(
+        return self.get_recoverable() and all(
             await asyncio.gather(
                 *(asyncio.create_task(t.is_available(context)) for t in self.value)
             )
         )
 
-    def update(self, value: Any, recoverable: bool | None = None) -> Token:
-        return self.__class__(
-            tag=self.tag,
-            value=value,
-            recoverable=(recoverable if recoverable is not None else self.recoverable),
-        )
+    def set_recoverable(self, recoverable: bool) -> Self:
+        for t in self.value:
+            t.set_recoverable(recoverable)
+        return self
+
+    def update(self, value: Any) -> Token:
+        return self.__class__(tag=self.tag, value=value)
 
 
 class ObjectToken(Token):
     __slots__ = ()
 
-    @property
-    def recoverable(self):
-        return all(t.recoverable for t in self.value.values())
-
-    @recoverable.setter
-    def recoverable(self, value: bool):
-        for t in self.value.values():
-            t.recoverable = value
+    def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
+        if recoverable:
+            raise WorkflowExecutionException(
+                "The recoverable value of the ObjectToken depends solely on the recoverable values of the inner tokens."
+            )
+        super().__init__(value=value, tag=tag, recoverable=False)
 
     @classmethod
     async def _load(
@@ -212,33 +205,29 @@ class ObjectToken(Token):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        # The `recoverable` attribute is computed based on the
-        # inner tokens, so it is not necessary to pass it
-        value = dict(
-            zip(
-                row["value"].keys(),
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(loading_context.load_token(context, v))
-                        for v in row["value"].values()
-                    )
-                ),
-            )
-        )
         return cls(
             tag=row["tag"],
-            value=value,
-            recoverable=all(t.recoverable for t in value.values()),
+            value=dict(
+                zip(
+                    row["value"].keys(),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(loading_context.load_token(context, v))
+                            for v in row["value"].values()
+                        )
+                    ),
+                )
+            ),
         )
-
-    def _save_recoverable(self) -> bool:
-        return False
 
     async def _save_value(self, context: StreamFlowContext):
         await asyncio.gather(
             *(asyncio.create_task(t.save(context)) for t in self.value.values())
         )
         return {k: t.persistent_id for k, t in self.value.items()}
+
+    def get_recoverable(self) -> bool:
+        return all(t.get_recoverable() for t in self.value.values())
 
     async def get_weight(self, context: StreamFlowContext) -> int:
         return sum(
@@ -251,7 +240,7 @@ class ObjectToken(Token):
         )
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return self.recoverable and all(
+        return self.get_recoverable() and all(
             await asyncio.gather(
                 *(
                     asyncio.create_task(t.is_available(context))
@@ -260,12 +249,13 @@ class ObjectToken(Token):
             )
         )
 
-    def update(self, value: Any, recoverable: bool | None = None) -> Token:
-        return self.__class__(
-            tag=self.tag,
-            value=value,
-            recoverable=(recoverable if recoverable is not None else self.recoverable),
-        )
+    def set_recoverable(self, recoverable: bool) -> Self:
+        for t in self.value.values():
+            t.set_recoverable(recoverable)
+        return self
+
+    def update(self, value: Any) -> Token:
+        return self.__class__(tag=self.tag, value=value)
 
 
 class TerminationToken(Token):
@@ -281,7 +271,7 @@ class TerminationToken(Token):
     def get_weight(self, context: StreamFlowContext) -> int:
         return 0
 
-    def update(self, value: Any, recoverable: bool | None = None) -> Token:
+    def update(self, value: Any) -> Token:
         raise NotImplementedError
 
     def retag(self, tag: str) -> Token:

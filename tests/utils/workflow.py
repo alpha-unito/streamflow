@@ -369,9 +369,9 @@ async def build_token(
                 ),
             )
     elif isinstance(token_value, FileToken):
-        return token_value.update(token_value.value, recoverable=recoverable)
+        return token_value.update(token_value.value).set_recoverable(recoverable)
     elif isinstance(token_value, Token):
-        return token_value.update(token_value.value, recoverable=recoverable)
+        return token_value.update(token_value.value).set_recoverable(recoverable)
     else:
         return Token(
             tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
@@ -552,7 +552,7 @@ class InjectorFailureCommand(Command):
         ) is not None and num_executions < max_failures:
             if self.failure_type == InjectorFailureCommand.INJECT_TOKEN:
                 context.failure_manager.get_request(job.name).output_tokens = {
-                    k: t.update(t.value, recoverable=True)
+                    k: t.update(t.value).set_recoverable(True)
                     for k, t in job.inputs.items()
                 }
             elif self.failure_type == InjectorFailureCommand.FAIL_STOP:
@@ -841,7 +841,6 @@ class InjectorFailureTransferStep(TransferStep):
                 value=await asyncio.gather(
                     *(asyncio.create_task(self.transfer(job, t)) for t in token.value)
                 ),
-                recoverable=False,
             )
         elif isinstance(token, ObjectToken):
             return token.update(
@@ -856,14 +855,13 @@ class InjectorFailureTransferStep(TransferStep):
                         ),
                     )
                 ),
-                recoverable=False,
             )
         elif isinstance(token, FileToken):
             return token.update(
-                await self._transfer_path(job, token.value), recoverable=False
+                await self._transfer_path(job, token.value),
             )
         else:
-            return token.update(token.value, recoverable=False)
+            return token.update(token.value)
 
 
 class RecoveryTranslator:
