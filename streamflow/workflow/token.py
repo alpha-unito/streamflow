@@ -145,7 +145,7 @@ class ListToken(Token):
         context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
-    ) -> Token:
+    ) -> Self:
         return cls(
             tag=row["tag"],
             value=await asyncio.gather(

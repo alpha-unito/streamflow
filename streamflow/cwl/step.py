@@ -656,9 +656,8 @@ class CWLTransferStep(TransferStep):
             if utils.get_token_class(token_value) in ["File", "Directory"]:
                 return await self._update_file_token(job, token_value)
             else:
-                return {
-                    k: v
-                    for k, v in zip(
+                return dict(
+                    zip(
                         token_value.keys(),
                         await asyncio.gather(
                             *(
@@ -667,7 +666,7 @@ class CWLTransferStep(TransferStep):
                             )
                         ),
                     )
-                }
+                )
         else:
             return token_value
 
