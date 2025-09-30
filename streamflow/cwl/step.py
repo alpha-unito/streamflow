@@ -212,8 +212,8 @@ async def build_token(
                 ),
             )
     elif isinstance(token_value, Token):
-        return token_value.retag(tag=get_tag(job.inputs.values())).update(
-            value=token_value.value, recoverable=recoverable
+        return token_value.retag(tag=get_tag(job.inputs.values())).set_recoverable(
+            recoverable
         )
     else:
         return Token(
@@ -921,6 +921,4 @@ class CWLTransferStep(TransferStep):
             return new_token_value
 
     async def transfer(self, job: Job, token: Token) -> Token:
-        return token.update(
-            await self._transfer_value(job, token.value), recoverable=False
-        )
+        return token.update(await self._transfer_value(job, token.value))

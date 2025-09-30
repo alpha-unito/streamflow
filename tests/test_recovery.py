@@ -4,7 +4,7 @@ import os
 import posixpath
 import tempfile
 import uuid
-from collections.abc import AsyncGenerator, MutableMapping
+from collections.abc import AsyncGenerator, MutableMapping, MutableSequence
 from typing import Any
 
 import pytest
@@ -422,9 +422,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "value_type", ["primitive", "file", "list", "object", "token", "job"]
-)
+@pytest.mark.parametrize("value_type", ["primitive", "file", "list", "object", "job"])
 async def test_token_recoverable(value_type: str) -> None:
     """Test recoverable property of tokens."""
     if value_type == "primitive":
@@ -439,9 +437,6 @@ async def test_token_recoverable(value_type: str) -> None:
     elif value_type == "object":
         token_cls = ObjectToken
         value = {f"key{i}": Token(value=i, recoverable=True) for i in range(101, 104)}
-    elif value_type == "token":
-        token_cls = Token
-        value = Token(value=101, recoverable=True)
     elif value_type == "job":
         token_cls = JobToken
         value = Job(
@@ -454,12 +449,18 @@ async def test_token_recoverable(value_type: str) -> None:
         )
     else:
         raise NotImplementedError
-    token = token_cls(value=value, tag="0.0", recoverable=True)
+    token = token_cls(
+        value=value,
+        tag="0.0",
+        recoverable=value_type not in ["list", "object"],
+    )
     token = token.update(value=value)
-    assert token.recoverable
+    assert token.get_recoverable()
     token.retag("0.1")
-    assert token.recoverable
-    token = token.update(value=value, recoverable=False)
-    assert not token.recoverable
-    token = token.update(value=value, recoverable=True)
-    assert token.recoverable
+    assert token.get_recoverable()
+    token = token.update(value=value)
+    token.set_recoverable(False)
+    assert not token.get_recoverable()
+    token = token.update(value=value)
+    token.set_recoverable(True)
+    assert token.get_recoverable()

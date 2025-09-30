@@ -684,7 +684,7 @@ class ExecuteStep(BaseStep):
             )
             output_port.put(
                 await self._persist_token(
-                    token=token.update(token.value, recoverable=True),
+                    token=token,
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
@@ -1140,7 +1140,7 @@ class InputInjectorStep(BaseStep, ABC):
                     new_token = await self.process_input(job, token.value)
                     self.get_output_port().put(
                         await self._persist_token(
-                            token=new_token.update(new_token.value, recoverable=True),
+                            token=new_token.set_recoverable(True),
                             port=self.get_output_port(),
                             input_token_ids=get_entity_ids(in_list),
                         )
@@ -1747,7 +1747,7 @@ class TransferStep(BaseStep, ABC):
     ) -> None:
         self.get_output_port(port_name).put(
             await self._persist_token(
-                token=await self.transfer(job, token),
+                token=(await self.transfer(job, token)).set_recoverable(False),
                 port=self.get_output_port(port_name),
                 input_token_ids=get_entity_ids(
                     [

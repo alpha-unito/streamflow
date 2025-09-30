@@ -492,13 +492,13 @@ class Step(PersistableEntity, ABC):
 
 
 class Token(PersistableEntity):
-    __slots__ = ("persistent_id", "recoverable", "value", "tag")
+    __slots__ = ("persistent_id", "value", "tag", "_recoverable")
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
         self.value: Any = value
         self.tag: str = tag
-        self.recoverable: bool = recoverable
+        self._recoverable: bool = recoverable
 
     @classmethod
     async def _load(
@@ -509,11 +509,11 @@ class Token(PersistableEntity):
     ) -> Self:
         return cls(tag=row["tag"], value=row["value"], recoverable=row["recoverable"])
 
-    def _save_recoverable(self) -> bool:
-        return self.recoverable
-
     async def _save_value(self, context: StreamFlowContext):
         return self.value
+
+    def get_recoverable(self) -> bool:
+        return self._recoverable
 
     async def get_weight(self, context: StreamFlowContext) -> int:
         return sys.getsizeof(self.value)
@@ -532,10 +532,10 @@ class Token(PersistableEntity):
         return token
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return self.recoverable
+        return self._recoverable
 
     def retag(self, tag: str) -> Token:
-        return self.__class__(tag=tag, value=self.value, recoverable=self.recoverable)
+        return self.__class__(tag=tag, value=self.value, recoverable=self._recoverable)
 
     async def save(
         self, context: StreamFlowContext, port_id: int | None = None
@@ -543,9 +543,12 @@ class Token(PersistableEntity):
         async with self.persistence_lock:
             if not self.persistent_id:
                 try:
+                    # There are extension token classes where the value of `recoverable` depends on internal tokens
+                    # (e.g., ListToken). These classes have the private `_recoverable` attribute set to `False`.
+                    # In the database, it is saved only the private because the public is computed at runtime.
                     self.persistent_id = await context.database.add_token(
                         port=port_id,
-                        recoverable=self._save_recoverable(),
+                        recoverable=self._recoverable,
                         tag=self.tag,
                         type=type(self),
                         value=await self._save_value(context),
@@ -553,12 +556,16 @@ class Token(PersistableEntity):
                 except TypeError as e:
                     raise WorkflowExecutionException from e
 
-    def update(self, value: Any, recoverable: bool | None = None) -> Token:
-        return self.__class__(
-            tag=self.tag,
-            value=value,
-            recoverable=recoverable if recoverable is not None else self.recoverable,
-        )
+    def set_recoverable(self, recoverable: bool) -> Self:
+        if self.persistent_id is not None:
+            raise WorkflowExecutionException(
+                "Impossible to change recoverable value of a persistent token"
+            )
+        self._recoverable = recoverable
+        return self
+
+    def update(self, value: Any) -> Token:
+        return self.__class__(tag=self.tag, value=value, recoverable=self._recoverable)
 
 
 if TYPE_CHECKING:

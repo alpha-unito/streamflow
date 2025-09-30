@@ -341,8 +341,8 @@ class DotProductSizeTransformer(ManyToOneTransformer):
             )
         return {
             self.get_output_name(): input_token.update(
-                input_token.value, recoverable=True
-            )
+                input_token.value
+            ).set_recoverable(True)
         }
 
 
