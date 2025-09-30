@@ -859,9 +859,9 @@ class InjectorFailureTransferStep(TransferStep):
         elif isinstance(token, FileToken):
             return token.update(
                 await self._transfer_path(job, token.value),
-            )
+            ).set_recoverable(False)
         else:
-            return token.update(token.value)
+            return token.update(token.value).set_recoverable(False)
 
 
 class RecoveryTranslator:

@@ -224,7 +224,11 @@ class DefaultTransformer(ManyToOneTransformer):
                 self.default_token = (
                     await self._get_inputs({"__default__": self.default_port})
                 )["__default__"]
-            return {self.get_output_name(): self.default_token.retag(primary_token.tag).set_recoverable(True)}
+            return {
+                self.get_output_name(): self.default_token.retag(
+                    primary_token.tag
+                ).set_recoverable(True)
+            }
 
 
 class DefaultRetagTransformer(DefaultTransformer):
