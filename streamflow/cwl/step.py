@@ -644,7 +644,7 @@ class CWLTransferStep(TransferStep):
         if isinstance(token_value, Token):
             return token_value.update(
                 await self._transfer_value(job, token_value.value)
-            )
+            ).set_recoverable(False)
         elif isinstance(token_value, MutableSequence):
             return await asyncio.gather(
                 *(
@@ -920,4 +920,6 @@ class CWLTransferStep(TransferStep):
             return new_token_value
 
     async def transfer(self, job: Job, token: Token) -> Token:
-        return token.update(await self._transfer_value(job, token.value))
+        return token.update(
+            await self._transfer_value(job, token.value)
+        ).set_recoverable(False)
