@@ -180,9 +180,13 @@ class ListToken(Token):
         )
 
     def set_recoverable(self, recoverable: bool) -> Self:
-        for t in self.value:
-            t.set_recoverable(recoverable)
-        return self
+        token = (
+            self.__class__(tag=self.tag, value=self.value)
+            if self.persistent_id is not None
+            else self
+        )
+        token.value = [t.set_recoverable(recoverable) for t in token.value]
+        return token
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value)
@@ -250,9 +254,18 @@ class ObjectToken(Token):
         )
 
     def set_recoverable(self, recoverable: bool) -> Self:
-        for t in self.value.values():
-            t.set_recoverable(recoverable)
-        return self
+        token = (
+            self.__class__(tag=self.tag, value=self.value)
+            if self.persistent_id is not None
+            else self
+        )
+        token.value = dict(
+            zip(
+                token.value.keys(),
+                (t.set_recoverable(recoverable) for t in token.value.values()),
+            )
+        )
+        return token
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value)
