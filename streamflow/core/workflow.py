@@ -558,13 +558,12 @@ class Token(PersistableEntity):
                     raise WorkflowExecutionException from e
 
     def set_recoverable(self, recoverable: bool) -> Self:
-        if self.persistent_id is not None:
-            return self.__class__(
-                tag=self.tag, value=self.value, recoverable=recoverable
+        if self.persistent_id is not None and self._recoverable != recoverable:
+            raise WorkflowExecutionException(
+                "Impossible to change recoverable value of a persistent token"
             )
-        else:
-            self._recoverable = recoverable
-            return self
+        self._recoverable = recoverable
+        return self
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value, recoverable=self._recoverable)
