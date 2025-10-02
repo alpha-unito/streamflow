@@ -180,13 +180,13 @@ class ListToken(Token):
         )
 
     def set_recoverable(self, recoverable: bool) -> Self:
-        token = (
-            self.__class__(tag=self.tag, value=self.value)
-            if self.persistent_id is not None
-            else self
-        )
-        token.value = [t.set_recoverable(recoverable) for t in token.value]
-        return token
+        if self.persistent_id is not None and self.get_recoverable() != recoverable:
+            raise WorkflowExecutionException(
+                "Impossible to change recoverable value of a persistent token"
+            )
+        for t in self.value:
+            t.set_recoverable(recoverable)
+        return self
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value)
@@ -254,18 +254,13 @@ class ObjectToken(Token):
         )
 
     def set_recoverable(self, recoverable: bool) -> Self:
-        token = (
-            self.__class__(tag=self.tag, value=self.value)
-            if self.persistent_id is not None
-            else self
-        )
-        token.value = dict(
-            zip(
-                token.value.keys(),
-                (t.set_recoverable(recoverable) for t in token.value.values()),
+        if self.persistent_id is not None and self.get_recoverable() != recoverable:
+            raise WorkflowExecutionException(
+                "Impossible to change recoverable value of a persistent token"
             )
-        )
-        return token
+        for t in self.value.values():
+            t.set_recoverable(recoverable)
+        return self
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value)
