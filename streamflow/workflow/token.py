@@ -170,7 +170,7 @@ class ListToken(Token):
     def recoverable(self, recoverable: bool) -> None:
         if self.persistent_id is not None and self.recoverable != recoverable:
             raise WorkflowExecutionException(
-                "Impossible to change recoverable value of a persistent token"
+                "The `recoverable` property can't be changed after the `Token` has been persisted."
             )
         for t in self.value:
             t.recoverable = recoverable
@@ -183,7 +183,7 @@ class ListToken(Token):
         )
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return self.recoverable and all(
+        return all(
             await asyncio.gather(
                 *(asyncio.create_task(t.is_available(context)) for t in self.value)
             )
@@ -239,7 +239,7 @@ class ObjectToken(Token):
     def recoverable(self, recoverable: bool) -> None:
         if self.persistent_id is not None and self.recoverable != recoverable:
             raise WorkflowExecutionException(
-                "Impossible to change recoverable value of a persistent token"
+                "The `recoverable` property can't be changed after the `Token` has been persisted."
             )
         for t in self.value.values():
             t.recoverable = recoverable
@@ -255,7 +255,7 @@ class ObjectToken(Token):
         )
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return self.recoverable and all(
+        return all(
             await asyncio.gather(
                 *(
                     asyncio.create_task(t.is_available(context))
