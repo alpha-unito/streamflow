@@ -212,9 +212,9 @@ async def build_token(
                 ),
             )
     elif isinstance(token_value, Token):
-        return token_value.retag(tag=get_tag(job.inputs.values())).set_recoverable(
-            recoverable
-        )
+        token = token_value.retag(tag=get_tag(job.inputs.values()))
+        token.recoverable = recoverable
+        return token
     else:
         return Token(
             tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
@@ -642,9 +642,11 @@ class CWLTransferStep(TransferStep):
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
         if isinstance(token_value, Token):
-            return token_value.update(
+            token = token_value.update(
                 await self._transfer_value(job, token_value.value)
-            ).set_recoverable(False)
+            )
+            token.recoverable = False
+            return token
         elif isinstance(token_value, MutableSequence):
             return await asyncio.gather(
                 *(
@@ -920,6 +922,6 @@ class CWLTransferStep(TransferStep):
             return new_token_value
 
     async def transfer(self, job: Job, token: Token) -> Token:
-        return token.update(
-            await self._transfer_value(job, token.value)
-        ).set_recoverable(False)
+        token = token.update(await self._transfer_value(job, token.value))
+        token.recoverable = False
+        return token

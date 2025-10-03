@@ -368,10 +368,10 @@ async def build_token(
                     )
                 ),
             )
-    elif isinstance(token_value, FileToken):
-        return token_value.update(token_value.value).set_recoverable(recoverable)
-    elif isinstance(token_value, Token):
-        return token_value.update(token_value.value).set_recoverable(recoverable)
+    elif isinstance(token_value, (FileToken, Token)):
+        token = token_value.update(token_value.value)
+        token.recoverable = recoverable
+        return token
     else:
         return Token(
             tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
@@ -551,10 +551,13 @@ class InjectorFailureCommand(Command):
             max_failures := self.failure_tags.get(tag, None)
         ) is not None and num_executions < max_failures:
             if self.failure_type == InjectorFailureCommand.INJECT_TOKEN:
-                context.failure_manager.get_request(job.name).output_tokens = {
-                    k: t.update(t.value).set_recoverable(True)
-                    for k, t in job.inputs.items()
-                }
+                output_tokens = {}
+                for k, t in job.inputs.items():
+                    output_tokens[k] = t.update(t.value)
+                    output_tokens[k].recoverable = True
+                context.failure_manager.get_request(job.name).output_tokens = (
+                    output_tokens
+                )
             elif self.failure_type == InjectorFailureCommand.FAIL_STOP:
                 await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
@@ -857,11 +860,15 @@ class InjectorFailureTransferStep(TransferStep):
                 ),
             )
         elif isinstance(token, FileToken):
-            return token.update(
+            token = token.update(
                 await self._transfer_path(job, token.value),
-            ).set_recoverable(False)
+            )
+            token.recoverable = False
+            return token
         else:
-            return token.update(token.value).set_recoverable(False)
+            token = token.update(token.value)
+            token.recoverable = False
+            return token
 
 
 class RecoveryTranslator:

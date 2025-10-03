@@ -455,12 +455,12 @@ async def test_token_recoverable(value_type: str) -> None:
         recoverable=value_type not in ["list", "object"],
     )
     token = token.update(value=value)
-    assert token.get_recoverable()
+    assert token.recoverable
     token.retag("0.1")
-    assert token.get_recoverable()
+    assert token.recoverable
     token = token.update(value=value)
-    token.set_recoverable(False)
-    assert not token.get_recoverable()
+    token.recoverable = False
+    assert not token.recoverable
     token = token.update(value=value)
-    token.set_recoverable(True)
-    assert token.get_recoverable()
+    token.recoverable = True
+    assert token.recoverable
