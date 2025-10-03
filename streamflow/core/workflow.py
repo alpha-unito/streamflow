@@ -512,9 +512,6 @@ class Token(PersistableEntity):
     async def _save_value(self, context: StreamFlowContext):
         return self.value
 
-    def get_recoverable(self) -> bool:
-        return self._recoverable
-
     async def get_weight(self, context: StreamFlowContext) -> int:
         return sys.getsizeof(self.value)
 
@@ -533,6 +530,18 @@ class Token(PersistableEntity):
 
     async def is_available(self, context: StreamFlowContext) -> bool:
         return self._recoverable
+
+    @property
+    def recoverable(self) -> bool:
+        return self._recoverable
+
+    @recoverable.setter
+    def recoverable(self, recoverable: bool) -> None:
+        if self.persistent_id is not None and self._recoverable != recoverable:
+            raise WorkflowExecutionException(
+                "Impossible to change recoverable value of a persistent token"
+            )
+        self._recoverable = recoverable
 
     def retag(self, tag: str) -> Token:
         return self.__class__(tag=tag, value=self.value, recoverable=self._recoverable)
@@ -556,14 +565,6 @@ class Token(PersistableEntity):
                     )
                 except TypeError as e:
                     raise WorkflowExecutionException from e
-
-    def set_recoverable(self, recoverable: bool) -> Self:
-        if self.persistent_id is not None and self._recoverable != recoverable:
-            raise WorkflowExecutionException(
-                "Impossible to change recoverable value of a persistent token"
-            )
-        self._recoverable = recoverable
-        return self
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value, recoverable=self._recoverable)

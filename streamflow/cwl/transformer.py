@@ -224,11 +224,9 @@ class DefaultTransformer(ManyToOneTransformer):
                 self.default_token = (
                     await self._get_inputs({"__default__": self.default_port})
                 )["__default__"]
-            return {
-                self.get_output_name(): self.default_token.retag(
-                    primary_token.tag
-                ).set_recoverable(True)
-            }
+            token = self.default_token.retag(primary_token.tag)
+            token.recoverable = True
+            return {self.get_output_name(): token}
 
 
 class DefaultRetagTransformer(DefaultTransformer):
@@ -270,9 +268,9 @@ class DefaultRetagTransformer(DefaultTransformer):
                 self.default_token = (
                     await self._get_inputs({"__default__": self.default_port})
                 )["__default__"]
-            return self.default_token.retag(get_tag(inputs.values())).set_recoverable(
-                True
-            )
+            token = self.default_token.retag(get_tag(inputs.values()))
+            token.recoverable = True
+            return token
         # Propagate the primary token
         else:
             return token.update(token.value).retag(get_tag(inputs.values()))
@@ -313,9 +311,8 @@ class DefaultRetagTransformer(DefaultTransformer):
         # If the default token is present, it means the primary token
         # was evaluated previously and was empty
         if self.default_token and self._only_default:
-            token = self.default_token.retag(get_tag(inputs.values())).set_recoverable(
-                True
-            )
+            token = self.default_token.retag(get_tag(inputs.values()))
+            token.recoverable = True
         # There is a single input port: the primary token is already retrieved as it manages the step life-cycle
         elif len(self.input_ports) == 1:
             token = await self._get_next_token(next(iter(inputs.values())), inputs)
@@ -347,11 +344,9 @@ class DotProductSizeTransformer(ManyToOneTransformer):
             raise WorkflowExecutionException(
                 f"Step {self.name} received {input_token.value}, but it must be a positive integer"
             )
-        return {
-            self.get_output_name(): input_token.update(
-                input_token.value
-            ).set_recoverable(True)
-        }
+        token = input_token.update(input_token.value)
+        token.recoverable = True
+        return {self.get_output_name(): token}
 
 
 class FirstNonNullTransformer(OneToOneTransformer):
