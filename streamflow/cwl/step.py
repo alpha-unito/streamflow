@@ -151,7 +151,11 @@ async def _process_file_token(
 
 
 async def build_token(
-    job: Job, token_value: Any, cwl_version: str, streamflow_context: StreamFlowContext
+    job: Job,
+    token_value: Any,
+    cwl_version: str,
+    streamflow_context: StreamFlowContext,
+    recoverable: bool = False,
 ) -> Token:
     if isinstance(token_value, MutableSequence):
         return ListToken(
@@ -159,7 +163,13 @@ async def build_token(
             value=await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        build_token(job, v, cwl_version, streamflow_context)
+                        build_token(
+                            job=job,
+                            token_value=v,
+                            cwl_version=cwl_version,
+                            streamflow_context=streamflow_context,
+                            recoverable=recoverable,
+                        )
                     )
                     for v in token_value
                 )
@@ -170,35 +180,45 @@ async def build_token(
             return CWLFileToken(
                 tag=get_tag(job.inputs.values()),
                 value=await _process_file_token(
-                    job,
-                    token_value,
-                    cwl_version,
-                    streamflow_context,
+                    job=job,
+                    token_value=token_value,
+                    cwl_version=cwl_version,
+                    streamflow_context=streamflow_context,
                     check_contents=True,
                 ),
+                recoverable=recoverable,
             )
         else:
-            token_tasks = {
-                k: asyncio.create_task(
-                    build_token(job, v, cwl_version, streamflow_context)
-                )
-                for k, v in token_value.items()
-            }
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
                 value=dict(
                     zip(
-                        token_tasks.keys(),
-                        await asyncio.gather(*token_tasks.values()),
+                        token_value.keys(),
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(
+                                    build_token(
+                                        job=job,
+                                        token_value=v,
+                                        cwl_version=cwl_version,
+                                        streamflow_context=streamflow_context,
+                                        recoverable=recoverable,
+                                    )
+                                )
+                                for v in token_value.values()
+                            )
+                        ),
                     )
                 ),
             )
     elif isinstance(token_value, Token):
-        return token_value.retag(
-            tag=get_tag(job.inputs.values()), recoverable=token_value.recoverable
-        )
+        token = token_value.retag(tag=get_tag(job.inputs.values()))
+        token.recoverable = recoverable
+        return token
     else:
-        return Token(tag=get_tag(job.inputs.values()), value=token_value)
+        return Token(
+            tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
+        )
 
 
 class CWLBaseConditionalStep(ConditionalStep, ABC):
@@ -460,7 +480,7 @@ class CWLExecuteStep(ExecuteStep):
     ) -> None:
         if (
             token := await self.output_processors[output_name].process(
-                job, command_output, connector
+                job, command_output, connector, self._is_recoverable(job)
             )
         ) is not None:
             job_token = get_job_token(
@@ -468,9 +488,7 @@ class CWLExecuteStep(ExecuteStep):
             )
             output_port.put(
                 await self._persist_token(
-                    token=token.update(
-                        token.value, recoverable=self._is_recoverable(job)
-                    ),
+                    token=token,
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
@@ -543,6 +561,7 @@ class CWLInputInjectorStep(InputInjectorStep):
             token_value=token_value,
             cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
             streamflow_context=self.workflow.context,
+            recoverable=True,
         )
 
 
@@ -562,7 +581,7 @@ class CWLLoopOutputLastStep(LoopOutputStep):
             self.token_map.get(tag, [Token(value=None)]),
             key=lambda t: int(t.tag.split(".")[-1]),
         )[-1]
-        return token.retag(tag=tag, recoverable=token.recoverable)
+        return token.retag(tag=tag)
 
 
 class CWLScheduleStep(ScheduleStep):
@@ -623,9 +642,11 @@ class CWLTransferStep(TransferStep):
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
         if isinstance(token_value, Token):
-            return token_value.update(
+            token = token_value.update(
                 await self._transfer_value(job, token_value.value)
             )
+            token.recoverable = False
+            return token
         elif isinstance(token_value, MutableSequence):
             return await asyncio.gather(
                 *(
@@ -637,9 +658,8 @@ class CWLTransferStep(TransferStep):
             if utils.get_token_class(token_value) in ["File", "Directory"]:
                 return await self._update_file_token(job, token_value)
             else:
-                return {
-                    k: v
-                    for k, v in zip(
+                return dict(
+                    zip(
                         token_value.keys(),
                         await asyncio.gather(
                             *(
@@ -648,7 +668,7 @@ class CWLTransferStep(TransferStep):
                             )
                         ),
                     )
-                }
+                )
         else:
             return token_value
 
@@ -902,4 +922,6 @@ class CWLTransferStep(TransferStep):
             return new_token_value
 
     async def transfer(self, job: Job, token: Token) -> Token:
-        return token.update(await self._transfer_value(job, token.value))
+        token = token.update(await self._transfer_value(job, token.value))
+        token.recoverable = False
+        return token
