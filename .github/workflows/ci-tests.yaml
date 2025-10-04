@@ -55,7 +55,7 @@ jobs:
             on: "ubuntu-24.04"
             python: "3.13"
             version: "v1.3"
-          - on: "macos-13"
+          - on: "macos-15-intel"
             python: "3.13"
             commit: "6228fa63819f909e797f834cfd0af8b461ee63ec"
             exclude: "docker_entrypoint,modify_file_content"
@@ -74,7 +74,7 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOS X)"
-        uses: douglascamata/setup-docker-macos-action@v1
+        uses: GlassOfWhiskey/setup-docker-macos-action@main
         with:
           colima-additional-options: '--mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
@@ -235,7 +235,7 @@ jobs:
         on: [ "ubuntu-24.04"]
         python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
         include:
-          - on: "macos-13"
+          - on: "macos-15-intel"
             python: "3.13"
     runs-on: ${{ matrix.on }}
     env:
@@ -253,7 +253,7 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOs X)"
-        uses: douglascamata/setup-docker-macos-action@v1
+        uses: GlassOfWhiskey/setup-docker-macos-action@main
         with:
           colima-additional-options: '--mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
