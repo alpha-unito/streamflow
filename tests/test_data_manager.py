@@ -36,22 +36,22 @@ def _contains_location(
     return False
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="module")
 async def src_location(context, deployment_src) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def src_connector(context, src_location) -> Connector:
     return context.deployment_manager.get_connector(src_location.deployment)
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="module")
 async def dst_location(context, deployment_dst) -> ExecutionLocation:
     return await get_location(context, deployment_dst)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def dst_connector(context, dst_location) -> Connector:
     return context.deployment_manager.get_connector(dst_location.deployment)
 
