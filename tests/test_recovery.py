@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import itertools
 import os
@@ -69,7 +71,7 @@ async def _assert_token_result(
 
 
 async def _create_file(
-    context: StreamFlowContext, location: ExecutionLocation
+    context: StreamFlowContext, location: ExecutionLocation, content: str | None = None
 ) -> MutableMapping[str, Any]:
     path = StreamFlowPath(
         tempfile.gettempdir() if location.local else "/tmp",
@@ -77,7 +79,9 @@ async def _create_file(
         context=context,
         location=location,
     )
-    await path.write_text("StreamFlow fault tolerance")
+    await path.write_text(
+        content if content is not None else "StreamFlow fault tolerance"
+    )
     path = await path.resolve()
     return {
         "basename": os.path.basename(path),
@@ -86,6 +90,49 @@ async def _create_file(
         "path": str(path),
         "size": await path.size(),
     }
+
+
+async def _get_token_value(
+    context: StreamFlowContext,
+    location: ExecutionLocation,
+    token_type: str,
+    **kwargs: MutableMapping[str, Any],
+) -> Any:
+    if token_type == "primitive":
+        return 100
+    elif token_type == "file":
+        return await _create_file(context, location)
+    elif token_type == "list":
+        return await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    _create_file(context, location, f"StreamFlow Manager: test {i}")
+                )
+                for i in range(int(kwargs.get("list_len", 3)))
+            )
+        )
+    elif token_type == "object":
+        return dict(
+            zip(
+                (
+                    f"{i}-{utils.random_name()}"
+                    for i in range(int(kwargs.get("obj_len", 3)))
+                ),
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            _create_file(
+                                context, location, f"StreamFlow Manager: test {i}"
+                            )
+                        )
+                        for i in range(int(kwargs.get("obj_len", 3)))
+                    )
+                ),
+            )
+        )
+
+    else:
+        raise RuntimeError(f"Unknown token type: {token_type}")
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -144,36 +191,9 @@ async def test_execute(
     execution_location = await get_location(fault_tolerant_context, deployment_t)
     translator.deployment_configs = {deployment_config.name: deployment_config}
     input_ports = {}
-    if token_type == "primitive":
-        token_value = 100
-    elif token_type == "file":
-        token_value = await _create_file(fault_tolerant_context, execution_location)
-    elif token_type == "list":
-        token_value = await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    _create_file(fault_tolerant_context, execution_location)
-                )
-                for _ in range(3)
-            )
-        )
-    elif token_type == "object":
-        token_value = dict(
-            zip(
-                ("a", "b", "c"),
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            _create_file(fault_tolerant_context, execution_location)
-                        )
-                        for _ in range(3)
-                    )
-                ),
-            )
-        )
-
-    else:
-        raise RuntimeError(f"Unknown token type: {token_type}")
+    token_value = await _get_token_value(
+        fault_tolerant_context, execution_location, token_type
+    )
     input_name = f"test_in_{str(uuid.uuid1())}"
     output_name = f"test_out_{str(uuid.uuid1())}"
     injector_step = translator.get_base_injector_step(
@@ -266,22 +286,17 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     )
     execution_location = await get_location(fault_tolerant_context, deployment_t)
     translator.deployment_configs = {deployment_config.name: deployment_config}
-    files = await asyncio.gather(
-        *(
-            asyncio.create_task(
-                _create_file(fault_tolerant_context, execution_location)
-            )
-            for _ in range(4)
-        )
-    )
     input_name = f"test_in_{utils.random_name()}"
     output_name = f"test_out_{utils.random_name()}"
     injector_step = translator.get_base_injector_step(
         [deployment_t], input_name, posixpath.join(posixpath.sep, input_name), workflow
     )
-    injector_step.get_input_port(input_name).put(Token(files, recoverable=True))
+    token_value = await _get_token_value(
+        fault_tolerant_context, execution_location, "list", list_len=4
+    )
+    injector_step.get_input_port(input_name).put(Token(token_value, recoverable=True))
     injector_step.get_input_port(input_name).put(TerminationToken())
-    # ExecuteStep
+    # ExecuteStep before the scatter
     step = translator.get_execute_pipeline(
         command=f"lambda x : ('copy', 'list', x['{input_name}'].value)",
         deployment_names=[deployment_t],
@@ -290,30 +305,32 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         step_name=os.path.join(posixpath.sep, utils.random_name()),
         workflow=workflow,
     )
-    # ScatterStep
+    # ExecuteStep inside the scatter
+    scatter_step_name = os.path.join(posixpath.sep, utils.random_name())
     scatter_step = workflow.create_step(
-        cls=ScatterStep, name=utils.random_name() + "-scatter"
+        cls=ScatterStep, name=scatter_step_name + "-scatter"
     )
     scatter_step.add_input_port(output_name, step.get_output_port(output_name))
     scatter_step.add_output_port(output_name, workflow.create_port())
-    # ExecuteStep
     step = translator.get_execute_pipeline(
         command=f"lambda x : ('copy', 'list', x['{output_name}'].value)",
         deployment_names=[deployment_t],
         input_ports={output_name: scatter_step.get_output_port(output_name)},
         outputs={output_name: "file"},
-        step_name=os.path.join(posixpath.sep, utils.random_name()),
+        step_name=scatter_step_name,
+        failure_step="execute",
+        failure_tags={"0.2": num_of_failures},
+        failure_type=InjectorFailureCommand.FAIL_STOP,
         workflow=workflow,
     )
-    # GatherStep
     gather_step = workflow.create_step(
         cls=GatherStep,
-        name=utils.random_name() + "-gather",
+        name=scatter_step_name + "-gather",
         size_port=scatter_step.get_size_port(),
     )
     gather_step.add_input_port(output_name, step.get_output_port(output_name))
     gather_step.add_output_port(output_name, workflow.create_port())
-    # ExecuteStep
+    # ExecuteStep after the gather
     step = translator.get_execute_pipeline(
         command=f"lambda x : ('copy', 'list', x['{output_name}'].value)",
         deployment_names=[deployment_t],
@@ -321,9 +338,6 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         outputs={output_name: "list"},
         step_name=os.path.join(posixpath.sep, utils.random_name()),
         workflow=workflow,
-        failure_step="execute",
-        failure_tags={"0": num_of_failures},
-        failure_type=InjectorFailureCommand.FAIL_STOP,
     )
     # Run
     await workflow.save(fault_tolerant_context)
@@ -332,7 +346,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     result_token = step.get_output_port(output_name).token_list
     assert len(result_token) == 2
     await _assert_token_result(
-        input_value=files,
+        input_value=token_value,
         output_token=result_token[0],
         context=fault_tolerant_context,
         location=await get_location(fault_tolerant_context, deployment_t),
