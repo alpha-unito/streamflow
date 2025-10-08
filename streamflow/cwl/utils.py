@@ -141,9 +141,8 @@ async def _get_listing(
                         )
                     )
             break
-    return cast(
-        MutableSequence[MutableMapping[str, Any]],
-        await asyncio.gather(*listing_tokens.values()),
+    return sorted(
+        await asyncio.gather(*listing_tokens.values()), key=lambda t: t["basename"]
     )
 
 
