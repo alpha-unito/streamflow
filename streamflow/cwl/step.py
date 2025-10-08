@@ -104,21 +104,21 @@ async def _process_file_token(
             contents=token_value.get("contents"),
             is_literal=is_literal,
         )
-        if "secondaryFiles" in token_value:
-            new_token_value["secondaryFiles"] = await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        _process_file_token(
-                            job=job,
-                            token_value=sf,
-                            cwl_version=cwl_version,
-                            streamflow_context=streamflow_context,
-                        )
+    if "secondaryFiles" in token_value:
+        new_token_value["secondaryFiles"] = await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    _process_file_token(
+                        job=job,
+                        token_value=sf,
+                        cwl_version=cwl_version,
+                        streamflow_context=streamflow_context,
                     )
-                    for sf in token_value["secondaryFiles"]
                 )
+                for sf in token_value["secondaryFiles"]
             )
-    if "listing" in token_value:
+        )
+    elif "listing" in token_value:
         new_token_value |= {
             "listing": await asyncio.gather(
                 *(
