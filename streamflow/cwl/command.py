@@ -49,7 +49,7 @@ from streamflow.cwl.processor import (
     CWLObjectCommandOutputProcessor,
 )
 from streamflow.cwl.step import build_token
-from streamflow.cwl.utils import is_literal_file, register_data
+from streamflow.cwl.utils import is_literal_file
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
@@ -409,42 +409,23 @@ async def _prepare_work_dir(
                     options.step.workflow,
                 )
             ):
-                # Check if the file has already been copied (e.g., if it is a listed file within a directory)
-                if (
-                    dst_path := (
-                        dst_path
-                        or path_processor.join(
-                            base_path, path_processor.basename(src_path)
-                        )
-                    )
-                ) not in (
-                    loc.path
-                    for loc in context.data_manager.get_data_locations(
-                        src_path, connector.deployment_name, selected_location.name
-                    )
-                ):
-                    await context.data_manager.transfer_data(
-                        src_location=selected_location.location,
-                        src_path=selected_location.path,
-                        dst_locations=locations,
-                        dst_path=dst_path,
-                        writable=writable,
-                    )
-                    _adjust_inputs(
-                        job_name=options.job.name,
-                        inputs=options.context["inputs"].values(),
-                        path_processor=path_processor,
-                        src_path=src_path,
-                        dst_path=dst_path,
-                    )
-                    if "listing" in listing:
-                        await register_data(
-                            context=context,
-                            connector=connector,
-                            locations=locations,
-                            base_path=dst_path,
-                            token_value=listing["listing"],
-                        )
+                dst_path = dst_path or path_processor.join(
+                    base_path, path_processor.basename(src_path)
+                )
+                await context.data_manager.transfer_data(
+                    src_location=selected_location.location,
+                    src_path=selected_location.path,
+                    dst_locations=locations,
+                    dst_path=dst_path,
+                    writable=writable,
+                )
+                _adjust_inputs(
+                    job_name=options.job.name,
+                    inputs=options.context["inputs"].values(),
+                    path_processor=path_processor,
+                    src_path=src_path,
+                    dst_path=dst_path,
+                )
             # Otherwise create a File or a Directory in the remote path
             elif is_literal_file(listing_class, listing, options.job.name):
                 if dst_path is None:
@@ -468,6 +449,19 @@ async def _prepare_work_dir(
                             else base_path
                         ),
                     )
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                _prepare_work_dir(
+                                    element=element,
+                                    options=options,
+                                    base_path=dst_path,
+                                    writable=writable,
+                                )
+                            )
+                            for element in listing["listing"]
+                        )
+                    )
                 else:
                     await utils.write_remote_file(
                         context=context,
@@ -480,31 +474,6 @@ async def _prepare_work_dir(
             else:
                 raise WorkflowExecutionException(
                     f"Impossible to copy the {src_path} file in the working directory: No data locations found"
-                )
-            # If `listing` is present, recursively process folder contents
-            if "listing" in listing:
-                if "basename" in listing and src_path is None:
-                    folder_path = path_processor.join(base_path, listing["basename"])
-                    await utils.create_remote_directory(
-                        context=context,
-                        locations=locations,
-                        path=folder_path,
-                        relpath=listing["basename"],
-                    )
-                else:
-                    folder_path = dst_path or base_path
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            _prepare_work_dir(
-                                element=element,
-                                options=options,
-                                base_path=folder_path,
-                                writable=writable,
-                            )
-                        )
-                        for element in listing["listing"]
-                    )
                 )
             # If `secondaryFiles` is present, recursively process secondary files
             if "secondaryFiles" in listing:
