@@ -535,6 +535,8 @@ async def _prepare_work_dir(
                     dst_path = path_processor.join(
                         options.job.output_directory, dst_path
                     )
+            elif isinstance(entry, str):
+                raise WorkflowExecutionException(f"Entry is a string and requires an entryname")
             writable = (
                 listing["writable"]
                 if "writable" in listing and not options.inplace_update
