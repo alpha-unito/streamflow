@@ -8,7 +8,7 @@ from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
-from streamflow.core.utils import get_job_tag, get_tag
+from streamflow.core.utils import compare_tags, get_job_tag, get_tag
 from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
@@ -19,6 +19,7 @@ from streamflow.recovery.utils import (
     TokenAvailability,
     create_graph_mapper,
 )
+from streamflow.token_printer import dag_workflow
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
@@ -27,7 +28,7 @@ from streamflow.workflow.port import (
     InterWorkflowPort,
     JobPort,
 )
-from streamflow.workflow.step import ScatterStep
+from streamflow.workflow.step import LoopCombinatorStep, ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -90,6 +91,15 @@ async def _inject_tokens(
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
+        if any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()):
+            pass
+        # if (
+        #     any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps())
+        #     and len(port.get_input_steps()) >= 3
+        # ):
+        #     if logger.isEnabledFor(logging.DEBUG):
+        #         logger.debug(f"Injecting termination token on port {port.name}")
+        #     port.put(TerminationToken(Status.SKIPPED))
         if len(port.token_list) > 0 and len(port.token_list) == len(
             mapper.port_tokens[port_name]
         ):
@@ -162,6 +172,15 @@ async def _set_step_states(mapper: GraphMapper, new_workflow: Workflow) -> None:
                 filter_function=lambda t, tokens=missing_tokens: t.tag in tokens,
             )
             new_workflow.ports[port.name].token_list = port.token_list
+        elif isinstance(step, LoopCombinatorStep):
+            smallest_tag = None
+            for p in step.get_input_ports().values():
+                if p.token_list:
+                    if smallest_tag is None:
+                        smallest_tag = p.token_list[0].tag
+                    elif compare_tags(p.token_list[0].tag, smallest_tag) > 0:
+                        smallest_tag = p.token_list[0].tag
+            await cast(LoopCombinatorStep, step).set_iteration(tag=smallest_tag)
 
 
 class RollbackRecoveryPolicy(RecoveryPolicy):
@@ -207,6 +226,8 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         for job_name in job_names:
             self.context.failure_manager.get_request(job_name).workflow_ready.set()
         await _inject_tokens(mapper, inter_ports, new_workflow)
+        dag_workflow(failed_step.workflow, "ft-original-workflow")
+        dag_workflow(new_workflow, "ft-new-workflow")
         await _set_step_states(mapper, new_workflow)
         return new_workflow
 

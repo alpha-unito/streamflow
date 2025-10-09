@@ -14,6 +14,7 @@ from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
+from streamflow.token_printer import graph_figure
 from streamflow.workflow.step import ExecuteStep, TransferStep
 from streamflow.workflow.token import JobToken
 
@@ -373,6 +374,15 @@ class GraphMapper:
         self.remove_token(token.persistent_id, preserve_token=True)
 
 
+def token_to_str(k, g):
+    return (
+        f"{k}\n"
+        f"{g.info_tokens[k].instance.tag if k in g.info_tokens else ''}\n"
+        f"{g.info_tokens[k].is_available if k in g.info_tokens else ''}\n"
+        f"{g.info_tokens[k].port_name if k in g.info_tokens else ''}"
+    )
+
+
 class ProvenanceGraph:
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
@@ -450,6 +460,13 @@ class ProvenanceGraph:
                     port_name=port_row["name"],
                 ),
             )
+        graph_figure(
+            {
+                token_to_str(k, self): [token_to_str(v, self) for v in vs]
+                for k, vs in self.dag_tokens.items()
+            },
+            "ft-provenance-graph",
+        )
 
 
 class ProvenanceToken:

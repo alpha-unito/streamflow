@@ -96,7 +96,7 @@ async def _get_token_value(
     context: StreamFlowContext,
     location: ExecutionLocation,
     token_type: str,
-    **kwargs: MutableMapping[str, Any],
+    **kwargs,
 ) -> Any:
     if token_type == "primitive":
         return 100
@@ -362,6 +362,101 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     ):
         retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
         assert retry_request.version == num_of_failures + 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("iteration", [1])
+async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
+    num_of_failures = 0
+    task = "execute"
+    error_t = InjectorFailureCommand.FAIL_STOP
+    deployment_t = "local-fs-volatile"
+    workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
+    translator = RecoveryTranslator(workflow)
+    translator.deployment_configs = {
+        deployment_t: await get_deployment_config(fault_tolerant_context, deployment_t)
+    }
+    input_ports = {}
+    execution_location = await get_location(fault_tolerant_context, deployment_t)
+    token_type = "file"
+    token_value = await _get_token_value(
+        fault_tolerant_context, execution_location, token_type
+    )
+    for input_name, value in {"test": token_value, "counter": 0, "limit": 3}.items():
+        injector_step = translator.get_base_injector_step(
+            [deployment_t],
+            input_name,
+            posixpath.join(posixpath.sep, input_name),
+            workflow,
+        )
+        input_ports[input_name] = injector_step.get_output_port(input_name)
+        injector_step.get_input_port(input_name).put(Token(value, recoverable=True))
+        injector_step.get_input_port(input_name).put(TerminationToken())
+        workflow.input_ports[input_name] = injector_step.get_input_port(input_name)
+
+    step_name = os.path.join(posixpath.sep, "0", utils.random_name())
+    loop_input_ports = translator.get_input_loop(
+        step_name,
+        input_ports,
+        'lambda x: x["counter"].value < x["limit"].value',
+    )
+    counter = translator.get_execute_pipeline(
+        command="lambda x : ('inc', 'integer', x['counter'].value)",
+        deployment_names=[deployment_t],
+        input_ports={"counter": loop_input_ports["counter"]},
+        outputs={"counter": "primitive"},
+        step_name=os.path.join(posixpath.sep, "increment", utils.random_name()),
+        workflow=workflow,
+    )
+    execute_step = translator.get_execute_pipeline(
+        command=f"lambda x : ('copy', '{token_type}', x['test'].value)",
+        deployment_names=[deployment_t],
+        input_ports=loop_input_ports,
+        outputs={"test1": token_type},
+        step_name=step_name,
+        workflow=workflow,
+        failure_type=error_t,
+        failure_step=task,
+        failure_tags={f"0.{iteration}": num_of_failures + iteration},
+    )
+    output_ports = translator.get_output_loop(
+        step_name,
+        {
+            "test": execute_step.get_output_port("test1"),
+            "counter": counter.get_output_port("counter"),
+            "limit": loop_input_ports["limit"],
+        },
+        {"test"},
+    )
+    await workflow.save(fault_tolerant_context)
+    executor = StreamFlowExecutor(workflow)
+    _ = await executor.run()
+    assert len(output_ports) == 1
+    result_token = next(iter(output_ports.values())).token_list
+    assert len(result_token) == 2
+    await _assert_token_result(
+        input_value=token_value,
+        output_token=result_token[0],
+        context=fault_tolerant_context,
+        location=await get_location(fault_tolerant_context, deployment_t),
+    )
+    assert isinstance(result_token[1], TerminationToken)
+
+    # for job in map(
+    #     lambda t: t.value.name,
+    #     filter(
+    #         lambda t: isinstance(t, JobToken),
+    #         execute_step.get_input_port("__job__").token_list,
+    #     ),
+    # ):
+    #     # One job was recovered, the others did not raise any failure
+    #     attempts = 1 + (
+    #         num_of_failures if get_job_tag(job.name) == f"0.{iteration}" else 0
+    #     )
+    #     assert (
+    #         fault_tolerant_context.failure_manager.get_request(job.name).version
+    #         == attempts
+    #     )
 
 
 @pytest.mark.asyncio

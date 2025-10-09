@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 import posixpath
-from collections.abc import Iterable, MutableMapping, MutableSequence
+from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
 from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, cast
 
@@ -26,7 +26,7 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import flatten_list, get_job_tag, get_tag
+from streamflow.core.utils import flatten_list, get_entity_ids, get_job_tag, get_tag
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -37,6 +37,7 @@ from streamflow.core.workflow import (
     Token,
     Workflow,
 )
+from streamflow.cwl.transformer import ForwardTransformer
 from streamflow.cwl.utils import get_token_class, search_in_parent_locations
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
@@ -52,15 +53,22 @@ from streamflow.workflow.combinator import (
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
+    ConditionalStep,
     DefaultCommandOutputProcessor,
     DeployStep,
     ExecuteStep,
     InputInjectorStep,
     LoopCombinatorStep,
+    LoopOutputStep,
     ScheduleStep,
     TransferStep,
 )
-from streamflow.workflow.token import FileToken, ListToken, ObjectToken
+from streamflow.workflow.token import (
+    FileToken,
+    IterationTerminationToken,
+    ListToken,
+    ObjectToken,
+)
 from streamflow.workflow.utils import get_job_token
 from tests.utils.deployment import get_docker_deployment_config
 from tests.utils.utils import get_full_instantiation
@@ -422,6 +430,85 @@ class BaseInputInjectorStep(InputInjectorStep):
         )
 
 
+class BaseLoopConditionalStep(ConditionalStep):
+    def __init__(self, name: str, workflow: Workflow, condition: str):
+        super().__init__(name, workflow)
+        self.condition: str = condition
+        self.skip_ports: MutableMapping[str, str] = {}
+
+    async def _eval(self, inputs: MutableMapping[str, Token]):
+        return eval(self.condition)(inputs)
+
+    async def _on_true(self, inputs: MutableMapping[str, Token]) -> None:
+        # Next iteration: propagate outputs to the loop
+        for port_name, port in self.get_output_ports().items():
+            port.put(
+                await self._persist_token(
+                    token=inputs[port_name].update(inputs[port_name].value),
+                    port=port,
+                    input_token_ids=get_entity_ids(inputs.values()),
+                )
+            )
+
+    async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
+        # Loop termination: propagate outputs outside the loop
+        for port in self.get_skip_ports().values():
+            port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "skip_ports": {
+                k: p.persistent_id for k, p in self.get_skip_ports().items()
+            },
+            "condition": self.condition,
+        }
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Self:
+        step = cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            condition=row["params"]["condition"],
+        )
+        for k, port in zip(
+            row["params"]["skip_ports"].keys(),
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(loading_context.load_port(context, port_id))
+                    for port_id in row["params"]["skip_ports"].values()
+                )
+            ),
+        ):
+            step.add_skip_port(k, port)
+        return step
+
+    def add_skip_port(self, name: str, port: Port) -> None:
+        if port.name not in self.workflow.ports:
+            self.workflow.ports[port.name] = port
+        self.skip_ports[name] = port.name
+
+    def get_skip_ports(self) -> MutableMapping[str, Port]:
+        return {k: self.workflow.ports[v] for k, v in self.skip_ports.items()}
+
+
+class BaseLoopOutputLastStep(LoopOutputStep):
+    async def _process_output(self, tag: str) -> Token:
+        return sorted(
+            self.token_map.get(tag, [Token(value=None)]),
+            key=lambda t: int(t.tag.split(".")[-1]),
+        )[-1].retag(tag=tag)
+
+
 class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
     def __init__(
         self,
@@ -483,7 +570,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
                 connector=connector,
                 location=next(iter(locations)),
                 path=value,
-                relpath=os.path.relpath(value, job.output_directory),
+                relpath=str(os.path.relpath(value, job.output_directory)),
             )
             return BaseFileToken(
                 tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
@@ -601,6 +688,13 @@ class InjectorFailureCommand(Command):
                             output.append(await _copy_file(job, context, iv))
                     else:
                         output = input_value
+                elif operation == "inc":
+                    if input_value_type == "integer":
+                        output = int(input_value) + 1
+                    else:
+                        raise NotImplementedError(
+                            f"Increment not implemented for {input_value_type}"
+                        )
                 else:
                     raise NotImplementedError("Operation not supported", operation)
                 cmd_out = CommandOutput(output, Status.COMPLETED)
@@ -997,3 +1091,117 @@ class RecoveryTranslator:
                 EvalCommandOutputProcessor(output, workflow, value_type),
             )
         return execute_step
+
+    def get_input_loop(
+        self,
+        step_name: str,
+        input_ports: MutableMapping[str, Port],
+        condition_function: str,
+    ) -> MutableMapping[str, Port]:
+        loop_combinator = LoopCombinator(
+            workflow=self.workflow, name=step_name + "-loop-combinator"
+        )
+        forward_ports = {}
+        for port_name, port in input_ports.items():
+            # Decouple loop ports through a forwarder
+            loop_forwarder = self.workflow.create_step(
+                cls=ForwardTransformer,
+                name=os.path.join(step_name, port_name) + "-input-forward-transformer",
+            )
+            loop_forwarder.add_input_port(port_name, port)
+            forward_ports[port_name] = self.workflow.create_port()
+            loop_forwarder.add_output_port(port_name, forward_ports[port_name])
+            # Add item to combinator
+            loop_combinator.add_item(port_name)
+        # Create a combinator step and add all inputs to it
+        combinator_step = self.workflow.create_step(
+            cls=LoopCombinatorStep,
+            name=step_name + "-loop-combinator",
+            combinator=loop_combinator,
+        )
+        for port_name, port in forward_ports.items():
+            combinator_step.add_input_port(port_name, port)
+            combinator_step.add_output_port(port_name, self.workflow.create_port())
+        # Create loop conditional step
+        loop_conditional_step = self.workflow.create_step(
+            cls=BaseLoopConditionalStep,
+            name=step_name + "-loop-when",
+            condition=condition_function,
+        )
+        # Add inputs to conditional step
+        output_ports = {}
+        for port_name in input_ports:
+            loop_conditional_step.add_input_port(
+                port_name, combinator_step.get_output_port(port_name)
+            )
+            output_ports[port_name] = self.workflow.create_port()
+            loop_conditional_step.add_output_port(port_name, output_ports[port_name])
+        return output_ports
+
+    def get_output_loop(
+        self,
+        step_name: str,
+        loop_ports: MutableMapping[str, Port],
+        output_ports: MutableSet[str],
+    ) -> MutableMapping[str, Port]:
+        """
+        loop_ports are the output ports which are needed as input for the next iteration
+        output_ports are the ports which produced the data which are the output of the loop
+        """
+        loop_conditional_step = cast(
+            BaseLoopConditionalStep, self.workflow.steps[step_name + "-loop-when"]
+        )
+        combinator_step = self.workflow.steps[step_name + "-loop-combinator"]
+        external_output_ports = {}
+        internal_ports = dict(loop_ports)
+        # internal_ports = { k : (p if p else loop_conditional_step.get_output_port(k)) for k, p in loop_ports.items() }
+        # Create a loop termination combinator
+        loop_terminator_combinator = LoopTerminationCombinator(
+            workflow=self.workflow, name=step_name + "-loop-termination-combinator"
+        )
+        loop_terminator_step = self.workflow.create_step(
+            cls=CombinatorStep,
+            name=step_name + "-loop-terminator",
+            combinator=loop_terminator_combinator,
+        )
+        for port_name, port in combinator_step.get_input_ports().items():
+            loop_terminator_step.add_output_port(port_name, port)
+            loop_terminator_combinator.add_output_item(port_name)
+        for port_name in output_ports:
+            # Create loop forwarder
+            loop_forwarder = self.workflow.create_step(
+                cls=ForwardTransformer,
+                name=os.path.join(step_name, port_name) + "-output-forward-transformer",
+            )
+            loop_forwarder.add_input_port(port_name, loop_ports[port_name])
+            loop_forwarder.add_output_port(port_name, self.workflow.create_port())
+            internal_ports[port_name] = loop_forwarder.get_output_port(port_name)
+            # Create loop output step
+            loop_output_step = self.workflow.create_step(
+                cls=BaseLoopOutputLastStep,
+                name=os.path.join(step_name, port_name) + "-loop-output",
+            )
+            loop_output_step.add_input_port(port_name, loop_forwarder.get_output_port())
+            loop_conditional_step.add_skip_port(
+                port_name, loop_forwarder.get_output_port()
+            )
+            loop_output_step.add_output_port(port_name, self.workflow.create_port())
+            external_output_ports[port_name] = loop_output_step.get_output_port(
+                port_name
+            )
+            loop_terminator_step.add_input_port(
+                port_name, loop_output_step.get_output_port(port_name)
+            )
+            loop_terminator_combinator.add_item(port_name)
+        for port_name in loop_ports:
+            # Create loop output step
+            loop_forwarder = self.workflow.create_step(
+                cls=ForwardTransformer,
+                name=os.path.join(step_name, port_name)
+                + "-back-propagation-transformer",
+            )
+            loop_forwarder.add_input_port(port_name, internal_ports[port_name])
+            loop_forwarder.add_output_port(
+                port_name, combinator_step.get_input_port(port_name)
+            )
+        return external_output_ports
