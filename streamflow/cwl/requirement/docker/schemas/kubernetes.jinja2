@@ -26,7 +26,7 @@ spec:
     - name: {{ name }}-workdir
       emptyDir: {}
     {% endif %}
-{% if not network_access %}
+{% if network_policy and not network_access %}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

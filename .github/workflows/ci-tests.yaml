@@ -17,11 +17,11 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v5
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           config-file: .github/codeql/config.yml
           languages: python
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
   cwl-conformance:
     name: "CWL conformance tests"
     strategy:
@@ -161,7 +161,7 @@ jobs:
           python -m pip install .
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "421b1b0076e452ed821b7f129d52f5878cb8fa14170685a5c15575582201c8b2"
+          CHECKSUM: "867c9e683f36597fd9ddb8eaee60b5391cf9669c5d264d11cfb39c62955c7910"
         run: |
           cd docs
           HASH="$(make checksum | tail -n1)"
