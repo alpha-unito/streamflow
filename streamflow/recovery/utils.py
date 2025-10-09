@@ -68,7 +68,7 @@ class DirectGraph:
     def remove(self, vertex: Any) -> MutableSequence[Any]:
         self.graph.pop(vertex, None)
         removed = [vertex]
-        # Delete nodes which are not connected to the leaves nodes
+        # Delete the nodes that are not connected to any leaf nodes
         dead_end_nodes = set()
         for node, values in self.graph.items():
             if vertex in values:
@@ -78,7 +78,7 @@ class DirectGraph:
         for node in dead_end_nodes:
             removed.extend(self.remove(node))
 
-        # Assign the root node to vertices without parent
+        # Assign the root node to the vertices that do not have a parent
         orphan_nodes = set()
         for node in self.keys():
             if node != DirectGraph.ROOT and not self.prev(node):
@@ -266,8 +266,8 @@ class GraphMapper:
             )
             for dependency_row in dependency_rows
         }
-        # Remove steps with some missing input ports
-        # A port can have multiple input steps. It is necessary to load only the needed steps
+        # Remove steps with missing input ports
+        # A port may have multiple input steps, so it is important to load only the necessary steps.
         step_to_remove = set()
         for step_id, dependency_rows in zip(
             step_ids,
@@ -306,7 +306,7 @@ class GraphMapper:
         for token_id in orphan_tokens:
             self.remove_token(token_id)
 
-    def remove_token(self, token_id: int, preserve_token: bool = True):
+    def remove_token(self, token_id: int, preserve_token: bool = True) -> None:
         if logger.isEnabledFor(logging.INFO):
             logger.info(f"Remove token id {token_id}")
         if token_id == DirectGraph.ROOT:
@@ -325,13 +325,13 @@ class GraphMapper:
                 token_leaves.add(prev_token_id)
         # Delete end-road branches
         for leaf_id in token_leaves:
-            self.remove_token(leaf_id)
+            self.remove_token(leaf_id, preserve_token=False)
         # Delete token (if needed)
         if not preserve_token:
             self.token_available.pop(token_id, None)
             self.token_instances.pop(token_id, None)
             self.dag_tokens.remove(token_id)
-        if not preserve_token:
+            # Remove ports
             empty_ports = set()
             for port_name, token_list in self.port_tokens.items():
                 if token_id in token_list:
@@ -342,10 +342,22 @@ class GraphMapper:
                 self.remove_port(port_name)
 
     def replace_token(self, port_name: str, token: Token, is_available: bool) -> None:
-        old_token_id = self.get_equal_token(port_name, token)
-        if old_token_id is None:
-            raise FailureHandlingException("Impossible replace token")
-        if logger.isEnabledFor(logging.INFO):
+        if (old_token_id := self.get_equal_token(port_name, token)) is None:
+            raise FailureHandlingException(
+                f"Unable to find a token for replacement with {token.persistent_id}."
+            )
+        if old_token_id == token.persistent_id:
+            if self.token_available[old_token_id] != is_available:
+                raise FailureHandlingException(
+                    f"Availability mismatch for token {old_token_id}. "
+                    f"Expected: {self.token_available[old_token_id]}, Got: {is_available}."
+                )
+            elif logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    f"Token {old_token_id} is already in desired state. Skipping replacement."
+                )
+            return
+        elif logger.isEnabledFor(logging.INFO):
             logger.info(f"Replacing {old_token_id} with {token.persistent_id}")
         # Replace
         self.dag_tokens.replace(old_token_id, token.persistent_id)
@@ -373,13 +385,13 @@ class ProvenanceGraph:
             dst_token.persistent_id if dst_token is not None else dst_token,
         )
 
-    async def build_graph(self, inputs: Iterable[Token]):
+    async def build_graph(self, inputs: Iterable[Token]) -> None:
         """
-        The provenance graph represent the execution, and is always a DAG.
-        Visit the provenance graph with a breadth-first search and is done
-        backward starting from the input tokens. At the end of the search,
-        we have a tree where at root there are token which data are available
-        in some location and leaves will be the input tokens.
+        The provenance graph represents the execution and is always a DAG.
+        To traverse the provenance graph, a breadth-first search is performed
+        starting from the input tokens and moving backward. At the end of the search,
+        we obtain a tree where the root node represents the tokens whose data are available
+        in a specific location, and the leaves correspond to the input tokens.
         """
         token_frontier = deque(inputs)
         loading_context = DefaultDatabaseLoadingContext()
