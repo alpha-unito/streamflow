@@ -102,8 +102,9 @@ def _adjust_input(
 ) -> bool:
     """
     Adjust the input if it contains a file with the specified `src_path`.
-    If the input is a `Directory`, the function will adjust the file listed within the directory.
-    This function is not intended for handling `secondaryFiles` of a `File`.
+    If the input is a `Directory`, the function will recursively adjust all
+    the files listed within the directory. This function does not handle
+    the `secondaryFiles` associated with a `File` object.
 
     :param input_: The input to process. It can be of any type, including
                            lists, objects (e.g., CWL records), files, and directories.
@@ -130,15 +131,16 @@ def _adjust_input(
                     nameroot, nameext = path_processor.splitext(basename)
                     input_["nameroot"] = nameroot
                     input_["nameext"] = nameext
-                if "listing" in input_:
-                    for ins in input_["listing"]:
-                        _adjust_input(
-                            job_name,
-                            ins,
-                            path_processor,
-                            ins["path"],
-                            path_processor.join(dst_path, ins["basename"]),
-                        )
+                for ins in input_.get("listing", ()):
+                    _adjust_input(
+                        job_name,
+                        ins,
+                        path_processor,
+                        ins["path"],
+                        path_processor.join(
+                            dst_path, path_processor.basename(ins["path"])
+                        ),
+                    )
                 return True
             elif src_path.startswith(path) and "listing" in input_:
                 for inp in input_["listing"]:
