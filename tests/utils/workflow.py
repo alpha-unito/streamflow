@@ -5,6 +5,7 @@ import json
 import os
 import posixpath
 from collections.abc import Iterable, MutableMapping, MutableSequence
+from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import Self
@@ -70,17 +71,20 @@ if TYPE_CHECKING:
 CWL_VERSION = "v1.2"
 
 
-async def _invalidate_token(context: StreamFlowContext, job: Job, token: Token) -> None:
-    if isinstance(token, FileToken):
-        for loc in context.scheduler.get_locations(job.name):
-            for path in await token.get_paths(context):
-                context.data_manager.invalidate_location(loc, path)
-    elif isinstance(token, ListToken):
-        for t in token.value:
-            await _invalidate_token(context, job, t)
-    elif isinstance(token, ObjectToken):
-        for t in token.value.value():
-            await _invalidate_token(context, job, t)
+async def _delete_job_workdir(context: StreamFlowContext, job: Job) -> None:
+    """
+    Delete workdir of the workflow.
+    Use carefully because it will delete the parent directory of the job output directory.
+    """
+    workdir = (
+        os.path.dirname(job.output_directory)
+        if job.output_directory
+        else context.scheduler.get_allocation(job.name).target.workdir
+    )
+    if os.path.basename(workdir) != "test-fs-volatile":
+        raise Exception(f"Invalid workdir to delete: {workdir}")
+    for loc in context.scheduler.get_locations(job.name):
+        await StreamFlowPath(workdir, context=context, location=loc).rmtree()
 
 
 async def _register_path(
@@ -312,40 +316,66 @@ def random_job_name(step_name: str | None = None):
     return os.path.join(posixpath.sep, step_name, "0.0")
 
 
-async def build_token(job: Job, token_value: Any, context: StreamFlowContext) -> Token:
+async def build_token(
+    job: Job, token_value: Any, context: StreamFlowContext, recoverable: bool = False
+) -> Token:
     if isinstance(token_value, MutableSequence):
         return ListToken(
             tag=get_tag(job.inputs.values()),
-            value=[await build_token(job, v, context) for v in token_value],
+            value=await asyncio.gather(
+                *(
+                    asyncio.create_task(build_token(job, v, context, recoverable))
+                    for v in token_value
+                )
+            ),
         )
     elif isinstance(token_value, MutableMapping):
         if get_token_class(token_value) in ["File", "Directory"]:
             connector = context.scheduler.get_connector(job.name)
             locations = context.scheduler.get_locations(job.name)
+            relpath = (
+                os.path.relpath(token_value["path"], job.output_directory)
+                if job.output_directory
+                and token_value["path"].startswith(job.output_directory)
+                else os.path.basename(token_value["path"])
+            )
             await _register_path(
                 context,
                 connector,
                 next(iter(locations)),
                 token_value["path"],
-                token_value["path"],
+                relpath,
             )
             return BaseFileToken(
-                tag=get_tag(job.inputs.values()), value=token_value["path"]
+                tag=get_tag(job.inputs.values()),
+                value=token_value["path"],
+                recoverable=recoverable,
             )
         else:
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
-                value={
-                    k: await build_token(job, v, context)
-                    for k, v in token_value.items()
-                },
+                value=dict(
+                    zip(
+                        token_value.keys(),
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(
+                                    build_token(job, v, context, recoverable)
+                                )
+                                for v in token_value.values()
+                            )
+                        ),
+                    )
+                ),
             )
-    elif isinstance(token_value, FileToken):
-        return token_value.update(token_value.value)
-    elif isinstance(token_value, Token):
-        return token_value.update(token_value.value)
+    elif isinstance(token_value, (FileToken, Token)):
+        token = token_value.update(token_value.value)
+        token.recoverable = recoverable
+        return token
     else:
-        return Token(tag=get_tag(job.inputs.values()), value=token_value)
+        return Token(
+            tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
+        )
 
 
 class BaseFileToken(FileToken):
@@ -362,6 +392,7 @@ class BaseInputInjectorStep(InputInjectorStep):
             job=job,
             token_value=token_value,
             context=self.workflow.context,
+            recoverable=True,
         )
 
 
@@ -388,7 +419,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             value_type=row["value_type"],
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                await loading_context.load_target(context, row["target"])
                 if row["target"]
                 else None
             ),
@@ -408,27 +439,49 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         context = self.workflow.context
         value = (await command_output).value
         if self.value_type == "file":
             locations = context.scheduler.get_locations(job.name)
+            connector = connector or context.scheduler.get_connector(job.name)
+            if not await StreamFlowPath(
+                value, context=context, location=locations[0]
+            ).exists():
+                raise WorkflowExecutionException(
+                    f"Job {job.name} output does not exist: File {value}"
+                )
             await _register_path(
-                context, connector, next(iter(locations)), value, value
+                context=context,
+                connector=connector,
+                location=next(iter(locations)),
+                path=value,
+                relpath=os.path.relpath(value, job.output_directory),
             )
-            return BaseFileToken(tag=get_tag(job.inputs.values()), value=value)
+            return BaseFileToken(
+                tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
+            )
         elif self.value_type == "list":
             return ListToken(
                 tag=get_tag(job.inputs.values()),
-                value=[await build_token(job, v, context) for v in value],
+                value=[
+                    await build_token(job, v, context, recoverable=recoverable)
+                    for v in value
+                ],
             )
-        elif self.value_type == "dict":
+        elif self.value_type == "object":
             return ObjectToken(
                 tag=get_tag(job.inputs.values()),
-                value={k: await build_token(job, v, context) for k, v in value.items()},
+                value={
+                    k: await build_token(job, v, context, recoverable=recoverable)
+                    for k, v in value.items()
+                },
             )
         else:
-            return Token(tag=get_tag(job.inputs.values()), value=value)
+            return Token(
+                tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
+            )
 
 
 class InjectorFailureCommand(Command):
@@ -498,20 +551,52 @@ class InjectorFailureCommand(Command):
             max_failures := self.failure_tags.get(tag, None)
         ) is not None and num_executions < max_failures:
             if self.failure_type == InjectorFailureCommand.INJECT_TOKEN:
-                context.failure_manager.get_request(job.name).output_tokens = {
-                    k: t.update(t.value, recoverable=True)
-                    for k, t in job.inputs.items()
-                }
+                output_tokens = {}
+                for k, t in job.inputs.items():
+                    output_tokens[k] = t.update(t.value)
+                    output_tokens[k].recoverable = True
+                context.failure_manager.get_request(job.name).output_tokens = (
+                    output_tokens
+                )
             elif self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(context, job, t)
+                await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
             try:
                 operation, input_value_type, input_value = eval(self.command)(
                     job.inputs
                 )
-                cmd_out = CommandOutput(input_value, Status.COMPLETED)
+                if operation == "copy":
+                    if input_value_type == "file":
+                        connector = context.scheduler.get_connector(job.name)
+                        locations = context.scheduler.get_locations(job.name)
+                        if not await StreamFlowPath(
+                            input_value, context=context, location=locations[0]
+                        ).exists():
+                            raise WorkflowExecutionException(
+                                f"Job {job.name} input does not exist: File {input_value}"
+                            )
+                        output = f"result-{PurePath(job.name).parts[1]}"
+                        await StreamFlowPath(
+                            job.output_directory, context=context, location=locations[0]
+                        ).mkdir(parents=True, exist_ok=True)
+                        await connector.run(
+                            location=locations[0],
+                            command=["cp", "-r", input_value, output],
+                            workdir=job.output_directory,
+                        )
+                        output = os.path.join(job.output_directory, output)
+                        if not await StreamFlowPath(
+                            output, context=context, location=locations[0]
+                        ).exists():
+                            raise WorkflowExecutionException(
+                                f"CMD Job {job.name} output does not exist: File {output}"
+                            )
+                    else:
+                        output = input_value
+                else:
+                    raise NotImplementedError("Operation not supported", operation)
+                cmd_out = CommandOutput(output, Status.COMPLETED)
             except Exception as err:
                 logger.error(f"Failed command evaluation: {err}")
                 raise FailureHandlingException(err)
@@ -526,6 +611,7 @@ class InjectorFailureCommand(Command):
                 "status": cmd_out.status,
             },
         )
+        logger.info(f"Job result {job.name}: {cmd_out.value}")
         return cmd_out
 
     async def _save_additional_params(
@@ -657,8 +743,7 @@ class InjectorFailureScheduleStep(ScheduleStep):
             [w.steps[self.name] for w in workflows if self.name in w.steps]
         ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
             if self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(self.workflow.context, job, t)
+                await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         await super()._set_job_directories(connector, locations, job)
 
@@ -711,16 +796,23 @@ class InjectorFailureTransferStep(TransferStep):
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_path_processor = get_path_processor(dst_connector)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
-        source_location = await self.workflow.context.data_manager.get_source_location(
+        if source_location := await self.workflow.context.data_manager.get_source_location(
             path=path, dst_deployment=dst_connector.deployment_name
-        )
-        dst_path = dst_path_processor.join(job.input_directory, source_location.relpath)
-        await self.workflow.context.data_manager.transfer_data(
-            src_location=source_location.location,
-            src_path=source_location.path,
-            dst_locations=dst_locations,
-            dst_path=dst_path,
-        )
+        ):
+            dst_path = dst_path_processor.join(
+                job.input_directory, source_location.relpath
+            )
+            await self.workflow.context.data_manager.transfer_data(
+                src_location=source_location.location,
+                src_path=source_location.path,
+                dst_locations=dst_locations,
+                dst_path=dst_path,
+                writable=True,  # To avoid symbolic links, as recovery could be as simple as creating a new one.
+            )
+        else:
+            raise WorkflowExecutionException(
+                f"Job {job.name} input does not exist: File {path}"
+            )
         return dst_path
 
     async def transfer(self, job: Job, token: Token) -> Token:
@@ -744,21 +836,19 @@ class InjectorFailureTransferStep(TransferStep):
             [w.steps[self.name] for w in workflows if self.name in w.steps]
         ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
             if self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(self.workflow.context, job, t)
+                await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         # Execute the transfer
         if isinstance(token, ListToken):
             return token.update(
-                await asyncio.gather(
+                value=await asyncio.gather(
                     *(asyncio.create_task(self.transfer(job, t)) for t in token.value)
-                )
+                ),
             )
         elif isinstance(token, ObjectToken):
             return token.update(
-                {
-                    k: v
-                    for k, v in zip(
+                value=dict(
+                    zip(
                         token.value.keys(),
                         await asyncio.gather(
                             *(
@@ -767,12 +857,18 @@ class InjectorFailureTransferStep(TransferStep):
                             )
                         ),
                     )
-                }
+                ),
             )
         elif isinstance(token, FileToken):
-            return token.update(await self._transfer_path(job, token.value))
+            token = token.update(
+                await self._transfer_path(job, token.value),
+            )
+            token.recoverable = False
+            return token
         else:
-            return token.update(token.value)
+            token = token.update(token.value)
+            token.recoverable = False
+            return token
 
 
 class RecoveryTranslator:

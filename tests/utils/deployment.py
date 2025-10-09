@@ -57,6 +57,8 @@ def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
         return "docker-slurm"
     elif deployment_t == "ssh":
         return "linuxserver-ssh"
+    elif deployment_t == "local-fs-volatile":
+        return "local-fs-volatile"
     else:
         raise Exception(f"{deployment_t} deployment type not supported")
 
@@ -66,6 +68,16 @@ async def get_deployment_config(
 ) -> DeploymentConfig:
     if deployment_t == "local":
         return get_local_deployment_config()
+    elif deployment_t == "local-fs-volatile":
+        return get_local_deployment_config(
+            name="local-fs-volatile",
+            workdir=os.path.join(
+                os.path.realpath(tempfile.gettempdir()),
+                "streamflow-test",
+                random_name(),
+                "test-fs-volatile",
+            ),
+        )
     elif deployment_t == "docker":
         return get_docker_deployment_config()
     elif deployment_t == "docker-compose":
@@ -161,13 +173,15 @@ def get_kubernetes_deployment_config():
     )
 
 
-def get_local_deployment_config():
-    workdir = os.path.join(
+def get_local_deployment_config(
+    name: str | None = None, workdir: str | None = None
+) -> DeploymentConfig:
+    workdir = workdir or os.path.join(
         os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
     )
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
-        name="__LOCAL__",
+        name=name or "__LOCAL__",
         type="local",
         config={},
         external=True,
@@ -209,6 +223,7 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
         "parameterizable_hardware",
         "singularity",
         "ssh",
+        "local-fs-volatile",
     ):
         return None
     elif deployment_t == "docker-compose":

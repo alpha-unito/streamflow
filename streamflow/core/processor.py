@@ -81,6 +81,7 @@ class CommandOutputProcessor(ABC):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None: ...
 
     async def save(self, context: StreamFlowContext):
@@ -170,6 +171,7 @@ class MapCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         result = await command_output
         values = result.value
@@ -183,7 +185,10 @@ class MapCommandOutputProcessor(CommandOutputProcessor):
                 *(
                     asyncio.create_task(
                         self.processor.process(
-                            job, make_future(result.update(value)), connector
+                            job=job,
+                            command_output=make_future(result.update(value)),
+                            connector=connector,
+                            recoverable=recoverable,
                         )
                     )
                     for value in values
@@ -324,6 +329,7 @@ class ObjectCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         result = await command_output
         values = result.value
@@ -341,9 +347,10 @@ class ObjectCommandOutputProcessor(CommandOutputProcessor):
         token_tasks = {
             k: asyncio.create_task(
                 p.process(
-                    job,
-                    make_future(result.update(values[k])),
-                    connector,
+                    job=job,
+                    command_output=make_future(result.update(values[k])),
+                    connector=connector,
+                    recoverable=recoverable,
                 )
             )
             for k, p in self.processors.items()
@@ -483,6 +490,7 @@ class PopCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         result = await command_output
         values = result.value
@@ -500,6 +508,7 @@ class PopCommandOutputProcessor(CommandOutputProcessor):
             job=job,
             command_output=make_future(result.update(values[self.name])),
             connector=connector,
+            recoverable=recoverable,
         )
 
 
@@ -556,10 +565,16 @@ class UnionCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         process_tasks = [
             asyncio.create_task(
-                p.process(job=job, command_output=command_output, connector=connector),
+                p.process(
+                    job=job,
+                    command_output=command_output,
+                    connector=connector,
+                    recoverable=recoverable,
+                ),
                 name=p.__class__.__name__,
             )
             for p in self.processors

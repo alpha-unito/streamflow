@@ -492,13 +492,13 @@ class Step(PersistableEntity, ABC):
 
 
 class Token(PersistableEntity):
-    __slots__ = ("persistent_id", "recoverable", "value", "tag")
+    __slots__ = ("persistent_id", "value", "tag", "_recoverable")
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
-        self.recoverable: bool = recoverable
         self.value: Any = value
         self.tag: str = tag
+        self._recoverable: bool = recoverable
 
     @classmethod
     async def _load(
@@ -507,10 +507,7 @@ class Token(PersistableEntity):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        value = row["value"]
-        if isinstance(value, MutableMapping) and "token" in value:
-            value = await loading_context.load_token(context, value["token"])
-        return cls(tag=row["tag"], value=value, recoverable=row["recoverable"])
+        return cls(tag=row["tag"], value=row["value"], recoverable=row["recoverable"])
 
     async def _save_value(self, context: StreamFlowContext):
         return self.value
@@ -532,10 +529,22 @@ class Token(PersistableEntity):
         return token
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return self.recoverable
+        return self._recoverable
 
-    def retag(self, tag: str, recoverable: bool = False) -> Token:
-        return self.__class__(tag=tag, value=self.value, recoverable=recoverable)
+    @property
+    def recoverable(self) -> bool:
+        return self._recoverable
+
+    @recoverable.setter
+    def recoverable(self, recoverable: bool) -> None:
+        if self.persistent_id is not None and self._recoverable != recoverable:
+            raise WorkflowExecutionException(
+                "The `recoverable` property can't be changed after the `Token` has been persisted."
+            )
+        self._recoverable = recoverable
+
+    def retag(self, tag: str) -> Token:
+        return self.__class__(tag=tag, value=self.value, recoverable=self._recoverable)
 
     async def save(
         self, context: StreamFlowContext, port_id: int | None = None
@@ -545,7 +554,7 @@ class Token(PersistableEntity):
                 try:
                     self.persistent_id = await context.database.add_token(
                         port=port_id,
-                        recoverable=self.recoverable,
+                        recoverable=self._recoverable,
                         tag=self.tag,
                         type=type(self),
                         value=await self._save_value(context),
@@ -553,8 +562,8 @@ class Token(PersistableEntity):
                 except TypeError as e:
                     raise WorkflowExecutionException from e
 
-    def update(self, value: Any, recoverable: bool = False) -> Token:
-        return self.__class__(tag=self.tag, value=value, recoverable=recoverable)
+    def update(self, value: Any) -> Token:
+        return self.__class__(tag=self.tag, value=value, recoverable=self._recoverable)
 
 
 if TYPE_CHECKING:

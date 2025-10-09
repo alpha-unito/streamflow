@@ -457,9 +457,12 @@ class DefaultCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         return Token(
-            tag=utils.get_tag(job.inputs.values()), value=(await command_output).value
+            tag=utils.get_tag(job.inputs.values()),
+            value=(await command_output).value,
+            recoverable=recoverable,
         )
 
 
@@ -673,7 +676,7 @@ class ExecuteStep(BaseStep):
     ) -> None:
         if (
             token := await self.output_processors[output_name].process(
-                job, command_output, connector
+                job, command_output, connector, recoverable=True
             )
         ) is not None:
             job_token = get_job_token(
@@ -681,7 +684,7 @@ class ExecuteStep(BaseStep):
             )
             output_port.put(
                 await self._persist_token(
-                    token=token.update(token.value, recoverable=True),
+                    token=token,
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
@@ -1134,10 +1137,11 @@ class InputInjectorStep(BaseStep, ABC):
                         token,
                     ]
                     # Process value and inject token in the output port
-                    new_token = await self.process_input(job, token.value)
                     self.get_output_port().put(
                         await self._persist_token(
-                            token=new_token.update(new_token.value, recoverable=True),
+                            token=await self.process_input(
+                                job=job, token_value=token.value
+                            ),
                             port=self.get_output_port(),
                             input_token_ids=get_entity_ids(in_list),
                         )
