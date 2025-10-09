@@ -13,32 +13,67 @@ spec:
       labels:
         {{- include "streamflow.selectorLabels" . | nindent 8 }}
     spec:
-    {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
       serviceAccountName: {{ include "streamflow.serviceAccountName" . }}
+      {{- include "streamflow.imagePullSecrets" . | nindent 6 }}
+      {{- if .Values.podSecurityContext.enabled }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- omit .Values.podSecurityContext "enabled" | toYaml | nindent 8 }}
+      {{- end }}
       containers:
-        - name: {{ .Chart.Name }}
+        - name: {{ include "streamflow.fullname" . }}
+          {{- if .Values.containerSecurityContext.enabled }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Chart.AppVersion }}"
+            {{- omit .Values.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          image: {{ include "streamflow.image" . }}
+          {{- if .Values.command }}
+          command: {{ .Values.command }}
+          {{- end }}
+          {{- if .Values.args }}
           args: {{ .Values.args }}
+          {{- end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.resources }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: streamflow-config
+              mountPath: /streamflow/results/streamflow.yml
+              subPath: streamflow.yml
+            - name: streamflow-metadata
+              mountPath: /.streamflow
+            - name: streamflow-outdir
+              mountPath: /tmp/streamflow
+            - name: streamflow-workdir
+              mountPath: /streamflow/results
+      {{ if .Values.restartPolicy }}
       restartPolicy: {{ .Values.restartPolicy }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-    {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .Values.tolerations }}
+      {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
-    {{- end }}
+      {{- end }}
+      volumes:
+        - name: streamflow-metadata
+          {{- if .Values.persistence.metadata }}
+          {{ toYaml .Values.persistence.metadata | nindent 10}}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: streamflow-outdir
+          {{- if .Values.persistence.outdir }}
+          {{ toYaml .Values.persistence.outdir | nindent 10}}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: streamflow-workdir
+          {{- if .Values.persistence.workdir }}
+          {{ toYaml .Values.persistence.workdir | nindent 10}}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}

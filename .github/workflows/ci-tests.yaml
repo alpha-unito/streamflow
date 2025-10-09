@@ -161,7 +161,7 @@ jobs:
           python -m pip install .
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "47721124c7689e9138ec656aecb30367fe9571fc088748e8b802df4aba5ba465"
+          CHECKSUM: "3b6dab7d80523dce07afcea3a0a0a8b55ca1040398630240fe681fa58b44fc57"
         run: |
           cd docs
           HASH="$(make checksum | tail -n1)"
