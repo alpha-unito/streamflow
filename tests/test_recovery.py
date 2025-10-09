@@ -302,11 +302,11 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         deployment_names=[deployment_t],
         input_ports={input_name: injector_step.get_output_port(input_name)},
         outputs={output_name: "list"},
-        step_name=os.path.join(posixpath.sep, utils.random_name()),
+        step_name=os.path.join(posixpath.sep, "a", utils.random_name()),
         workflow=workflow,
     )
     # ExecuteStep inside the scatter
-    scatter_step_name = os.path.join(posixpath.sep, utils.random_name())
+    scatter_step_name = os.path.join(posixpath.sep, "b", utils.random_name())
     scatter_step = workflow.create_step(
         cls=ScatterStep, name=scatter_step_name + "-scatter"
     )
@@ -336,7 +336,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         deployment_names=[deployment_t],
         input_ports=gather_step.get_output_ports(),
         outputs={output_name: "list"},
-        step_name=os.path.join(posixpath.sep, utils.random_name()),
+        step_name=os.path.join(posixpath.sep, "c", utils.random_name()),
         workflow=workflow,
     )
     # Run

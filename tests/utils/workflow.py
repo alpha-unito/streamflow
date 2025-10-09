@@ -570,7 +570,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
                 connector=connector,
                 location=next(iter(locations)),
                 path=value,
-                relpath=str(os.path.relpath(value, job.output_directory)),
+                relpath=os.path.relpath(value, job.output_directory),
             )
             return BaseFileToken(
                 tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable

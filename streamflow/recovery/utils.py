@@ -268,7 +268,7 @@ class GraphMapper:
             for dependency_row in dependency_rows
         }
         # Remove steps with missing input ports
-        # A port may have multiple input steps, so it's important to load only the necessary steps.
+        # A port may have multiple input steps, so it is important to load only the necessary steps.
         step_to_remove = set()
         for step_id, dependency_rows in zip(
             step_ids,
@@ -395,9 +395,9 @@ class ProvenanceGraph:
             dst_token.persistent_id if dst_token is not None else dst_token,
         )
 
-    async def build_graph(self, inputs: Iterable[Token]):
+    async def build_graph(self, inputs: Iterable[Token]) -> None:
         """
-        The provenance graph represents the execution and is always a (DAG).
+        The provenance graph represents the execution and is always a DAG.
         To traverse the provenance graph, a breadth-first search is performed
         starting from the input tokens and moving backward. At the end of the search,
         we obtain a tree where the root node represents the tokens whose data are available

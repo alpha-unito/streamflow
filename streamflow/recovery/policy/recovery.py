@@ -19,7 +19,6 @@ from streamflow.recovery.utils import (
     TokenAvailability,
     create_graph_mapper,
 )
-from streamflow.token_printer import dag_workflow
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
@@ -62,9 +61,7 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
         await executor.run()
 
 
-async def _inject_tokens(
-    mapper: GraphMapper, inter_ports: MutableSequence[str], new_workflow: Workflow
-) -> None:
+async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
     for port_name in mapper.dcg_port[DirectGraph.ROOT]:
         token_list = sorted(
             [
@@ -106,16 +103,6 @@ async def _inject_tokens(
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
             port.put(TerminationToken(Status.SKIPPED))
-    for port_ in new_workflow.ports.values():
-        if (
-            port_.name not in inter_ports
-            and len(port_.get_input_steps()) == 0
-            and not any(isinstance(t, TerminationToken) for t in port_.token_list)
-            and len(port_.get_output_steps()) > 0
-        ):
-            raise FailureHandlingException(
-                f"Port {port_.name} is an input, but it does not have a termination token."
-            )
 
 
 async def _populate_workflow(
@@ -212,7 +199,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         job_tokens = list(
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
-        inter_ports, job_names = await self._sync_workflows(
+        job_names = await self._sync_workflows(
             job_names={*(t.value.name for t in job_tokens), failed_job.name},
             job_tokens=job_tokens,
             mapper=mapper,
@@ -225,9 +212,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         for job_name in job_names:
             self.context.failure_manager.get_request(job_name).workflow_ready.set()
-        await _inject_tokens(mapper, inter_ports, new_workflow)
-        dag_workflow(failed_step.workflow, "ft-original-workflow")
-        dag_workflow(new_workflow, "ft-new-workflow")
+        await _inject_tokens(mapper, new_workflow)
         await _set_step_states(mapper, new_workflow)
         return new_workflow
 
@@ -237,8 +222,8 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         job_tokens: MutableSequence[Token],
         mapper: GraphMapper,
         workflow: Workflow,
-    ) -> tuple[MutableSequence[str], MutableSequence[str]]:
-        inter_ports, new_job_names = [], []
+    ) -> MutableSequence[str]:
+        new_job_names = []
         for job_name in job_names:
             retry_request = self.context.failure_manager.get_request(job_name)
             if (
@@ -253,18 +238,18 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 if logger.isEnabledFor(logging.DEBUG):
                     if not (is_wf_ready := retry_request.workflow_ready.is_set()):
                         logger.debug(
-                            f"Synchronizing rollbacks: Job '{job_name}' is waiting for the rollback workflow to be ready."
+                            f"Synchronizing rollbacks: Job {job_name} is waiting for the rollback workflow to be ready."
                         )
                     else:
                         logger.debug(
-                            f"Synchronizing rollbacks: Job '{job_name}' is currently executing."
+                            f"Synchronizing rollbacks: Job {job_name} is currently executing."
                         )
                 else:
                     is_wf_ready = True
                 await retry_request.workflow_ready.wait()
                 if logger.isEnabledFor(logging.DEBUG) and not is_wf_ready:
                     logger.debug(
-                        f"Synchronizing rollbacks: Job '{job_name}' has resumed after the rollback workflow is ready."
+                        f"Synchronizing rollbacks: Job {job_name} has resumed after the rollback workflow is ready."
                     )
                 for port_name in await mapper.get_output_ports(job_token):
                     if port_name in retry_request.workflow.ports.keys():
@@ -275,7 +260,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                             boundary_tag=get_job_tag(job_token.value.name),
                             terminate=True,
                         )
-                        inter_ports.append(port_name)
                 # Remove tokens that will be recovered in other workflows
                 for token_id in await mapper.get_output_tokens(job_token.persistent_id):
                     mapper.remove_token(token_id, preserve_token=True)
@@ -303,7 +287,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 retry_request.workflow = workflow
                 retry_request.workflow_ready.clear()
                 new_job_names.append(job_name)
-        return inter_ports, new_job_names
+        return new_job_names
 
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
         # Create recover workflow
