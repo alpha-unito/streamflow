@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import MutableSequence
+from collections.abc import MutableMapping, MutableSequence
 from typing import Callable
 
 from streamflow.core.deployment import Connector
@@ -53,16 +53,24 @@ class FilterTokenPort(Port):
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
-        self.inter_ports: MutableSequence[tuple[Port, str, bool, bool]] = []
+        self.inter_ports: MutableMapping[
+            str, MutableSequence[MutableMapping[str, Port | bool]]
+        ] = {}
 
     def add_inter_port(
         self,
         port: Port,
         boundary_tag: str,
-        inter_terminate: bool,
-        intra_terminate: bool,
+        inter_terminate: bool = False,
+        intra_terminate: bool = False,
     ) -> None:
-        self.inter_ports.append((port, boundary_tag, inter_terminate, intra_terminate))
+        self.inter_ports.setdefault(boundary_tag, []).append(
+            {
+                "port": port,
+                "inter_terminate": inter_terminate,
+                "intra_terminate": intra_terminate,
+            }
+        )
         for token in self.token_list:
             if boundary_tag == token.tag:
                 port.put(token)
@@ -73,18 +81,12 @@ class InterWorkflowPort(Port):
 
     def put(self, token: Token) -> None:
         if not isinstance(token, TerminationToken):
-            for (
-                port,
-                boundary_tag,
-                inter_terminate,
-                intra_terminate,
-            ) in self.inter_ports:
-                if boundary_tag == token.tag:
-                    port.put(token)
-                    if inter_terminate:
-                        port.put(TerminationToken(Status.SKIPPED))
-                    if intra_terminate:
-                        super().put(TerminationToken(Status.SKIPPED))
+            for inter_port in self.inter_ports.get(token.tag, []):
+                inter_port["port"].put(token)
+                if inter_port["inter_terminate"]:
+                    inter_port["port"].put(TerminationToken(Status.SKIPPED))
+                if inter_port["intra_terminate"]:
+                    super().put(TerminationToken(Status.SKIPPED))
         super().put(token)
 
 

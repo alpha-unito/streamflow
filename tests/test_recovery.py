@@ -365,7 +365,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("iteration", [1])
+@pytest.mark.parametrize("iteration", [1, 3])
 async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
     num_of_failures = 0
     task = "execute"
