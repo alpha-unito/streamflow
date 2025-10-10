@@ -577,11 +577,10 @@ class CWLLoopOutputAllStep(LoopOutputStep):
 
 class CWLLoopOutputLastStep(LoopOutputStep):
     async def _process_output(self, tag: str) -> Token:
-        token = sorted(
+        return sorted(
             self.token_map.get(tag, [Token(value=None)]),
             key=lambda t: int(t.tag.split(".")[-1]),
-        )[-1]
-        return token.retag(tag=tag)
+        )[-1].retag(tag=tag)
 
 
 class CWLScheduleStep(ScheduleStep):
