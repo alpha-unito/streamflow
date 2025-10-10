@@ -53,23 +53,38 @@ class FilterTokenPort(Port):
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
-        self.inter_ports: MutableSequence[tuple[Port, str, bool]] = []
+        self.inter_ports: MutableSequence[tuple[Port, str, bool, bool]] = []
 
-    def add_inter_port(self, port: Port, boundary_tag: str, terminate: bool) -> None:
-        self.inter_ports.append((port, boundary_tag, terminate))
+    def add_inter_port(
+        self,
+        port: Port,
+        boundary_tag: str,
+        inter_terminate: bool,
+        intra_terminate: bool,
+    ) -> None:
+        self.inter_ports.append((port, boundary_tag, inter_terminate, intra_terminate))
         for token in self.token_list:
             if boundary_tag == token.tag:
                 port.put(token)
-                if terminate:
+                if inter_terminate:
                     port.put(TerminationToken(Status.SKIPPED))
+                if intra_terminate:
+                    super().put(TerminationToken(Status.SKIPPED))
 
     def put(self, token: Token) -> None:
         if not isinstance(token, TerminationToken):
-            for port, boundary_tag, terminate in self.inter_ports:
+            for (
+                port,
+                boundary_tag,
+                inter_terminate,
+                intra_terminate,
+            ) in self.inter_ports:
                 if boundary_tag == token.tag:
                     port.put(token)
-                    if terminate:
+                    if inter_terminate:
                         port.put(TerminationToken(Status.SKIPPED))
+                    if intra_terminate:
+                        super().put(TerminationToken(Status.SKIPPED))
         super().put(token)
 
 

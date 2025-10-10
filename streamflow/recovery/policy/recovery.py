@@ -88,11 +88,11 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
-        if any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()):
-            pass
+        # if any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()):
+        #     pass
         # if (
         #     any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps())
-        #     and len(port.get_input_steps()) >= 3
+        #     # and len(port.get_input_steps()) >= 3
         # ):
         #     if logger.isEnabledFor(logging.DEBUG):
         #         logger.debug(f"Injecting termination token on port {port.name}")
@@ -140,7 +140,10 @@ async def _populate_workflow(
             )
     for port in failed_step.get_output_ports().values():
         cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
-            port, boundary_tag=get_tag(failed_job.inputs.values()), terminate=False
+            port,
+            boundary_tag=get_tag(failed_job.inputs.values()),
+            inter_terminate=False,
+            intra_terminate=True,
         )
 
 
@@ -258,7 +261,8 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         ).add_inter_port(
                             workflow.create_port(cls=InterWorkflowPort, name=port_name),
                             boundary_tag=get_job_tag(job_token.value.name),
-                            terminate=True,
+                            inter_terminate=True,
+                            intra_terminate=False,
                         )
                 # Remove tokens that will be recovered in other workflows
                 for token_id in await mapper.get_output_tokens(job_token.persistent_id):
