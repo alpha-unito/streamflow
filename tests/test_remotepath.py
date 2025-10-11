@@ -15,12 +15,12 @@ from streamflow.data.remotepath import StreamFlowPath
 from tests.utils.deployment import get_docker_deployment_config, get_location
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="module")
 async def location(context, deployment_src) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def connector(context, location) -> Connector:
     return context.deployment_manager.get_connector(location.deployment)
 
