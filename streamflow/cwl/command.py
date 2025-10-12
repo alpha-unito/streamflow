@@ -815,6 +815,7 @@ class CWLCommand(TokenizedCommand):
                             for key in job.inputs.keys()
                         )
                     ),
+                    strict=True,
                 )
             )
         else:

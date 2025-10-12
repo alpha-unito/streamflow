@@ -359,7 +359,7 @@ async def test_loop_termination_combinator(context: StreamFlowContext):
     await executor.run()
 
     assert len(out_port.token_list) == 3
-    for out_token, in_token in zip(out_port.token_list[:-1], list_token):
+    for out_token, in_token in zip(out_port.token_list[:-1], list_token, strict=True):
         await verify_dependency_tokens(
             token=out_token,
             port=out_port,

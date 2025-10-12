@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04" ]
-        python: [ "3.9", "3.10", "3.11", "3.12", "3.13", "3.14" ]
+        python: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
         version: [ "v1.0", "v1.1", "v1.2", "v1.3" ]
         docker: [ "docker" ]
         include:
@@ -233,7 +233,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04"]
-        python: [ "3.9", "3.10", "3.11", "3.12", "3.13", "3.14" ]
+        python: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
         include:
           - on: "macos-13"
             python: "3.14"

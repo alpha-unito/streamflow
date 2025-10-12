@@ -60,7 +60,7 @@ def compare_tags(tag1: str, tag2: str) -> int:
     list2 = tag2.split(".")
     if (res := (len(list1) - len(list2))) != 0:
         return res
-    for elem1, elem2 in zip(list1, list2):
+    for elem1, elem2 in zip(list1, list2, strict=True):
         if (res := (int(elem1) - int(elem2))) != 0:
             return res
     return 0
@@ -140,7 +140,7 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
     keys = kwargs.keys()
     vals = kwargs.values()
     for instance in itertools.product(*vals):
-        yield dict(zip(keys, list(instance)))
+        yield dict(zip(keys, list(instance), strict=True))
 
 
 def encode_command(command: str, shell: str = "sh") -> str:

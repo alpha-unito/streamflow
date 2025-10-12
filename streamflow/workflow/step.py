@@ -113,6 +113,7 @@ class BaseStep(Step, ABC):
                         for port_name, p in input_ports.items()
                     )
                 ),
+                strict=True,
             )
         }
         if logger.isEnabledFor(logging.DEBUG):
@@ -204,6 +205,7 @@ class Combinator(ABC):
                             for comb in self.combinators.values()
                         )
                     ),
+                    strict=True,
                 )
             },
             "combinators_map": self.combinators_map,
@@ -256,6 +258,7 @@ class Combinator(ABC):
                         for c in row["params"]["combinators"].values()
                     )
                 ),
+                strict=True,
             )
         )
         return combinator
@@ -658,6 +661,7 @@ class ExecuteStep(BaseStep):
                         for p in params["output_processors"].values()
                     )
                 ),
+                strict=True,
             )
         }
         if params["command"]:
@@ -788,6 +792,7 @@ class ExecuteStep(BaseStep):
                             for p in self.output_processors.values()
                         )
                     ),
+                    strict=True,
                 )
             },
             "command": await self.command.save(context) if self.command else None,
@@ -828,6 +833,7 @@ class ExecuteStep(BaseStep):
                         for port_name, p in connector_ports.items()
                     )
                 ),
+                strict=True,
             )
         }
         # If there are input ports create jobs until termination token are received

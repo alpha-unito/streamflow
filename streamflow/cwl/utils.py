@@ -559,10 +559,12 @@ async def expand_glob(
                     real_path=ep or p,
                 )
             )
-            for p, ep in zip(paths, effective_paths)
+            for p, ep in zip(paths, effective_paths, strict=True)
         )
     )
-    return [(str(p), str(ep or p)) for p, ep in zip(paths, effective_paths)]
+    return [
+        (str(p), str(ep or p)) for p, ep in zip(paths, effective_paths, strict=True)
+    ]
 
 
 async def get_class_from_path(
@@ -855,7 +857,9 @@ async def process_secondary_files(
                 )
             )
             sf_specs.append(secondary_file)
-    for sf_value, sf_spec in zip(await asyncio.gather(*sf_tasks), sf_specs):
+    for sf_value, sf_spec in zip(
+        await asyncio.gather(*sf_tasks), sf_specs, strict=True
+    ):
         if sf_value is not None:
             sf_map[get_path_from_token(sf_value)] = sf_value
         else:

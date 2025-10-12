@@ -302,6 +302,7 @@ class ObjectCommandOutputProcessor(CommandOutputProcessor):
                             for v in row["processors"].values()
                         )
                     ),
+                    strict=True,
                 )
             },
         )
@@ -320,6 +321,7 @@ class ObjectCommandOutputProcessor(CommandOutputProcessor):
                             for p in self.processors.values()
                         )
                     ),
+                    strict=True,
                 )
             }
         }
@@ -361,6 +363,7 @@ class ObjectCommandOutputProcessor(CommandOutputProcessor):
                 zip(
                     token_tasks.keys(),
                     await asyncio.gather(*token_tasks.values()),
+                    strict=True,
                 )
             ),
             tag=get_tag(job.inputs.values()),
@@ -399,6 +402,7 @@ class ObjectTokenProcessor(TokenProcessor):
                             for v in row["processors"].values()
                         )
                     ),
+                    strict=True,
                 )
             },
         )
@@ -442,6 +446,7 @@ class ObjectTokenProcessor(TokenProcessor):
                             for k, v in token.value.items()
                         )
                     ),
+                    strict=True,
                 )
             )
         )

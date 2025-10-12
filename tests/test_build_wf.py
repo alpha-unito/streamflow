@@ -118,7 +118,9 @@ async def test_execute_step(context: StreamFlowContext):
     step.command.step = None
     new_step.command.step = None
     for original_processor, new_processor in zip(
-        step.output_processors.values(), new_step.output_processors.values()
+        step.output_processors.values(),
+        new_step.output_processors.values(),
+        strict=True,
     ):
         assert (
             original_processor.workflow.persistent_id
@@ -174,7 +176,7 @@ async def test_schedule_step(context: StreamFlowContext):
     check_persistent_id(workflow, new_workflow, step, new_step)
 
     for original_filter, new_filter in zip(
-        step.binding_config.filters, new_step.binding_config.filters
+        step.binding_config.filters, new_step.binding_config.filters, strict=True
     ):
         # Config are read-only so workflows can share the same
         assert original_filter.persistent_id == new_filter.persistent_id
@@ -263,6 +265,7 @@ async def test_workflow(context: StreamFlowContext, copy_strategy: str):
             cast(
                 ExecuteStep, new_workflow.steps[exec_step.name]
             ).output_processors.values(),
+            strict=True,
         ):
             assert original_processor.workflow == workflow
             assert new_processor.workflow == new_workflow

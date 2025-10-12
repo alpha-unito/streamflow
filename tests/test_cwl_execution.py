@@ -188,7 +188,9 @@ async def test_initial_workdir(
             job.output_directory, context=context, location=execution_location
         )
         files_found = [str(f) async for f in outdir.glob("*")]
-        for out_file, init_path in zip(token.value.split(" "), initial_paths):
+        for out_file, init_path in zip(
+            token.value.split(" "), initial_paths, strict=True
+        ):
             # Check whether the file has been copied to the job output directory
             files_found.remove(out_file)
             #  Check whether the command argument has the correct path

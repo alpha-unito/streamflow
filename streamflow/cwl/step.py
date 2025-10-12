@@ -208,6 +208,7 @@ async def build_token(
                                 for v in token_value.values()
                             )
                         ),
+                        strict=True,
                     )
                 ),
             )
@@ -328,6 +329,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                     for port_id in params["skip_ports"].values()
                 )
             ),
+            strict=True,
         ):
             step.add_skip_port(k, port)
         return step
@@ -542,6 +544,7 @@ class CWLExecuteStep(ExecuteStep):
                         for p in params["output_processors"].values()
                     )
                 ),
+                strict=True,
             )
         }
         if params["command"]:
@@ -667,6 +670,7 @@ class CWLTransferStep(TransferStep):
                                 for element in token_value.values()
                             )
                         ),
+                        strict=True,
                     )
                 )
         else:

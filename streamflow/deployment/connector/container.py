@@ -1459,6 +1459,7 @@ class DockerComposeConnector(DockerBaseConnector):
                         for location in locations
                     )
                 ),
+                strict=True,
             )
         }
         return {

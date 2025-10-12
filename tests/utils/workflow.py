@@ -184,7 +184,9 @@ def create_schedule_step(
         job_prefix=name_prefix,
         connector_ports={
             target.deployment.name: deploy_step.get_output_port()
-            for target, deploy_step in zip(binding_config.targets, deploy_steps)
+            for target, deploy_step in zip(
+                binding_config.targets, deploy_steps, strict=True
+            )
         },
         binding_config=binding_config,
         hardware_requirement=hardware_requirement,
@@ -365,6 +367,7 @@ async def build_token(
                                 for v in token_value.values()
                             )
                         ),
+                        strict=True,
                     )
                 ),
             )
@@ -856,6 +859,7 @@ class InjectorFailureTransferStep(TransferStep):
                                 for t in token.value.values()
                             )
                         ),
+                        strict=True,
                     )
                 ),
             )

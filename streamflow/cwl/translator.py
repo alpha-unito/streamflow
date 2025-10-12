@@ -2606,7 +2606,7 @@ class CWLTranslator:
                     )
 
                     for scatter_input, size_port in zip(
-                        scatter_inputs, size_ports_list
+                        scatter_inputs, size_ports_list, strict=True
                     ):
                         scatter_port_name = posixpath.relpath(scatter_input, step_name)
                         gather_step = workflow.create_step(

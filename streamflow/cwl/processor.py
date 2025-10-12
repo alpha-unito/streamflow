@@ -270,6 +270,7 @@ class CWLTokenProcessor(TokenProcessor):
                                     for sf in token_value["secondaryFiles"]
                                 )
                             ),
+                            strict=True,
                         )
                     )
                 else:
@@ -462,6 +463,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                         zip(
                             token_tasks.keys(),
                             await asyncio.gather(*token_tasks.values()),
+                            strict=True,
                         )
                     ),
                     tag=get_tag(job.inputs.values()),
@@ -565,6 +567,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                                 for p in globpaths.values()
                             )
                         ),
+                        strict=True,
                     )
                 ]
             # If evaluation is not needed, simply return paths as token value
@@ -791,6 +794,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                             for v in row["processors"].values()
                         )
                     ),
+                    strict=True,
                 )
             },
             expression_lib=row["expression_lib"],
@@ -822,6 +826,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                             for p in self.processors.values()
                         )
                     ),
+                    strict=True,
                 )
             ),
             tag=get_tag(job.inputs.values()),

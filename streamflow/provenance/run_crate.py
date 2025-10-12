@@ -448,6 +448,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                             for t in tokens
                         )
                     ),
+                    strict=True,
                 )
             ),
         )
@@ -1301,7 +1302,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         version: str,
     ):
         has_part = set()
-        for cwl_step, jsonld_step in zip(cwl_steps, jsonld_steps):
+        for cwl_step, jsonld_step in zip(cwl_steps, jsonld_steps, strict=True):
             step_name = streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_step.id)
             cwl_step_name = streamflow.cwl.utils.get_name(
                 prefix, cwl_prefix, cwl_step.id, preserve_cwl_prefix=True
