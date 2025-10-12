@@ -160,66 +160,75 @@ async def _process_secondary_file(
     load_listing: LoadListing | None,
     only_retrieve_from_token: bool,
 ) -> MutableMapping[str, Any] | None:
-    # If value is None, simply return None
-    if secondary_file is None:
-        return None
-    # If value is a dictionary, simply append it to the list
-    elif isinstance(secondary_file, MutableMapping):
-        filepath = get_path_from_token(secondary_file)
-        for location in locations:
-            path = StreamFlowPath(filepath, context=context, location=location)
-            if await path.exists():
-                return await get_file_token(
-                    context=context,
-                    connector=connector,
-                    cwl_version=cwl_version,
-                    locations=locations,
-                    token_class=get_token_class(secondary_file),
-                    filepath=filepath,
-                    file_format=secondary_file.get("format"),
-                    basename=secondary_file.get("basename"),
-                    load_contents=load_contents,
-                    load_listing=load_listing,
+    match secondary_file:
+        # If value is None, simply return None
+        case None:
+            return None
+        # If value is a dictionary, simply append it to the list
+        case MutableMapping():
+            filepath = get_path_from_token(secondary_file)
+            for location in locations:
+                path = StreamFlowPath(filepath, context=context, location=location)
+                if await path.exists():
+                    return await get_file_token(
+                        context=context,
+                        connector=connector,
+                        cwl_version=cwl_version,
+                        locations=locations,
+                        token_class=get_token_class(secondary_file),
+                        filepath=filepath,
+                        file_format=secondary_file.get("format"),
+                        basename=secondary_file.get("basename"),
+                        load_contents=load_contents,
+                        load_listing=load_listing,
+                    )
+            return None
+        # If value is a string
+        case str():
+            # If value doesn't come from an expression, apply it to the primary path
+            path_processor = get_path_processor(connector)
+            filepath = (
+                secondary_file
+                if from_expression
+                else _process_sf_path(
+                    path_processor, secondary_file, get_path_from_token(token_value)
                 )
-        return None
-    # If value is a string
-    else:
-        # If value doesn't come from an expression, apply it to the primary path
-        path_processor = get_path_processor(connector)
-        filepath = (
-            secondary_file
-            if from_expression
-            else _process_sf_path(
-                path_processor, secondary_file, get_path_from_token(token_value)
             )
-        )
-        if not path_processor.isabs(filepath):
-            filepath = path_processor.join(
-                path_processor.dirname(get_path_from_token(token_value)), filepath
-            )
-        if filepath not in existing_sf:
-            # If must only retrieve elements from token, return None
-            if only_retrieve_from_token:
-                return None
-            else:
-                # Search file in job locations and build token value
-                for location in locations:
-                    path = StreamFlowPath(filepath, context=context, location=location)
-                    if await path.exists():
-                        token_class = "File" if await path.is_file() else "Directory"
-                        return await get_file_token(
-                            context=context,
-                            connector=connector,
-                            cwl_version=cwl_version,
-                            locations=locations,
-                            token_class=token_class,
-                            filepath=filepath,
-                            load_contents=load_contents,
-                            load_listing=load_listing,
+            if not path_processor.isabs(filepath):
+                filepath = path_processor.join(
+                    path_processor.dirname(get_path_from_token(token_value)), filepath
+                )
+            if filepath not in existing_sf:
+                # If must only retrieve elements from token, return None
+                if only_retrieve_from_token:
+                    return None
+                else:
+                    # Search file in job locations and build token value
+                    for location in locations:
+                        path = StreamFlowPath(
+                            filepath, context=context, location=location
                         )
-                return None
-        else:
-            return existing_sf[filepath]
+                        if await path.exists():
+                            token_class = (
+                                "File" if await path.is_file() else "Directory"
+                            )
+                            return await get_file_token(
+                                context=context,
+                                connector=connector,
+                                cwl_version=cwl_version,
+                                locations=locations,
+                                token_class=token_class,
+                                filepath=filepath,
+                                load_contents=load_contents,
+                                load_listing=load_listing,
+                            )
+                    return None
+            else:
+                return existing_sf[filepath]
+        case _:
+            raise WorkflowExecutionException(
+                f"Invalid value `{secondary_file}` for a secondary file."
+            )
 
 
 def _process_sf_path(
@@ -686,21 +695,22 @@ def get_token_class(token_value: Any) -> str | None:
 
 
 def infer_type_from_token(token_value: Any) -> str:
-    if isinstance(token_value, MutableMapping):
-        return get_token_class(token_value) or "record"
-    elif isinstance(token_value, MutableSequence):
-        return "array"
-    elif isinstance(token_value, str):
-        return "string"
-    elif isinstance(token_value, bool):
-        return "boolean"
-    elif isinstance(token_value, int):
-        return "long"
-    elif isinstance(token_value, float):
-        return "double"
-    else:
-        # Could not infer token type: mark as Any
-        return "Any"
+    match token_value:
+        case MutableMapping():
+            return get_token_class(token_value) or "record"
+        case MutableSequence():
+            return "array"
+        case str():
+            return "string"
+        case bool():
+            return "boolean"
+        case int():
+            return "long"
+        case float():
+            return "double"
+        case _:
+            # Could not infer token type: mark as Any
+            return "Any"
 
 
 def is_expression(expression: Any) -> bool:
@@ -968,42 +978,46 @@ def remap_path(
 def remap_token_value(
     path_processor: ModuleType, old_dir: str, new_dir: str, value: Any
 ) -> Any:
-    if isinstance(value, MutableSequence):
-        return [remap_token_value(path_processor, old_dir, new_dir, v) for v in value]
-    elif isinstance(value, MutableMapping):
-        if get_token_class(value) in ["File", "Directory"]:
-            if "location" in value:
-                value["location"] = remap_path(
-                    path_processor=path_processor,
-                    path=value["location"],
-                    old_dir=old_dir,
-                    new_dir=new_dir,
-                )
-            if "path" in value:
-                value["path"] = remap_path(
-                    path_processor=path_processor,
-                    path=value["path"],
-                    old_dir=old_dir,
-                    new_dir=new_dir,
-                )
-            if "secondaryFiles" in value:
-                value["secondaryFiles"] = [
-                    remap_token_value(path_processor, old_dir, new_dir, sf)
-                    for sf in value["secondaryFiles"]
-                ]
-            if "listing" in value:
-                value["listing"] = [
-                    remap_token_value(path_processor, old_dir, new_dir, sf)
-                    for sf in value["listing"]
-                ]
+    match value:
+        case MutableSequence():
+            return [
+                remap_token_value(path_processor, old_dir, new_dir, v) for v in value
+            ]
+        case MutableMapping():
+            match get_token_class(value):
+                case "File" | "Directory":
+                    if "location" in value:
+                        value["location"] = remap_path(
+                            path_processor=path_processor,
+                            path=value["location"],
+                            old_dir=old_dir,
+                            new_dir=new_dir,
+                        )
+                    if "path" in value:
+                        value["path"] = remap_path(
+                            path_processor=path_processor,
+                            path=value["path"],
+                            old_dir=old_dir,
+                            new_dir=new_dir,
+                        )
+                    if "secondaryFiles" in value:
+                        value["secondaryFiles"] = [
+                            remap_token_value(path_processor, old_dir, new_dir, sf)
+                            for sf in value["secondaryFiles"]
+                        ]
+                    if "listing" in value:
+                        value["listing"] = [
+                            remap_token_value(path_processor, old_dir, new_dir, sf)
+                            for sf in value["listing"]
+                        ]
+                    return value
+                case _:
+                    return {
+                        k: remap_token_value(path_processor, old_dir, new_dir, v)
+                        for k, v in value.items()
+                    }
+        case _:
             return value
-        else:
-            return {
-                k: remap_token_value(path_processor, old_dir, new_dir, v)
-                for k, v in value.items()
-            }
-    else:
-        return value
 
 
 def resolve_dependencies(

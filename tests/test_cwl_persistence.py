@@ -213,55 +213,56 @@ async def test_cwl_command(context: StreamFlowContext, processor_t: str):
     )
     job_port = workflow.create_port(JobPort)
     await workflow.save(context)
-    if processor_t == "none":
-        processors = None
-    elif processor_t == "primitive":
-        processors = [
-            _create_cwl_command_token_processor(
-                expression=DoubleQuotedScalarString("60")
-            ),
-            _create_cwl_command_token_processor(
-                expression=LiteralScalarString("${ return 10 + 20 - (5 * 4) }")
-            ),
-        ]
-    elif processor_t == "map":
-        processors = [
-            get_full_instantiation(
-                cls_=CWLMapCommandTokenProcessor,
-                name="test1",
-                processor=_create_cwl_command_token_processor(expression="z"),
-            ),
-            get_full_instantiation(
-                cls_=CWLMapCommandTokenProcessor,
-                name="test2",
-                processor=_create_cwl_command_token_processor(expression="xy"),
-            ),
-        ]
-    elif processor_t == "object":
-        processors = [
-            get_full_instantiation(
-                cls_=CWLObjectCommandTokenProcessor,
-                name="test",
-                processors={
-                    "a": _create_cwl_command_token_processor(expression=10),
-                    "b": _create_cwl_command_token_processor(expression=234),
-                },
-            )
-        ]
-    elif processor_t == "union":
-        processors = [
-            get_full_instantiation(
-                cls_=UnionCommandTokenProcessor,
-                name="test",
-                processors=[
-                    _create_cwl_command_token_processor(expression="qwerty"),
-                    _create_cwl_command_token_processor(expression=987),
-                    _create_cwl_command_token_processor(expression="qaz"),
-                ],
-            )
-        ]
-    else:
-        raise Exception(f"Unknown processor type: {processor_t}")
+    match processor_t:
+        case "none":
+            processors = None
+        case "primitive":
+            processors = [
+                _create_cwl_command_token_processor(
+                    expression=DoubleQuotedScalarString("60")
+                ),
+                _create_cwl_command_token_processor(
+                    expression=LiteralScalarString("${ return 10 + 20 - (5 * 4) }")
+                ),
+            ]
+        case "map":
+            processors = [
+                get_full_instantiation(
+                    cls_=CWLMapCommandTokenProcessor,
+                    name="test1",
+                    processor=_create_cwl_command_token_processor(expression="z"),
+                ),
+                get_full_instantiation(
+                    cls_=CWLMapCommandTokenProcessor,
+                    name="test2",
+                    processor=_create_cwl_command_token_processor(expression="xy"),
+                ),
+            ]
+        case "object":
+            processors = [
+                get_full_instantiation(
+                    cls_=CWLObjectCommandTokenProcessor,
+                    name="test",
+                    processors={
+                        "a": _create_cwl_command_token_processor(expression=10),
+                        "b": _create_cwl_command_token_processor(expression=234),
+                    },
+                )
+            ]
+        case "union":
+            processors = [
+                get_full_instantiation(
+                    cls_=UnionCommandTokenProcessor,
+                    name="test",
+                    processors=[
+                        _create_cwl_command_token_processor(expression="qwerty"),
+                        _create_cwl_command_token_processor(expression=987),
+                        _create_cwl_command_token_processor(expression="qaz"),
+                    ],
+                )
+            ]
+        case _:
+            raise Exception(f"Unknown processor type: {processor_t}")
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
@@ -320,49 +321,50 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
     workflow.steps[step.name] = step
 
     if output_type != "no_output":
-        if output_type == "default":
-            processor = None
-        elif output_type == "primitive":
-            processor = _create_cwl_command_output_processor(
-                name=utils.random_name(), workflow=workflow
-            )
-        elif output_type == "object":
-            processor = get_full_instantiation(
-                cls_=CWLObjectCommandOutputProcessor,
-                name=utils.random_name(),
-                workflow=workflow,
-                processors={
-                    "attr_a": _create_cwl_command_output_processor(
-                        name=utils.random_name(), workflow=workflow
-                    ),
-                },
-                expression_lib=["a", "b"],
-                full_js=True,
-                output_eval="$(1 == 1)",
-                target=LocalTarget("/shared"),
-            )
-        elif output_type == "union":
-            inner_p = _create_cwl_command_output_processor(
-                name=utils.random_name(), workflow=workflow
-            )
-            processor = get_full_instantiation(
-                cls_=UnionCommandOutputProcessor,
-                name=utils.random_name(),
-                workflow=workflow,
-                processors=[
-                    get_full_instantiation(
-                        cls_=PopCommandOutputProcessor,
-                        name=utils.random_name(),
-                        workflow=workflow,
-                        processor=inner_p,
-                        target=LocalTarget("/shared"),
-                    ),
-                    inner_p,
-                ],
-                target=LocalTarget("/shared"),
-            )
-        else:
-            raise Exception(f"Unknown output type: {output_type}")
+        match output_type:
+            case "default":
+                processor = None
+            case "primitive":
+                processor = _create_cwl_command_output_processor(
+                    name=utils.random_name(), workflow=workflow
+                )
+            case "object":
+                processor = get_full_instantiation(
+                    cls_=CWLObjectCommandOutputProcessor,
+                    name=utils.random_name(),
+                    workflow=workflow,
+                    processors={
+                        "attr_a": _create_cwl_command_output_processor(
+                            name=utils.random_name(), workflow=workflow
+                        ),
+                    },
+                    expression_lib=["a", "b"],
+                    full_js=True,
+                    output_eval="$(1 == 1)",
+                    target=LocalTarget("/shared"),
+                )
+            case "union":
+                inner_p = _create_cwl_command_output_processor(
+                    name=utils.random_name(), workflow=workflow
+                )
+                processor = get_full_instantiation(
+                    cls_=UnionCommandOutputProcessor,
+                    name=utils.random_name(),
+                    workflow=workflow,
+                    processors=[
+                        get_full_instantiation(
+                            cls_=PopCommandOutputProcessor,
+                            name=utils.random_name(),
+                            workflow=workflow,
+                            processor=inner_p,
+                            target=LocalTarget("/shared"),
+                        ),
+                        inner_p,
+                    ],
+                    target=LocalTarget("/shared"),
+                )
+            case _:
+                raise Exception(f"Unknown output type: {output_type}")
         step.add_output_port("my_output", port, processor)
     await save_load_and_test(step, context)
 
@@ -444,43 +446,44 @@ async def test_cwl_token_transformer(context: StreamFlowContext, processor_t: st
         workflow.format_graph = Graph()
     await workflow.save(context)
 
-    if processor_t == "primitive":
-        processor = _create_cwl_token_processor(port.name, workflow)
-    elif processor_t == "map":
-        processor = get_full_instantiation(
-            cls_=MapTokenProcessor,
-            name=port.name,
-            workflow=workflow,
-            processor=_create_cwl_token_processor(port.name, workflow),
-        )
-    elif processor_t == "object":
-        processor = get_full_instantiation(
-            cls_=ObjectTokenProcessor,
-            name=port.name,
-            workflow=workflow,
-            processors={
-                f"p_{i}": _create_cwl_token_processor(port.name, workflow)
-                for i in range(2)
-            },
-        )
-    elif processor_t == "union" or processor_t == "optional":
-        processor = get_full_instantiation(
-            cls_=UnionTokenProcessor,
-            name=port.name,
-            workflow=workflow,
-            processors=[
-                (
-                    get_full_instantiation(
-                        cls_=NullTokenProcessor, name=port.name, workflow=workflow
+    match processor_t:
+        case "primitive":
+            processor = _create_cwl_token_processor(port.name, workflow)
+        case "map":
+            processor = get_full_instantiation(
+                cls_=MapTokenProcessor,
+                name=port.name,
+                workflow=workflow,
+                processor=_create_cwl_token_processor(port.name, workflow),
+            )
+        case "object":
+            processor = get_full_instantiation(
+                cls_=ObjectTokenProcessor,
+                name=port.name,
+                workflow=workflow,
+                processors={
+                    f"p_{i}": _create_cwl_token_processor(port.name, workflow)
+                    for i in range(2)
+                },
+            )
+        case "union" | "optional":
+            processor = get_full_instantiation(
+                cls_=UnionTokenProcessor,
+                name=port.name,
+                workflow=workflow,
+                processors=[
+                    (
+                        get_full_instantiation(
+                            cls_=NullTokenProcessor, name=port.name, workflow=workflow
+                        )
+                        if i == 0 and processor_t == "optional"
+                        else _create_cwl_token_processor(port.name, workflow)
                     )
-                    if i == 0 and processor_t == "optional"
-                    else _create_cwl_token_processor(port.name, workflow)
-                )
-                for i in range(2)
-            ],
-        )
-    else:
-        raise Exception(f"Unknown processor type: {processor_t}")
+                    for i in range(2)
+                ],
+            )
+        case _:
+            raise Exception(f"Unknown processor type: {processor_t}")
     step = get_full_instantiation(
         cls_=CWLTokenTransformer,
         name=utils.random_name() + "-transformer",

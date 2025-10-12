@@ -83,12 +83,13 @@ def _is_parent_tag(tag: str, parent: str) -> bool:
 def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
     num_skipped = 0
     for status in statuses:
-        if status == Status.FAILED:
-            return Status.FAILED
-        elif status == Status.CANCELLED:
-            return Status.CANCELLED
-        elif status == Status.SKIPPED:
-            num_skipped += 1
+        match status:
+            case Status.FAILED:
+                return Status.FAILED
+            case Status.CANCELLED:
+                return Status.CANCELLED
+            case Status.SKIPPED:
+                num_skipped += 1
     if num_skipped == len(statuses):
         return Status.SKIPPED
     else:

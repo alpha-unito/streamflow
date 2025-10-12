@@ -41,10 +41,14 @@ if TYPE_CHECKING:
 
 
 async def _async_ext(args: argparse.Namespace) -> None:
-    if args.ext_context == "list":
-        list_extensions(args.name, args.type)
-    elif args.ext_context == "show":
-        show_extension(args.name, args.type)
+    match args.ext_context:
+        case "list":
+            list_extensions(args.name, args.type)
+        case "show":
+            show_extension(args.name, args.type)
+        case _:
+            parser.print_help(file=sys.stderr)
+            raise SystemExit(1)
 
 
 async def _async_list(args: argparse.Namespace) -> None:
@@ -98,10 +102,14 @@ async def _async_list(args: argparse.Namespace) -> None:
 
 
 async def _async_plugin(args: argparse.Namespace) -> None:
-    if args.plugin_context == "list":
-        list_plugins()
-    elif args.plugin_context == "show":
-        show_plugin(args.plugin)
+    match args.plugin_context:
+        case "list":
+            list_plugins()
+        case "show":
+            show_plugin(args.plugin)
+        case _:
+            parser.print_help(file=sys.stderr)
+            raise SystemExit(1)
 
 
 async def _async_prov(args: argparse.Namespace) -> None:
@@ -244,40 +252,41 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
 def main(args: Sequence[str]) -> int:
     try:
         parsed_args = parser.parse_args(args)
-        if parsed_args.context == "ext":
-            asyncio.run(_async_ext(parsed_args))
-        elif parsed_args.context == "list":
-            asyncio.run(_async_list(parsed_args))
-        elif parsed_args.context == "plugin":
-            asyncio.run(_async_plugin(parsed_args))
-        elif parsed_args.context == "prov":
-            asyncio.run(_async_prov(parsed_args))
-        elif parsed_args.context == "report":
-            asyncio.run(_async_report(parsed_args))
-        elif parsed_args.context == "run":
-            if parsed_args.quiet:
-                logger.setLevel(logging.WARNING)
-            elif parsed_args.debug:
-                logger.setLevel(logging.DEBUG)
-            if (
-                parsed_args.color
-                and hasattr(sys.stdout, "isatty")
-                and sys.stdout.isatty()
-            ):
-                colored_stream_handler = logging.StreamHandler()
-                colored_stream_handler.setFormatter(CustomFormatter())
-                logger.handlers = []
-                logger.addHandler(colored_stream_handler)
-                logger.addFilter(HighlitingFilter())
-            asyncio.run(_async_run(parsed_args))
-        elif parsed_args.context == "schema":
-            load_extensions()
-            print(SfSchema().dump(parsed_args.version, parsed_args.pretty))
-        elif parsed_args.context == "version":
-            print(f"StreamFlow version {VERSION}")
-        else:
-            parser.print_help(file=sys.stderr)
-            return 1
+        match parsed_args.context:
+            case "ext":
+                asyncio.run(_async_ext(parsed_args))
+            case "list":
+                asyncio.run(_async_list(parsed_args))
+            case "plugin":
+                asyncio.run(_async_plugin(parsed_args))
+            case "prov":
+                asyncio.run(_async_prov(parsed_args))
+            case "report":
+                asyncio.run(_async_report(parsed_args))
+            case "run":
+                if parsed_args.quiet:
+                    logger.setLevel(logging.WARNING)
+                elif parsed_args.debug:
+                    logger.setLevel(logging.DEBUG)
+                if (
+                    parsed_args.color
+                    and hasattr(sys.stdout, "isatty")
+                    and sys.stdout.isatty()
+                ):
+                    colored_stream_handler = logging.StreamHandler()
+                    colored_stream_handler.setFormatter(CustomFormatter())
+                    logger.handlers = []
+                    logger.addHandler(colored_stream_handler)
+                    logger.addFilter(HighlitingFilter())
+                asyncio.run(_async_run(parsed_args))
+            case "schema":
+                load_extensions()
+                print(SfSchema().dump(parsed_args.version, parsed_args.pretty))
+            case "version":
+                print(f"StreamFlow version {VERSION}")
+            case _:
+                parser.print_help(file=sys.stderr)
+                return 1
         return 0
     except SystemExit as se:
         if se.code != 0:

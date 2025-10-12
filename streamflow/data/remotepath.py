@@ -367,6 +367,11 @@ class LocalStreamFlowPath(
         else:
             return super().parents
 
+    async def read_text(self, n=-1, encoding=None, errors=None) -> str:
+        encoding = io.text_encoding(encoding)
+        with self.open(mode="r", encoding=encoding, errors=errors) as f:
+            return f.read(n)
+
     async def resolve(self, strict=False) -> LocalStreamFlowPath | None:
         if await self.exists():
             return self.with_segments(super().resolve(strict=strict))

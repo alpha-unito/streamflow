@@ -614,51 +614,55 @@ def _create_list_merger(
         input_port_name = _get_source_name(input_port_name)
         combinator.add_input_port(input_port_name, port)
         combinator.combinator.add_item(input_port_name)
-    if pick_value == "first_non_null":
-        combinator.add_output_port(output_port_name, workflow.create_port())
-        transformer = workflow.create_step(
-            cls=FirstNonNullTransformer, name=name + "-transformer"
-        )
-        transformer.add_input_port(output_port_name, combinator.get_output_port())
-        transformer.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return transformer
-    elif pick_value == "the_only_non_null":
-        combinator.add_output_port(output_port_name, workflow.create_port())
-        transformer = workflow.create_step(
-            cls=OnlyNonNullTransformer, name=name + "-transformer"
-        )
-        transformer.add_input_port(output_port_name, combinator.get_output_port())
-        transformer.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return transformer
-    elif pick_value == "all_non_null":
-        combinator.add_output_port(output_port_name, workflow.create_port())
-        transformer = workflow.create_step(
-            cls=AllNonNullTransformer, name=name + "-transformer"
-        )
-        transformer.add_input_port(output_port_name, combinator.get_output_port())
-        transformer.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return transformer
-    elif link_merge is None:
-        combinator.add_output_port(output_port_name, workflow.create_port())
-        list_to_element = workflow.create_step(
-            cls=ListToElementTransformer, name=name + "-list-to-element"
-        )
-        list_to_element.add_input_port(output_port_name, combinator.get_output_port())
-        list_to_element.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return list_to_element
-    else:
-        combinator.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return combinator
+    match pick_value:
+        case "first_non_null":
+            combinator.add_output_port(output_port_name, workflow.create_port())
+            transformer = workflow.create_step(
+                cls=FirstNonNullTransformer, name=name + "-transformer"
+            )
+            transformer.add_input_port(output_port_name, combinator.get_output_port())
+            transformer.add_output_port(
+                output_port_name, output_port or workflow.create_port()
+            )
+            return transformer
+        case "the_only_non_null":
+            combinator.add_output_port(output_port_name, workflow.create_port())
+            transformer = workflow.create_step(
+                cls=OnlyNonNullTransformer, name=name + "-transformer"
+            )
+            transformer.add_input_port(output_port_name, combinator.get_output_port())
+            transformer.add_output_port(
+                output_port_name, output_port or workflow.create_port()
+            )
+            return transformer
+        case "all_non_null":
+            combinator.add_output_port(output_port_name, workflow.create_port())
+            transformer = workflow.create_step(
+                cls=AllNonNullTransformer, name=name + "-transformer"
+            )
+            transformer.add_input_port(output_port_name, combinator.get_output_port())
+            transformer.add_output_port(
+                output_port_name, output_port or workflow.create_port()
+            )
+            return transformer
+        case _:
+            if link_merge is None:
+                combinator.add_output_port(output_port_name, workflow.create_port())
+                list_to_element = workflow.create_step(
+                    cls=ListToElementTransformer, name=name + "-list-to-element"
+                )
+                list_to_element.add_input_port(
+                    output_port_name, combinator.get_output_port()
+                )
+                list_to_element.add_output_port(
+                    output_port_name, output_port or workflow.create_port()
+                )
+                return list_to_element
+            else:
+                combinator.add_output_port(
+                    output_port_name, output_port or workflow.create_port()
+                )
+                return combinator
 
 
 def _create_loop_condition(
