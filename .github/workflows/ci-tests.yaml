@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04" ]
-        python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
+        python: [ "3.9", "3.10", "3.11", "3.12", "3.13", "3.14" ]
         version: [ "v1.0", "v1.1", "v1.2", "v1.3" ]
         docker: [ "docker" ]
         include:
@@ -47,16 +47,16 @@ jobs:
             commit: "6228fa63819f909e797f834cfd0af8b461ee63ec"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
             on: "ubuntu-24.04"
-            python: "3.13"
+            python: "3.14"
             version: "v1.3"
           - docker: "kubernetes"
             commit: "6228fa63819f909e797f834cfd0af8b461ee63ec"
             exclude: "docker_entrypoint,modify_file_content"
             on: "ubuntu-24.04"
-            python: "3.13"
+            python: "3.14"
             version: "v1.3"
           - on: "macos-13"
-            python: "3.13"
+            python: "3.14"
             commit: "6228fa63819f909e797f834cfd0af8b461ee63ec"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
@@ -151,7 +151,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: 3.13
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             docs/requirements.txt
@@ -216,7 +216,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -233,10 +233,10 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04"]
-        python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
+        python: [ "3.9", "3.10", "3.11", "3.12", "3.13", "3.14" ]
         include:
           - on: "macos-13"
-            python: "3.13"
+            python: "3.14"
     runs-on: ${{ matrix.on }}
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
