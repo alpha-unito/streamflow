@@ -221,7 +221,7 @@ class classinstancemethod(classmethod):
 class __LegacyStreamFlowPath(StreamFlowPath, ABC):
 
     @classinstancemethod
-    def _from_parts(self, args, init=sys.version_info < (3, 10)) -> StreamFlowPath:
+    def _from_parts(self, args) -> StreamFlowPath:
         obj = (
             object.__new__(self)
             if isinstance(self, type)
@@ -234,8 +234,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         obj._drv = drv
         obj._root = root
         obj._parts = parts
-        if init:
-            obj._init()
         return obj
 
     @classinstancemethod
@@ -244,7 +242,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         drv,
         root,
         parts,
-        init=sys.version_info < (3, 10),
     ):
         obj = (
             object.__new__(self)
@@ -257,8 +254,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         obj._drv = drv
         obj._root = root
         obj._parts = parts
-        if init:
-            obj._init()
         return obj
 
     def _scandir(self):
@@ -373,8 +368,7 @@ class LocalStreamFlowPath(
             return super().parents
 
     async def read_text(self, n=-1, encoding=None, errors=None) -> str:
-        if sys.version_info >= (3, 10):
-            encoding = io.text_encoding(encoding)
+        encoding = io.text_encoding(encoding)
         with self.open(mode="r", encoding=encoding, errors=errors) as f:
             return f.read(n)
 
@@ -871,5 +865,6 @@ async def get_storage_usages(
                     for storage in hardware.storage.values()
                 )
             ),
+            strict=True,
         )
     )

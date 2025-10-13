@@ -221,6 +221,7 @@ class ObjectToken(Token):
                             for v in row["value"].values()
                         )
                     ),
+                    strict=True,
                 )
             ),
         )

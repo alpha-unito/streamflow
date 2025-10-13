@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04" ]
-        python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
+        python: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
         version: [ "v1.0", "v1.1", "v1.2", "v1.3" ]
         docker: [ "docker" ]
         include:
@@ -47,16 +47,16 @@ jobs:
             commit: "708386903a2a50e5666baa493f2b8e7daaa796ee"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
             on: "ubuntu-24.04"
-            python: "3.13"
+            python: "3.14"
             version: "v1.3"
           - docker: "kubernetes"
             commit: "708386903a2a50e5666baa493f2b8e7daaa796ee"
             exclude: "docker_entrypoint,modify_file_content"
             on: "ubuntu-24.04"
-            python: "3.13"
+            python: "3.14"
             version: "v1.3"
           - on: "macos-13"
-            python: "3.13"
+            python: "3.14"
             commit: "708386903a2a50e5666baa493f2b8e7daaa796ee"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
@@ -151,7 +151,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: 3.13
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             docs/requirements.txt
@@ -161,7 +161,7 @@ jobs:
           python -m pip install .
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "421b1b0076e452ed821b7f129d52f5878cb8fa14170685a5c15575582201c8b2"
+          CHECKSUM: "47721124c7689e9138ec656aecb30367fe9571fc088748e8b802df4aba5ba465"
         run: |
           cd docs
           HASH="$(make checksum | tail -n1)"
@@ -216,7 +216,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -233,10 +233,10 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04"]
-        python: [ "3.9", "3.10", "3.11", "3.12", "3.13" ]
+        python: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
         include:
           - on: "macos-13"
-            python: "3.13"
+            python: "3.14"
     runs-on: ${{ matrix.on }}
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}

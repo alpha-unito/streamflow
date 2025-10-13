@@ -328,7 +328,7 @@ async def test_inject_remote_input(
         )
         assert len(wf_files) == 2
 
-    for remote_file, wf_file in zip(remote_files, wf_files):
+    for remote_file, wf_file in zip(remote_files, wf_files, strict=True):
         assert wf_file["basename"] == os.path.basename(remote_file[0])
         assert wf_file.get("checksum", wf_file["class"]) == remote_file[1]
 
@@ -413,7 +413,7 @@ async def test_gather_order(context: StreamFlowContext) -> None:
     assert isinstance(output_port.token_list[1], TerminationToken)
     assert len(output_port.token_list[0].value) == list_size
     prev_tag = None
-    for token, i in zip(output_port.token_list[0].value, values):
+    for token, i in zip(output_port.token_list[0].value, values, strict=True):
         assert token.value == i
         if prev_tag is None:
             assert token.tag == "0.0"

@@ -68,29 +68,31 @@ from streamflow.workflow.utils import get_job_token, get_token_value
 def _adjust_cwl_output(
     base_path: StreamFlowPath, job_name: str, path_processor: ModuleType, value: Any
 ) -> Any:
-    if isinstance(value, MutableSequence):
-        return [
-            _adjust_cwl_output(base_path, job_name, path_processor, v) for v in value
-        ]
-    elif isinstance(value, MutableMapping):
-        if utils.get_token_class(value) in ["File", "Directory"]:
-            if (path := utils.get_path_from_token(value)) is None:
-                raise WorkflowExecutionException(
-                    f"Job {job_name} cannot retrieve output. "
-                    f"The value should be a file, but the path field is not defined."
-                )
-            elif not path_processor.isabs(path):
-                path = base_path / path
-                value["path"] = path
-                value["location"] = f"file://{path}"
+    match value:
+        case MutableSequence():
+            return [
+                _adjust_cwl_output(base_path, job_name, path_processor, v)
+                for v in value
+            ]
+        case MutableMapping():
+            if utils.get_token_class(value) in ["File", "Directory"]:
+                if (path := utils.get_path_from_token(value)) is None:
+                    raise WorkflowExecutionException(
+                        f"Job {job_name} cannot retrieve output. "
+                        f"The value should be a file, but the path field is not defined."
+                    )
+                elif not path_processor.isabs(path):
+                    path = base_path / path
+                    value["path"] = path
+                    value["location"] = f"file://{path}"
+                return value
+            else:
+                return {
+                    k: _adjust_cwl_output(base_path, job_name, path_processor, v)
+                    for k, v in value.items()
+                }
+        case _:
             return value
-        else:
-            return {
-                k: _adjust_cwl_output(base_path, job_name, path_processor, v)
-                for k, v in value.items()
-            }
-    else:
-        return value
 
 
 def _adjust_input(
@@ -113,47 +115,50 @@ def _adjust_input(
     :param dst_path: The destination path that will replace `src_path` in the input values.
     :return: True if the adjustment is successful; False if `src_path` is not found.
     """
-    if isinstance(input_, MutableMapping):
-        # Process the input if it is a file or an object
-        if (token_class := utils.get_token_class(input_)) in ("File", "Directory"):
-            if (path := utils.get_path_from_token(input_)) is None:
-                raise WorkflowExecutionException(
-                    f"Job {job_name} cannot adjust the input. "
-                    "The value should be a file, but the path field is not defined."
-                )
-            elif path == src_path:
-                input_["path"] = dst_path
-                dirname, basename = path_processor.split(dst_path)
-                input_["dirname"] = dirname
-                input_["basename"] = basename
-                input_["location"] = f"file://{dst_path}"
-                if token_class == "File":  # nosec
-                    nameroot, nameext = path_processor.splitext(basename)
-                    input_["nameroot"] = nameroot
-                    input_["nameext"] = nameext
-                for ins in input_.get("listing", ()):
-                    _adjust_input(
-                        job_name,
-                        ins,
-                        path_processor,
-                        ins["path"],
-                        path_processor.join(
-                            dst_path, path_processor.basename(ins["path"])
-                        ),
+    match input_:
+        case MutableMapping():
+            # Process the input if it is a file or an object
+            if (token_class := utils.get_token_class(input_)) in ("File", "Directory"):
+                if (path := utils.get_path_from_token(input_)) is None:
+                    raise WorkflowExecutionException(
+                        f"Job {job_name} cannot adjust the input. "
+                        "The value should be a file, but the path field is not defined."
                     )
-                return True
-            elif src_path.startswith(path) and "listing" in input_:
-                for inp in input_["listing"]:
+                elif path == src_path:
+                    input_["path"] = dst_path
+                    dirname, basename = path_processor.split(dst_path)
+                    input_["dirname"] = dirname
+                    input_["basename"] = basename
+                    input_["location"] = f"file://{dst_path}"
+                    if token_class == "File":  # nosec
+                        nameroot, nameext = path_processor.splitext(basename)
+                        input_["nameroot"] = nameroot
+                        input_["nameext"] = nameext
+                    for ins in input_.get("listing", ()):
+                        _adjust_input(
+                            job_name,
+                            ins,
+                            path_processor,
+                            ins["path"],
+                            path_processor.join(
+                                dst_path, path_processor.basename(ins["path"])
+                            ),
+                        )
+                    return True
+                elif src_path.startswith(path) and "listing" in input_:
+                    for inp in input_["listing"]:
+                        if _adjust_input(
+                            job_name, inp, path_processor, src_path, dst_path
+                        ):
+                            return True
+            else:
+                for inp in input_.values():
                     if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
                         return True
-        else:
-            for inp in input_.values():
+        case MutableSequence():
+            for inp in input_:
                 if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
                     return True
-    elif isinstance(input_, MutableSequence):
-        for inp in input_:
-            if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
-                return True
     return False
 
 
@@ -183,39 +188,42 @@ def _adjust_inputs(
 def _build_command_output_processor(
     name: str, step: Step, value: Any
 ) -> CommandOutputProcessor:
-    if isinstance(value, MutableSequence):
-        return MapCommandOutputProcessor(
-            name=name,
-            workflow=cast(CWLWorkflow, step.workflow),
-            processor=UnionCommandOutputProcessor(
+    match value:
+        case MutableSequence():
+            return MapCommandOutputProcessor(
                 name=name,
                 workflow=cast(CWLWorkflow, step.workflow),
-                processors=[
-                    _build_command_output_processor(name=name, step=step, value=v)
-                    for v in value
-                ],
-            ),
-        )
-    elif isinstance(value, MutableMapping):
-        if (token_type := utils.get_token_class(value)) in ["File", "Directory"]:
-            return CWLCommandOutputProcessor(
-                name=name,
-                workflow=cast(CWLWorkflow, step.workflow),
-                token_type=token_type,  # nosec
+                processor=UnionCommandOutputProcessor(
+                    name=name,
+                    workflow=cast(CWLWorkflow, step.workflow),
+                    processors=[
+                        _build_command_output_processor(name=name, step=step, value=v)
+                        for v in value
+                    ],
+                ),
             )
-        else:
-            return CWLObjectCommandOutputProcessor(
-                name=name,
-                workflow=cast(CWLWorkflow, step.workflow),
-                processors={
-                    k: _build_command_output_processor(name=name, step=step, value=v)
-                    for k, v in value.items()
-                },
+        case MutableMapping():
+            if (token_type := utils.get_token_class(value)) in ["File", "Directory"]:
+                return CWLCommandOutputProcessor(
+                    name=name,
+                    workflow=cast(CWLWorkflow, step.workflow),
+                    token_type=token_type,  # nosec
+                )
+            else:
+                return CWLObjectCommandOutputProcessor(
+                    name=name,
+                    workflow=cast(CWLWorkflow, step.workflow),
+                    processors={
+                        k: _build_command_output_processor(
+                            name=name, step=step, value=v
+                        )
+                        for k, v in value.items()
+                    },
+                )
+        case _:
+            return CWLCommandOutputProcessor(  # nosec
+                name=name, workflow=cast(CWLWorkflow, step.workflow), token_type="Any"
             )
-    else:
-        return CWLCommandOutputProcessor(  # nosec
-            name=name, workflow=cast(CWLWorkflow, step.workflow), token_type="Any"
-        )
 
 
 async def _check_cwl_output(job: Job, step: Step, result: Any) -> Any:
@@ -304,20 +312,23 @@ async def _get_source_location(
 
 
 def _get_value_for_command(token: Any, item_separator: str | None) -> Any:
-    if isinstance(token, MutableSequence):
-        value = [_get_value_for_command(element, item_separator) for element in token]
-        if value and item_separator is not None:
-            return item_separator.join([_get_value_repr(v) for v in value])
-        return value or None
-    elif isinstance(token, MutableMapping):
-        if (path := utils.get_path_from_token(token)) is not None:
-            return path
-        else:
-            raise WorkflowExecutionException(
-                "Unsupported value " + str(token) + " from expression"
-            )
-    else:
-        return token
+    match token:
+        case MutableSequence():
+            value = [
+                _get_value_for_command(element, item_separator) for element in token
+            ]
+            if value and item_separator is not None:
+                return item_separator.join([_get_value_repr(v) for v in value])
+            return value or None
+        case MutableMapping():
+            if (path := utils.get_path_from_token(token)) is not None:
+                return path
+            else:
+                raise WorkflowExecutionException(
+                    "Unsupported value " + str(token) + " from expression"
+                )
+        case _:
+            return token
 
 
 def _get_value_repr(value: Any) -> str:
@@ -332,29 +343,35 @@ def _get_value_repr(value: Any) -> str:
 
 
 def _merge_tokens(token: CommandToken) -> Any:
-    if isinstance(token, ListCommandToken):
-        return [_merge_tokens(t) for t in token.value if t is not None]
-    elif isinstance(token, ObjectCommandToken):
-        tokens = sorted(
-            filter(
-                lambda t: t.position is not None,
-                flatten_list(
-                    [_merge_tokens(t) for t in token.value.values() if t is not None]
+    match token:
+        case ListCommandToken():
+            return [_merge_tokens(t) for t in token.value if t is not None]
+        case ObjectCommandToken():
+            tokens = sorted(
+                filter(
+                    lambda t: t.position is not None,
+                    flatten_list(
+                        [
+                            _merge_tokens(t)
+                            for t in token.value.values()
+                            if t is not None
+                        ]
+                    ),
                 ),
-            ),
-            key=lambda t: (
-                [t.position, t.name] if t.name is not None else [t.position]
-            ),
-        )
-        return tokens or [
-            CommandToken(name=token.name, position=token.position, value="")
-        ]
-    elif token is None:
-        return None
-    elif isinstance(token.value, CommandToken):
-        return [_merge_tokens(token.value)]
-    else:
-        return [token]
+                key=lambda t: (
+                    [t.position, t.name] if t.name is not None else [t.position]
+                ),
+            )
+            return tokens or [
+                CommandToken(name=token.name, position=token.position, value="")
+            ]
+        case None:
+            return None
+        case _:
+            if isinstance(token.value, CommandToken):
+                return [_merge_tokens(token.value)]
+            else:
+                return [token]
 
 
 async def _prepare_work_dir(
@@ -380,242 +397,247 @@ async def _prepare_work_dir(
         )
     else:
         listing = element
-    # If listing is a list, each of its elements must be processed independently
-    if isinstance(listing, MutableSequence):
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    _prepare_work_dir(
-                        element=el,
-                        options=options,
-                        base_path=base_path,
+    match listing:
+        # If listing is a list, each of its elements must be processed independently
+        case MutableSequence():
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        _prepare_work_dir(
+                            element=el,
+                            options=options,
+                            base_path=base_path,
+                            writable=writable,
+                        )
+                    )
+                    for el in listing
+                )
+            )
+        # If listing is a dictionary, it could be a File, a Directory, a Dirent or some other object
+        case MutableMapping():
+            # If it is a File or Directory element, put the corresponding file in the output directory
+            if (listing_class := utils.get_token_class(listing)) in [
+                "File",
+                "Directory",
+            ]:
+                # If a compatible source location exists, simply transfer data
+                if (src_path := utils.get_path_from_token(listing)) is not None and (
+                    selected_location := await _get_source_location(
+                        src_path,
+                        options.job.input_directory,
+                        connector,
+                        options.step.workflow,
+                    )
+                ):
+                    dst_path = dst_path or path_processor.join(
+                        base_path, path_processor.basename(src_path)
+                    )
+                    await context.data_manager.transfer_data(
+                        src_location=selected_location.location,
+                        src_path=selected_location.path,
+                        dst_locations=locations,
+                        dst_path=dst_path,
                         writable=writable,
                     )
-                )
-                for el in listing
-            )
-        )
-    # If listing is a dictionary, it could be a File, a Directory, a Dirent or some other object
-    elif isinstance(listing, MutableMapping):
-        # If it is a File or Directory element, put the corresponding file in the output directory
-        if (listing_class := utils.get_token_class(listing)) in [
-            "File",
-            "Directory",
-        ]:
-            # If a compatible source location exists, simply transfer data
-            if (src_path := utils.get_path_from_token(listing)) is not None and (
-                selected_location := await _get_source_location(
-                    src_path,
-                    options.job.input_directory,
-                    connector,
-                    options.step.workflow,
-                )
-            ):
-                dst_path = dst_path or path_processor.join(
-                    base_path, path_processor.basename(src_path)
-                )
-                await context.data_manager.transfer_data(
-                    src_location=selected_location.location,
-                    src_path=selected_location.path,
-                    dst_locations=locations,
-                    dst_path=dst_path,
-                    writable=writable,
-                )
-                _adjust_inputs(
-                    job_name=options.job.name,
-                    inputs=options.context["inputs"].values(),
-                    path_processor=path_processor,
-                    src_path=src_path,
-                    dst_path=dst_path,
-                )
-            # Otherwise create a File or a Directory in the remote path
-            elif is_literal_file(listing_class, listing, options.job.name):
-                if dst_path is None:
-                    dst_path = (
-                        path_processor.join(base_path, listing["basename"])
-                        if "basename" in listing
-                        else base_path
+                    _adjust_inputs(
+                        job_name=options.job.name,
+                        inputs=options.context["inputs"].values(),
+                        path_processor=path_processor,
+                        src_path=src_path,
+                        dst_path=dst_path,
                     )
-                if src_path is not None:
-                    dst_path = path_processor.join(
-                        dst_path, path_processor.basename(src_path)
-                    )
-                if listing_class == "Directory":
-                    await utils.create_remote_directory(
-                        context=context,
-                        locations=locations,
-                        path=dst_path,
-                        relpath=(
-                            path_processor.relpath(dst_path, base_path)
-                            if dst_path
+                # Otherwise create a File or a Directory in the remote path
+                elif is_literal_file(listing_class, listing, options.job.name):
+                    if dst_path is None:
+                        dst_path = (
+                            path_processor.join(base_path, listing["basename"])
+                            if "basename" in listing
                             else base_path
-                        ),
+                        )
+                    if src_path is not None:
+                        dst_path = path_processor.join(
+                            dst_path, path_processor.basename(src_path)
+                        )
+                    if listing_class == "Directory":
+                        await utils.create_remote_directory(
+                            context=context,
+                            locations=locations,
+                            path=dst_path,
+                            relpath=(
+                                path_processor.relpath(dst_path, base_path)
+                                if dst_path
+                                else base_path
+                            ),
+                        )
+                        await asyncio.gather(
+                            *(
+                                asyncio.create_task(
+                                    _prepare_work_dir(
+                                        element=element,
+                                        options=options,
+                                        base_path=dst_path,
+                                        writable=writable,
+                                    )
+                                )
+                                for element in listing["listing"]
+                            )
+                        )
+                    else:
+                        await utils.write_remote_file(
+                            context=context,
+                            locations=locations,
+                            content=(
+                                listing["contents"] if "contents" in listing else ""
+                            ),
+                            path=dst_path,
+                            relpath=path_processor.relpath(dst_path, base_path),
+                        )
+                # The file is not literal; it has a path, but no specific data locations are available.
+                else:
+                    raise WorkflowExecutionException(
+                        f"Impossible to copy the {src_path} file in the working directory: No data locations found"
                     )
+                # If `secondaryFiles` is present, recursively process secondary files
+                if "secondaryFiles" in listing:
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
                                 _prepare_work_dir(
                                     element=element,
                                     options=options,
-                                    base_path=dst_path,
+                                    base_path=base_path,
                                     writable=writable,
                                 )
                             )
-                            for element in listing["listing"]
+                            for element in listing["secondaryFiles"]
                         )
                     )
-                else:
-                    await utils.write_remote_file(
-                        context=context,
-                        locations=locations,
-                        content=(listing["contents"] if "contents" in listing else ""),
-                        path=dst_path,
-                        relpath=path_processor.relpath(dst_path, base_path),
-                    )
-            # The file is not literal; it has a path, but no specific data locations are available.
-            else:
-                raise WorkflowExecutionException(
-                    f"Impossible to copy the {src_path} file in the working directory: No data locations found"
-                )
-            # If `secondaryFiles` is present, recursively process secondary files
-            if "secondaryFiles" in listing:
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            _prepare_work_dir(
-                                element=element,
-                                options=options,
-                                base_path=base_path,
-                                writable=writable,
-                            )
-                        )
-                        for element in listing["secondaryFiles"]
-                    )
-                )
-        # If it is a Dirent element, put or create the corresponding file according to the entryname field
-        elif "entry" in listing:
-            entry = utils.eval_expression(
-                expression=listing["entry"],
-                context=options.context,
-                full_js=options.full_js,
-                expression_lib=options.expression_lib,
-                strip_whitespace=False,
-            )
-            if "entryname" in listing:
-                dst_path = utils.eval_expression(
-                    expression=listing["entryname"],
+            # If it is a Dirent element, put or create the corresponding file according to the entryname field
+            elif "entry" in listing:
+                entry = utils.eval_expression(
+                    expression=listing["entry"],
                     context=options.context,
                     full_js=options.full_js,
                     expression_lib=options.expression_lib,
+                    strip_whitespace=False,
                 )
-                if not path_processor.isabs(dst_path):
-                    dst_path = posixpath.abspath(
-                        posixpath.join(options.job.output_directory, dst_path)
+                if "entryname" in listing:
+                    dst_path = utils.eval_expression(
+                        expression=listing["entryname"],
+                        context=options.context,
+                        full_js=options.full_js,
+                        expression_lib=options.expression_lib,
                     )
-                if not (
-                    dst_path.startswith(options.job.output_directory)
-                    or options.absolute_initial_workdir_allowed
-                ):
-                    raise WorkflowDefinitionException(
-                        "Entryname cannot be outside the job's output directory"
+                    if not path_processor.isabs(dst_path):
+                        dst_path = posixpath.abspath(
+                            posixpath.join(options.job.output_directory, dst_path)
+                        )
+                    if not (
+                        dst_path.startswith(options.job.output_directory)
+                        or options.absolute_initial_workdir_allowed
+                    ):
+                        raise WorkflowDefinitionException(
+                            "Entryname cannot be outside the job's output directory"
+                        )
+                    # The entryname field overrides the value of basename of the File or Directory object
+                    if (
+                        isinstance(entry, MutableMapping)
+                        and utils.get_token_class(entry) in ["File", "Directory"]
+                        and "path" not in entry
+                        and "location" not in entry
+                    ):
+                        entry["basename"] = dst_path
+                    if not path_processor.isabs(dst_path):
+                        dst_path = path_processor.join(
+                            options.job.output_directory, dst_path
+                        )
+                elif isinstance(entry, str):
+                    raise WorkflowExecutionException(
+                        "`entry` is a string and requires an `entryname`"
                     )
-                # The entryname field overrides the value of basename of the File or Directory object
-                if (
-                    isinstance(entry, MutableMapping)
-                    and utils.get_token_class(entry) in ["File", "Directory"]
-                    and "path" not in entry
-                    and "location" not in entry
-                ):
-                    entry["basename"] = dst_path
-                if not path_processor.isabs(dst_path):
-                    dst_path = path_processor.join(
-                        options.job.output_directory, dst_path
-                    )
-            elif isinstance(entry, str):
-                raise WorkflowExecutionException(
-                    "`entry` is a string and requires an `entryname`"
+                writable = (
+                    listing["writable"]
+                    if "writable" in listing and not options.inplace_update
+                    else False
                 )
-            writable = (
-                listing["writable"]
-                if "writable" in listing and not options.inplace_update
-                else False
-            )
-            # If entry is a string, a new text file must be created with the string as the file contents
-            if isinstance(entry, str):
-                await utils.write_remote_file(
-                    context=context,
-                    locations=locations,
-                    content=entry,
-                    path=dst_path or base_path,
-                    relpath=(
-                        path_processor.relpath(dst_path, base_path)
-                        if dst_path
-                        else base_path
-                    ),
-                )
-            # If entry is a list
-            elif isinstance(entry, MutableSequence):
-                # If all elements are Files or Directories, each of them must be processed independently
-                if all(
-                    utils.get_token_class(t) in ["File", "Directory"] for t in entry
-                ):
-                    await _prepare_work_dir(
-                        element=entry,
-                        options=options,
-                        base_path=base_path,
-                        dst_path=dst_path,
-                        writable=writable,
-                    )
-                # Otherwise, the content should be serialised to JSON
-                else:
-                    await utils.write_remote_file(
-                        context=context,
-                        locations=locations,
-                        content=json.dumps(entry),
-                        path=dst_path or base_path,
-                        relpath=(
-                            path_processor.relpath(dst_path, base_path)
-                            if dst_path
-                            else base_path
-                        ),
-                    )
-            # If entry is a dict
-            elif isinstance(entry, MutableMapping):
-                # If it is a File or Directory, it must be put in the destination path
-                if utils.get_token_class(entry) in ["File", "Directory"]:
-                    await _prepare_work_dir(
-                        element=entry,
-                        options=options,
-                        base_path=base_path,
-                        dst_path=dst_path,
-                        writable=writable,
-                    )
-                # Otherwise, the content should be serialised to JSON
-                else:
-                    await utils.write_remote_file(
-                        context=context,
-                        locations=locations,
-                        content=json.dumps(entry),
-                        path=dst_path or base_path,
-                        relpath=(
-                            path_processor.relpath(dst_path, base_path)
-                            if dst_path
-                            else base_path
-                        ),
-                    )
-            # Every object different from a string should be serialised to JSON
-            elif entry is not None:
-                await utils.write_remote_file(
-                    context=context,
-                    locations=locations,
-                    content=json.dumps(entry),
-                    path=dst_path or base_path,
-                    relpath=(
-                        path_processor.relpath(dst_path, base_path)
-                        if dst_path
-                        else base_path
-                    ),
-                )
+                match entry:
+                    # If entry is a string, a new text file must be created with the string as the file contents
+                    case str():
+                        await utils.write_remote_file(
+                            context=context,
+                            locations=locations,
+                            content=entry,
+                            path=dst_path or base_path,
+                            relpath=(
+                                path_processor.relpath(dst_path, base_path)
+                                if dst_path
+                                else base_path
+                            ),
+                        )
+                    # If entry is a list
+                    case MutableSequence():
+                        # If all elements are Files or Directories, each of them must be processed independently
+                        if all(
+                            utils.get_token_class(t) in ["File", "Directory"]
+                            for t in entry
+                        ):
+                            await _prepare_work_dir(
+                                element=entry,
+                                options=options,
+                                base_path=base_path,
+                                dst_path=dst_path,
+                                writable=writable,
+                            )
+                        # Otherwise, the content should be serialised to JSON
+                        else:
+                            await utils.write_remote_file(
+                                context=context,
+                                locations=locations,
+                                content=json.dumps(entry),
+                                path=dst_path or base_path,
+                                relpath=(
+                                    path_processor.relpath(dst_path, base_path)
+                                    if dst_path
+                                    else base_path
+                                ),
+                            )
+                    # If entry is a dict
+                    case MutableMapping():
+                        # If it is a File or Directory, it must be put in the destination path
+                        if utils.get_token_class(entry) in ["File", "Directory"]:
+                            await _prepare_work_dir(
+                                element=entry,
+                                options=options,
+                                base_path=base_path,
+                                dst_path=dst_path,
+                                writable=writable,
+                            )
+                        # Otherwise, the content should be serialised to JSON
+                        else:
+                            await utils.write_remote_file(
+                                context=context,
+                                locations=locations,
+                                content=json.dumps(entry),
+                                path=dst_path or base_path,
+                                relpath=(
+                                    path_processor.relpath(dst_path, base_path)
+                                    if dst_path
+                                    else base_path
+                                ),
+                            )
+                    # Every object different from a string should be serialised to JSON
+                    case entry if entry is not None:
+                        await utils.write_remote_file(
+                            context=context,
+                            locations=locations,
+                            content=json.dumps(entry),
+                            path=dst_path or base_path,
+                            relpath=(
+                                path_processor.relpath(dst_path, base_path)
+                                if dst_path
+                                else base_path
+                            ),
+                        )
 
 
 class CWLCommand(TokenizedCommand):
@@ -821,6 +843,7 @@ class CWLCommand(TokenizedCommand):
                             for key in job.inputs.keys()
                         )
                     ),
+                    strict=True,
                 )
             )
         else:
