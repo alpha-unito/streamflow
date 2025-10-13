@@ -157,68 +157,72 @@ async def build_token(
     streamflow_context: StreamFlowContext,
     recoverable: bool = False,
 ) -> Token:
-    if isinstance(token_value, MutableSequence):
-        return ListToken(
-            tag=get_tag(job.inputs.values()),
-            value=await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        build_token(
-                            job=job,
-                            token_value=v,
-                            cwl_version=cwl_version,
-                            streamflow_context=streamflow_context,
-                            recoverable=recoverable,
-                        )
-                    )
-                    for v in token_value
-                )
-            ),
-        )
-    elif isinstance(token_value, MutableMapping):
-        if get_token_class(token_value) in ["File", "Directory"]:
-            return CWLFileToken(
+    match token_value:
+        case MutableSequence():
+            return ListToken(
                 tag=get_tag(job.inputs.values()),
-                value=await _process_file_token(
-                    job=job,
-                    token_value=token_value,
-                    cwl_version=cwl_version,
-                    streamflow_context=streamflow_context,
-                    check_contents=True,
+                value=await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            build_token(
+                                job=job,
+                                token_value=v,
+                                cwl_version=cwl_version,
+                                streamflow_context=streamflow_context,
+                                recoverable=recoverable,
+                            )
+                        )
+                        for v in token_value
+                    )
                 ),
+            )
+        case MutableMapping():
+            if get_token_class(token_value) in ["File", "Directory"]:
+                return CWLFileToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=await _process_file_token(
+                        job=job,
+                        token_value=token_value,
+                        cwl_version=cwl_version,
+                        streamflow_context=streamflow_context,
+                        check_contents=True,
+                    ),
+                    recoverable=recoverable,
+                )
+            else:
+                return ObjectToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=dict(
+                        zip(
+                            token_value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        build_token(
+                                            job=job,
+                                            token_value=v,
+                                            cwl_version=cwl_version,
+                                            streamflow_context=streamflow_context,
+                                            recoverable=recoverable,
+                                        )
+                                    )
+                                    for v in token_value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    ),
+                )
+        case Token():
+            token = token_value.retag(tag=get_tag(job.inputs.values()))
+            token.recoverable = recoverable
+            return token
+        case _:
+            return Token(
+                tag=get_tag(job.inputs.values()),
+                value=token_value,
                 recoverable=recoverable,
             )
-        else:
-            return ObjectToken(
-                tag=get_tag(job.inputs.values()),
-                value=dict(
-                    zip(
-                        token_value.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(
-                                    build_token(
-                                        job=job,
-                                        token_value=v,
-                                        cwl_version=cwl_version,
-                                        streamflow_context=streamflow_context,
-                                        recoverable=recoverable,
-                                    )
-                                )
-                                for v in token_value.values()
-                            )
-                        ),
-                    )
-                ),
-            )
-    elif isinstance(token_value, Token):
-        token = token_value.retag(tag=get_tag(job.inputs.values()))
-        token.recoverable = recoverable
-        return token
-    else:
-        return Token(
-            tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
-        )
 
 
 class CWLBaseConditionalStep(ConditionalStep, ABC):
@@ -328,6 +332,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                     for port_id in params["skip_ports"].values()
                 )
             ),
+            strict=True,
         ):
             step.add_skip_port(k, port)
         return step
@@ -542,6 +547,7 @@ class CWLExecuteStep(ExecuteStep):
                         for p in params["output_processors"].values()
                     )
                 ),
+                strict=True,
             )
         }
         if params["command"]:
@@ -641,36 +647,40 @@ class CWLTransferStep(TransferStep):
         }
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
-        if isinstance(token_value, Token):
-            token = token_value.update(
-                await self._transfer_value(job, token_value.value)
-            )
-            token.recoverable = False
-            return token
-        elif isinstance(token_value, MutableSequence):
-            return await asyncio.gather(
-                *(
-                    asyncio.create_task(self._transfer_value(job, element))
-                    for element in token_value
+        match token_value:
+            case Token():
+                token = token_value.update(
+                    await self._transfer_value(job, token_value.value)
                 )
-            )
-        elif isinstance(token_value, MutableMapping):
-            if utils.get_token_class(token_value) in ["File", "Directory"]:
-                return await self._update_file_token(job, token_value)
-            else:
-                return dict(
-                    zip(
-                        token_value.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(self._transfer_value(job, element))
-                                for element in token_value.values()
-                            )
-                        ),
+                token.recoverable = False
+                return token
+            case MutableSequence():
+                return await asyncio.gather(
+                    *(
+                        asyncio.create_task(self._transfer_value(job, element))
+                        for element in token_value
                     )
                 )
-        else:
-            return token_value
+            case MutableMapping():
+                if utils.get_token_class(token_value) in ["File", "Directory"]:
+                    return await self._update_file_token(job, token_value)
+                else:
+                    return dict(
+                        zip(
+                            token_value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        self._transfer_value(job, element)
+                                    )
+                                    for element in token_value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    )
+            case _:
+                return token_value
 
     async def _update_listing(
         self,
@@ -733,11 +743,17 @@ class CWLTransferStep(TransferStep):
         location = token_value.get("location", token_value.get("path"))
         if location and "://" in location:
             # Manage remote files
-            scheme = urllib.parse.urlsplit(location).scheme
-            if scheme in ["http", "https"]:
-                location = await _download_file(job, location, self.workflow.context)
-            elif scheme == "file":
-                location = urllib.parse.unquote(location[7:])
+            match urllib.parse.urlsplit(location).scheme:
+                case "http" | "https":
+                    location = await _download_file(
+                        job, location, self.workflow.context
+                    )
+                case "file":
+                    location = urllib.parse.unquote(location[7:])
+                case scheme:
+                    raise WorkflowExecutionException(
+                        f"Unsupported scheme `{scheme}` in location `{location}`"
+                    )
         # If basename is explicitly stated in the token, use it as destination path
         if "basename" in token_value:
             dst_path = (dst_path or dst_dir) / token_value["basename"]

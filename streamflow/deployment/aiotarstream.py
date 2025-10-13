@@ -331,7 +331,7 @@ class AioTarInfo(tarfile.TarInfo):
             number, buf = buf.split(b"\n", 1)
             sparse.append(int(number))
         next.offset_data = tarstream.stream.tell()
-        next.sparse = list(zip(sparse[::2], sparse[1::2]))
+        next.sparse = list(zip(sparse[::2], sparse[1::2], strict=True))
 
     async def _proc_member(self, tarstream):
         if self.type in (tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK):

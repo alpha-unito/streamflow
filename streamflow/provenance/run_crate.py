@@ -193,23 +193,24 @@ def _process_cwl_type(
     ),
 ) -> None:
     if isinstance(cwl_type, str):
-        if cwl_type == "boolean":
-            jsonld_param["additionalType"].append("Boolean")
-        elif cwl_type in ["int", "long"]:
-            jsonld_param["additionalType"].append("Integer")
-        elif cwl_type in ["double", "float"]:
-            jsonld_param["additionalType"].append("Float")
-        elif cwl_type == "string":
-            jsonld_param["additionalType"].append("Text")
-        elif cwl_type == "File":
-            if cast(cwl_utils.parser.File, cwl_param).secondaryFiles:
-                jsonld_param["additionalType"].append("Collection")
-            else:
-                jsonld_param["additionalType"].append("File")
-        elif cwl_type == "Directory":
-            jsonld_param["additionalType"].append("Dataset")
-        elif cwl_type == "Any":
-            jsonld_param["additionalType"].append("DataType")
+        match cwl_type:
+            case "boolean":
+                jsonld_param["additionalType"].append("Boolean")
+            case "int" | "long":
+                jsonld_param["additionalType"].append("Integer")
+            case "double" | "float":
+                jsonld_param["additionalType"].append("Float")
+            case "string":
+                jsonld_param["additionalType"].append("Text")
+            case "File":
+                if cast(cwl_utils.parser.File, cwl_param).secondaryFiles:
+                    jsonld_param["additionalType"].append("Collection")
+                else:
+                    jsonld_param["additionalType"].append("File")
+            case "Directory":
+                jsonld_param["additionalType"].append("Dataset")
+            case "Any":
+                jsonld_param["additionalType"].append("DataType")
     elif isinstance(cwl_type, MutableSequence):
         for t in cwl_type:
             if t == "null":
@@ -448,6 +449,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                             for t in tokens
                         )
                     ),
+                    strict=True,
                 )
             ),
         )
@@ -1301,7 +1303,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         version: str,
     ):
         has_part = set()
-        for cwl_step, jsonld_step in zip(cwl_steps, jsonld_steps):
+        for cwl_step, jsonld_step in zip(cwl_steps, jsonld_steps, strict=True):
             step_name = streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_step.id)
             cwl_step_name = streamflow.cwl.utils.get_name(
                 prefix, cwl_prefix, cwl_step.id, preserve_cwl_prefix=True

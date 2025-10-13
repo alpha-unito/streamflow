@@ -56,7 +56,9 @@ async def _assert_token_result(
         assert input_value.get("checksum") == f"sha1${await path.checksum()}"
         assert input_value.get("size") == await path.size()
     elif isinstance(output_token, ListToken):
-        for inner_value, inner_token in zip(input_value, output_token.value):
+        for inner_value, inner_token in zip(
+            input_value, output_token.value, strict=True
+        ):
             await _assert_token_result(inner_value, inner_token, context, location)
     elif isinstance(output_token, ObjectToken):
         assert set(input_value.keys()) == set(output_token.value.keys())
@@ -169,6 +171,7 @@ async def test_execute(
                         for _ in range(3)
                     )
                 ),
+                strict=True,
             )
         )
 

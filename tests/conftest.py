@@ -203,7 +203,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     if isinstance(elem1, Collection) and not isinstance(elem1, dict):
         if len(elem1) != len(elem2):
             return False
-        for e1, e2 in zip(elem1, elem2):
+        for e1, e2 in zip(elem1, elem2, strict=True):
             if not are_equals(e1, e2, obj_compared):
                 return False
         return True

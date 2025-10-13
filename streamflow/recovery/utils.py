@@ -277,6 +277,7 @@ class GraphMapper:
                     for step_id in step_ids
                 )
             ),
+            strict=True,
         ):
             for port_row in await asyncio.gather(
                 *(

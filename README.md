@@ -20,7 +20,7 @@ The StreamFlow module is available on [PyPI](https://pypi.org/project/streamflow
 pip install streamflow
 ```
 
-Please note that StreamFlow requires `python >= 3.9`. Then you can execute it directly from the CLI
+Please note that StreamFlow requires `python >= 3.10`. Then you can execute it directly from the CLI
 
 ```bash
 streamflow run /path/to/streamflow.yml

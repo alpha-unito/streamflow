@@ -190,6 +190,7 @@ class Job:
                             for t in row["inputs"].values()
                         )
                     ),
+                    strict=True,
                 )
             },
             input_directory=row["input_directory"],
@@ -436,7 +437,9 @@ class Step(PersistableEntity, ABC):
                 for d in input_deps
             )
         )
-        step.input_ports = {d["name"]: p.name for d, p in zip(input_deps, input_ports)}
+        step.input_ports = {
+            d["name"]: p.name for d, p in zip(input_deps, input_ports, strict=True)
+        }
         output_deps = await context.database.get_output_ports(persistent_id)
         output_ports = await asyncio.gather(
             *(
@@ -445,7 +448,7 @@ class Step(PersistableEntity, ABC):
             )
         )
         step.output_ports = {
-            d["name"]: p.name for d, p in zip(output_deps, output_ports)
+            d["name"]: p.name for d, p in zip(output_deps, output_ports, strict=True)
         }
         return step
 
@@ -655,6 +658,7 @@ class Workflow(PersistableEntity):
                         for row in rows
                     )
                 ),
+                strict=True,
             )
         }
         workflow.output_ports = params["output_ports"]
@@ -671,6 +675,7 @@ class Workflow(PersistableEntity):
                         for row in rows
                     )
                 ),
+                strict=True,
             )
         }
         return workflow
