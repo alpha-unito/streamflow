@@ -49,6 +49,7 @@ from streamflow.cwl.processor import (
     CWLObjectCommandOutputProcessor,
 )
 from streamflow.cwl.step import build_token
+from streamflow.cwl.utils import is_literal_file
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
@@ -103,6 +104,9 @@ def _adjust_input(
 ) -> bool:
     """
     Adjust the input if it contains a file with the specified `src_path`.
+    If the input is a `Directory`, the function will recursively adjust all
+    the files listed within the directory. This function does not handle
+    the `secondaryFiles` associated with a `File` object.
 
     :param input_: The input to process. It can be of any type, including
                            lists, objects (e.g., CWL records), files, and directories.
@@ -130,16 +134,23 @@ def _adjust_input(
                         nameroot, nameext = path_processor.splitext(basename)
                         input_["nameroot"] = nameroot
                         input_["nameext"] = nameext
+                    for ins in input_.get("listing", ()):
+                        _adjust_input(
+                            job_name,
+                            ins,
+                            path_processor,
+                            ins["path"],
+                            path_processor.join(
+                                dst_path, path_processor.basename(ins["path"])
+                            ),
+                        )
                     return True
-                elif (
-                    token_class == "Directory"  # nosec
-                    and src_path.startswith(path)
-                    and "listing" in input_
-                ):
-                    _adjust_inputs(
-                        job_name, input_["listing"], path_processor, src_path, dst_path
-                    )
-                    return True
+                elif src_path.startswith(path) and "listing" in input_:
+                    for inp in input_["listing"]:
+                        if _adjust_input(
+                            job_name, inp, path_processor, src_path, dst_path
+                        ):
+                            return True
             else:
                 for inp in input_.values():
                     if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
@@ -294,7 +305,7 @@ async def _get_source_location(
         relpath=relpath,
         base_path=base_path,
     )
-    # Return the best source location ofr the current transfer
+    # Return the best source location of the current transfer
     return await workflow.context.data_manager.get_source_location(
         src_path, connector.deployment_name
     )
@@ -436,22 +447,39 @@ async def _prepare_work_dir(
                         dst_path=dst_path,
                     )
                 # Otherwise create a File or a Directory in the remote path
-                else:
+                elif is_literal_file(listing_class, listing, options.job.name):
                     if dst_path is None:
-                        dst_path = base_path
+                        dst_path = (
+                            path_processor.join(base_path, listing["basename"])
+                            if "basename" in listing
+                            else base_path
+                        )
                     if src_path is not None:
                         dst_path = path_processor.join(
                             dst_path, path_processor.basename(src_path)
                         )
                     if listing_class == "Directory":
+                        await utils.create_remote_directory(
+                            context=context,
+                            locations=locations,
+                            path=dst_path,
+                            relpath=(
+                                path_processor.relpath(dst_path, base_path)
+                                if dst_path
+                                else base_path
+                            ),
+                        )
                         await asyncio.gather(
                             *(
                                 asyncio.create_task(
-                                    StreamFlowPath(
-                                        dst_path, context=context, location=location
-                                    ).mkdir(mode=0o777, exist_ok=True)
+                                    _prepare_work_dir(
+                                        element=element,
+                                        options=options,
+                                        base_path=dst_path,
+                                        writable=writable,
+                                    )
                                 )
-                                for location in locations
+                                for element in listing["listing"]
                             )
                         )
                     else:
@@ -464,36 +492,10 @@ async def _prepare_work_dir(
                             path=dst_path,
                             relpath=path_processor.relpath(dst_path, base_path),
                         )
-                # If `listing` is present, recursively process folder contents
-                if "listing" in listing:
-                    if "basename" in listing:
-                        folder_path = path_processor.join(
-                            base_path, listing["basename"]
-                        )
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(
-                                    StreamFlowPath(
-                                        folder_path, context=context, location=location
-                                    ).mkdir(mode=0o777, parents=True, exist_ok=True)
-                                )
-                                for location in locations
-                            )
-                        )
-                    else:
-                        folder_path = dst_path or base_path
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(
-                                _prepare_work_dir(
-                                    element=element,
-                                    options=options,
-                                    base_path=folder_path,
-                                    writable=writable,
-                                )
-                            )
-                            for element in listing["listing"]
-                        )
+                # The file is not literal; it has a path, but no specific data locations are available.
+                else:
+                    raise WorkflowExecutionException(
+                        f"Impossible to copy the {src_path} file in the working directory: No data locations found"
                     )
                 # If `secondaryFiles` is present, recursively process secondary files
                 if "secondaryFiles" in listing:
@@ -540,15 +542,19 @@ async def _prepare_work_dir(
                     # The entryname field overrides the value of basename of the File or Directory object
                     if (
                         isinstance(entry, MutableMapping)
+                        and utils.get_token_class(entry) in ["File", "Directory"]
                         and "path" not in entry
                         and "location" not in entry
-                        and "basename" in entry
                     ):
                         entry["basename"] = dst_path
                     if not path_processor.isabs(dst_path):
                         dst_path = path_processor.join(
                             options.job.output_directory, dst_path
                         )
+                elif isinstance(entry, str):
+                    raise WorkflowExecutionException(
+                        "`entry` is a string and requires an `entryname`"
+                    )
                 writable = (
                     listing["writable"]
                     if "writable" in listing and not options.inplace_update

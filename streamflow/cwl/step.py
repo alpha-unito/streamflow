@@ -33,6 +33,7 @@ from streamflow.cwl.utils import (
     get_file_token,
     get_path_from_token,
     get_token_class,
+    is_literal_file,
     register_data,
 )
 from streamflow.cwl.workflow import CWLWorkflow
@@ -82,8 +83,8 @@ async def _process_file_token(
     token_value: Any,
     cwl_version: str,
     streamflow_context: StreamFlowContext,
-    check_contents: bool = False,
 ) -> MutableMapping[str, Any]:
+    is_literal = is_literal_file(get_token_class(token_value), token_value, job.name)
     connector = streamflow_context.scheduler.get_connector(job.name)
     locations = streamflow_context.scheduler.get_locations(job.name)
     path_processor = get_path_processor(connector)
@@ -100,36 +101,24 @@ async def _process_file_token(
             filepath=filepath,
             file_format=token_value.get("format"),
             basename=token_value.get("basename"),
-            check_content=check_contents,
             contents=token_value.get("contents"),
+            is_literal=is_literal,
         )
-        if "secondaryFiles" in token_value:
-            new_token_value["secondaryFiles"] = await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        _process_file_token(
-                            job=job,
-                            token_value=sf,
-                            cwl_version=cwl_version,
-                            streamflow_context=streamflow_context,
-                            check_contents=check_contents,
-                        )
+    if "secondaryFiles" in token_value:
+        new_token_value["secondaryFiles"] = await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    _process_file_token(
+                        job=job,
+                        token_value=sf,
+                        cwl_version=cwl_version,
+                        streamflow_context=streamflow_context,
                     )
-                    for sf in token_value["secondaryFiles"]
                 )
+                for sf in token_value["secondaryFiles"]
             )
-    elif (
-        get_token_class(token_value) == "File"
-        and check_contents
-        and (
-            token_value.get("basename") is not None
-            and token_value.get("contents") is None
         )
-    ):
-        raise WorkflowExecutionException(
-            f"Job {job.name} cannot process file. Anonymous file object must have 'contents' and 'basename' fields."
-        )
-    if "listing" in token_value:
+    elif "listing" in token_value:
         new_token_value |= {
             "listing": await asyncio.gather(
                 *(
@@ -140,13 +129,14 @@ async def _process_file_token(
                 )
             )
         }
-    await register_data(
-        context=streamflow_context,
-        connector=connector,
-        locations=locations,
-        base_path=job.output_directory,
-        token_value=new_token_value,
-    )
+    if not is_literal:
+        await register_data(
+            context=streamflow_context,
+            connector=connector,
+            locations=locations,
+            base_path=job.output_directory,
+            token_value=new_token_value,
+        )
     return new_token_value
 
 
@@ -185,7 +175,6 @@ async def build_token(
                         token_value=token_value,
                         cwl_version=cwl_version,
                         streamflow_context=streamflow_context,
-                        check_contents=True,
                     ),
                     recoverable=recoverable,
                 )
@@ -916,7 +905,6 @@ class CWLTransferStep(TransferStep):
                 load_contents="contents" in token_value,
                 load_listing=LoadListing.no_listing,
             )
-
             if (
                 "checksum" in token_value
                 and new_token_value["checksum"] != token_value["checksum"]
@@ -926,6 +914,20 @@ class CWLTransferStep(TransferStep):
                         token_value["path"],
                         new_token_value["path"],
                         [str(loc) for loc in dst_locations],
+                    )
+                )
+            # Check secondary files
+            if "secondaryFiles" in token_value:
+                new_token_value["secondaryFiles"] = await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self._update_file_token(
+                                job=job,
+                                token_value=element,
+                                dst_path=filepath.parent,
+                            )
+                        )
+                        for element in token_value["secondaryFiles"]
                     )
                 )
 

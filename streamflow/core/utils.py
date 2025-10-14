@@ -129,7 +129,7 @@ def create_command(
 
 
 def get_job_step_name(job_name: str) -> str:
-    return PurePosixPath(job_name).parent.name
+    return PurePosixPath(job_name).parent.as_posix()
 
 
 def get_job_tag(job_name: str) -> str:
