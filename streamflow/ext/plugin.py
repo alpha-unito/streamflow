@@ -1,7 +1,13 @@
 import logging
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
-from importlib.abc import Traversable
+
+if sys.version_info < (3, 11):
+    from importlib.abc import Traversable
+else:
+    from importlib.resources.abc import Traversable
+
 from typing import Any
 
 from streamflow.config import ext_schemas

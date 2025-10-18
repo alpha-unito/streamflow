@@ -1474,10 +1474,15 @@ class ScheduleStep(BaseStep):
     ) -> None:
         allocation = self.workflow.context.scheduler.get_allocation(job.name)
         path_processor = get_path_processor(connector)
-        workdir = _get_directory(path_processor, job.input_directory, allocation.target)
-        job.input_directory = path_processor.join(workdir, utils.random_name())
-        job.output_directory = path_processor.join(workdir, utils.random_name())
-        job.tmp_directory = path_processor.join(workdir, utils.random_name())
+        job.input_directory = _get_directory(
+            path_processor, job.input_directory, allocation.target
+        )
+        job.output_directory = _get_directory(
+            path_processor, job.output_directory, allocation.target
+        )
+        job.tmp_directory = _get_directory(
+            path_processor, job.tmp_directory, allocation.target
+        )
         # Create directories
         create_tasks = []
         for location in locations:
