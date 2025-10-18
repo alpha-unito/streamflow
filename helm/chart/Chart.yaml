@@ -1,6 +1,6 @@
 apiVersion: v2
 name: streamflow
-description: A Helm chart for StreamFlow
+description: A Helm chart for the StreamFlow workflow management system
 type: application
 version: 0.2.0
-appVersion: latest
+appVersion: 0.2.0.dev11
