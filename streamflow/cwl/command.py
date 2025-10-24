@@ -862,10 +862,11 @@ class CWLCommand(TokenizedCommand):
             )
             for (k, v) in self.environment.items()
         }
-        if "HOME" not in parsed_env:
-            parsed_env["HOME"] = job.output_directory
-        if "TMPDIR" not in parsed_env:
-            parsed_env["TMPDIR"] = job.tmp_directory
+        # fixme: Devito + CAPIO
+        # if "HOME" not in parsed_env:
+        #     parsed_env["HOME"] = job.output_directory
+        # if "TMPDIR" not in parsed_env:
+        #     parsed_env["TMPDIR"] = job.tmp_directory
         # Get execution target
         connector = self.step.workflow.context.scheduler.get_connector(job.name)
         locations = self.step.workflow.context.scheduler.get_locations(job.name)

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 import asyncio
 import logging
+import os
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
@@ -332,7 +332,7 @@ class CWLTokenProcessor(TokenProcessor):
         if utils.get_token_class(token.value) in ["File", "Directory"]:
             token = token.update(await self._process_file_token(inputs, token.value))
         # Check type
-        if not self.streamable and utils.get_token_class(token.value) == "streaming":
+        if not self.streamable:
             _check_token_type(
                 name=self.name,
                 token_value=token.value,
@@ -432,7 +432,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             case MutableMapping():
                 match utils.get_token_class(token_value):
                     case "streaming":
-                        return Token(value=token_value, tag=get_tag(job.inputs.values()))
+                        return Token(
+                            value=token_value, tag=get_tag(job.inputs.values())
+                        )
                     case "File" | "Directory":
                         connector = self._get_connector(connector, job)
                         locations = await self._get_locations(connector, job)
