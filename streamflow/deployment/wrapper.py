@@ -95,7 +95,11 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
-        return await self.connector.get_available_locations(service=service)
+        locations = await self.connector.get_available_locations(service=service)
+        # fixme: do not work
+        for loc in locations.values():
+            loc.stacked = True
+        return locations
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation

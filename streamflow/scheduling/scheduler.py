@@ -267,6 +267,7 @@ class DefaultScheduler(Scheduler):
         while location is not None:
             # If at least one location provides hardware capabilities
             if location.hardware is not None:
+                logger.info(f"Loc {location.name} has hardware")
                 # Compute the used amount of locations
                 if not (
                     (
@@ -277,8 +278,20 @@ class DefaultScheduler(Scheduler):
                     return False
             # Otherwise, simply compute the number of allocated slots
             else:
-                slots = location.slots if location.slots is not None else 1
-                if not len(self._get_running_jobs(job_name, location)) < slots:
+                if location.slots is None:
+                    if location.wraps:
+                        slots = None
+                    else:
+                        slots = 1
+                else:
+                    slots = location.slots
+                rj = self._get_running_jobs(job_name, location)
+                logger.info(
+                    f"Slots taken: {len(rj)} on {slots} (loc.name: {location.name} loc.slots: {location.slots} loc.wraps: {location.wraps} "
+                    f"[inn {location.wraps.name if location.wraps else '' } {location.wraps.hardware if location.wraps else ''} {location.wraps.slots if location.wraps else ''}]). "
+                    f"Jobs: {rj}"
+                )
+                if slots is not None and not len(rj) < slots:
                     return False
             # If AvailableLocation is stacked, evaluate also the inner location
             if location := location.wraps if location.stacked else None:
@@ -286,6 +299,7 @@ class DefaultScheduler(Scheduler):
                 hardware_requirement = hardware_requirements[
                     posixpath.join(connector.deployment_name, location.name)
                 ]
+            logger.info(f"Inner loc {location.name if location else ''}")
         return True
 
     async def _process_target(

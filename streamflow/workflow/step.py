@@ -703,7 +703,8 @@ class ExecuteStep(BaseStep):
     @recoverable
     async def _execute_command(
         self, job: Job, connectors: MutableMapping[str, Connector]
-    ):
+    ) -> None:
+        logger.info(f"ExecuteStep executing command {job.name}")
         command_task = asyncio.create_task(self.command.execute(job))
         output_tasks = (
             asyncio.create_task(

@@ -534,7 +534,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 globpaths.extend(
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
-            if self.streamable:
+            if self.streamable and (await command_output).value == "streamable":
                 return await utils.build_token_value(
                     context=self.workflow.context,
                     cwl_version=cwl_workflow.cwl_version,

@@ -18,16 +18,21 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.processor import CommandOutputProcessor
+from streamflow.core.processor import (
+    CommandOutputProcessor,
+    UnionCommandOutputProcessor,
+)
 from streamflow.core.utils import get_entity_ids, get_tag, random_name
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
     Job,
     Port,
+    Status,
     Token,
 )
 from streamflow.cwl import utils
+from streamflow.cwl.processor import CWLCommandOutput, CWLCommandOutputProcessor
 from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import (
     LoadListing,
@@ -53,6 +58,19 @@ from streamflow.workflow.step import (
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
 from streamflow.workflow.utils import get_job_token
+
+
+def _is_streamable(processor: CommandOutputProcessor) -> bool:
+    if isinstance(processor, UnionCommandOutputProcessor):
+        return any(_is_streamable(p) for p in processor.processors)
+    elif isinstance(processor, CWLCommandOutputProcessor):
+        return processor.streamable
+    else:
+        return False
+
+
+async def _get_future_cmd():
+    return CWLCommandOutput("streamable", Status.COMPLETED, 0)
 
 
 async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
@@ -465,6 +483,47 @@ class CWLExecuteStep(ExecuteStep):
             self._recoverable_map[job.name] = recoverable_
         return recoverable_
 
+    async def _execute_command(
+        self, job: Job, connectors: MutableMapping[str, Connector]
+    ) -> None:
+        logger.info(f"CWLExecuteStep executing {job.name}")
+        try:
+            for output_name, output_port in self.output_ports.items():
+                logger.info(
+                    f"CWLExecuteStep {job.name} has processor {type(self.output_processors[output_name])}"
+                )
+                if _is_streamable(self.output_processors[output_name]):
+                    logger.info(
+                        f"CWLExecuteStep {job.name} has {output_name} streamable processor start"
+                    )
+                    self.workflow.ports[output_port].put(
+                        await self._persist_token(
+                            token=await self.output_processors[output_name].process(
+                                job,
+                                asyncio.create_task(_get_future_cmd()),
+                                connectors.get(output_name),
+                                False,
+                            ),
+                            port=self.workflow.ports[output_port],
+                            input_token_ids=get_entity_ids(
+                                (
+                                    *job.inputs.values(),
+                                    get_job_token(
+                                        job.name,
+                                        self.get_input_port("__job__").token_list,
+                                    ),
+                                )
+                            ),
+                        )
+                    )
+                    logger.info(
+                        f"CWLExecuteStep {job.name} has {output_name} streamable processor end"
+                    )
+        except Exception as e:
+            logger.fatal(f"CWLExecuteStep {job.name} failed with exception {e}")
+            raise e
+        await super()._execute_command(job, connectors)
+
     async def _retrieve_output(
         self,
         job: Job,
@@ -473,6 +532,8 @@ class CWLExecuteStep(ExecuteStep):
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> None:
+        if _is_streamable(self.output_processors[output_name]):
+            return
         if (
             token := await self.output_processors[output_name].process(
                 job, command_output, connector, self._is_recoverable(job)
