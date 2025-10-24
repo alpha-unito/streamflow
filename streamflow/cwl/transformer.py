@@ -12,13 +12,14 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.processor import TokenProcessor
 from streamflow.core.utils import get_tag
-from streamflow.core.workflow import Port, Token, TokenProcessor
+from streamflow.core.workflow import Port, Token
 from streamflow.cwl import utils
 from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.port import JobPort
-from streamflow.workflow.token import ListToken
+from streamflow.workflow.token import ListToken, TerminationToken
 from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
 from streamflow.workflow.utils import get_token_value
 
@@ -223,14 +224,83 @@ class DefaultTransformer(ManyToOneTransformer):
                 self.default_token = (
                     await self._get_inputs({"__default__": self.default_port})
                 )["__default__"]
-            return {
-                self.get_output_name(): self.default_token.retag(
-                    primary_token.tag, recoverable=True
-                )
-            }
+            token = self.default_token.retag(primary_token.tag)
+            token.recoverable = True
+            return {self.get_output_name(): token}
 
 
 class DefaultRetagTransformer(DefaultTransformer):
+
+    def __init__(
+        self,
+        name: str,
+        workflow: CWLWorkflow,
+        default_port: Port,
+        primary_port: str,
+    ):
+        super().__init__(name, workflow, default_port)
+        self.primary_port: str = primary_port
+        self._only_default: bool = False
+
+    def _filter_input_ports(self) -> MutableMapping[str, Port]:
+        # Handle the case of a single input port.
+        # Step termination is controlled by token-passing on this port,
+        # and output token retagging is based on the tag of the tokens from this port.
+        if len(self.input_ports) == 1:
+            return super()._filter_input_ports()
+
+        # Handle case of multiple input ports.
+        # Step termination is controlled by token-passing on other ports,
+        # and output token retagging is based on the tags of tokens from these ports.
+        else:
+            return {
+                k: v
+                for k, v in super()._filter_input_ports().items()
+                if k != self.primary_port
+            }
+
+    async def _get_next_token(
+        self, token: Token | None, inputs: MutableMapping[str, Token]
+    ) -> Token:
+        # The primary port has no output step, so propagate the default token
+        if token is None or token.value is None:
+            if self.default_token is None:
+                self.default_token = (
+                    await self._get_inputs({"__default__": self.default_port})
+                )["__default__"]
+            token = self.default_token.retag(get_tag(inputs.values()))
+            token.recoverable = True
+            return token
+        # Propagate the primary token
+        else:
+            return token.update(token.value).retag(get_tag(inputs.values()))
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Self:
+        return cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            default_port=await loading_context.load_port(
+                context, row["params"]["default_port"]
+            ),
+            primary_port=row["params"]["primary_port"],
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "primary_port": self.primary_port
+        }
+
     async def transform(
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
@@ -238,12 +308,26 @@ class DefaultRetagTransformer(DefaultTransformer):
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a default port."
             )
-        tag = get_tag(inputs.values())
-        if not self.default_token:
-            self.default_token = (
-                await self._get_inputs({"__default__": self.default_port})
-            )["__default__"]
-        return {self.get_output_name(): self.default_token.retag(tag, recoverable=True)}
+        # If the default token is present, it means the primary token
+        # was evaluated previously and was empty
+        if self.default_token and self._only_default:
+            token = self.default_token.retag(get_tag(inputs.values()))
+            token.recoverable = True
+        # There is a single input port: the primary token is already retrieved as it manages the step life-cycle
+        elif len(self.input_ports) == 1:
+            token = await self._get_next_token(next(iter(inputs.values())), inputs)
+        # There are multiple input ports: retrieve the primary token and evaluate the next token for propagation
+        else:
+            token = (
+                await self._get_inputs(
+                    {self.primary_port: self.get_input_port(self.primary_port)}
+                )
+            )[self.primary_port]
+            if isinstance(token, TerminationToken):
+                self._only_default = True
+                token = None
+            token = await self._get_next_token(token, inputs)
+        return {self.get_output_name(): token}
 
 
 class DotProductSizeTransformer(ManyToOneTransformer):
@@ -260,11 +344,9 @@ class DotProductSizeTransformer(ManyToOneTransformer):
             raise WorkflowExecutionException(
                 f"Step {self.name} received {input_token.value}, but it must be a positive integer"
             )
-        return {
-            self.get_output_name(): input_token.update(
-                input_token.value, recoverable=True
-            )
-        }
+        token = input_token.update(input_token.value)
+        token.recoverable = True
+        return {self.get_output_name(): token}
 
 
 class FirstNonNullTransformer(OneToOneTransformer):

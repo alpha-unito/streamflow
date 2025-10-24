@@ -629,7 +629,9 @@ class SSHConnector(BaseConnector):
                 for location_obj in self.nodes.values()
             )
         )
-        for location_obj, hardware in zip(self.nodes.values(), hardware_locations):
+        for location_obj, hardware in zip(
+            self.nodes.values(), hardware_locations, strict=True
+        ):
             locations[location_obj.hostname] = AvailableLocation(
                 name=location_obj.hostname,
                 deployment=self.deployment_name,

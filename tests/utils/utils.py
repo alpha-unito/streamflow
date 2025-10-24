@@ -64,7 +64,9 @@ def check_combinators(
         != new_combinator.workflow.persistent_id
     )
     for original_inner, new_inner in zip(
-        original_combinator.combinators.values(), new_combinator.combinators.values()
+        original_combinator.combinators.values(),
+        new_combinator.combinators.values(),
+        strict=True,
     ):
         check_combinators(original_inner, new_inner)
 
@@ -129,7 +131,9 @@ async def duplicate_and_test(
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
     check_persistent_id(workflow, new_workflow, step, new_step)
     if test_are_eq:
-        for p1, p2 in zip(workflow.ports.values(), new_workflow.ports.values()):
+        for p1, p2 in zip(
+            workflow.ports.values(), new_workflow.ports.values(), strict=True
+        ):
             assert type(p1) is type(p2)
             assert p1.persistent_id != p2.persistent_id
             assert p1.workflow.name == p2.workflow.name

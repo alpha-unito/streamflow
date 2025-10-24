@@ -13,12 +13,16 @@ from collections.abc import Iterable, MutableMapping, MutableSequence
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.exception import ProcessorTypeError, WorkflowExecutionException
 from streamflow.core.persistence import PersistableEntity
 
 if TYPE_CHECKING:
+    from typing import TypeVar
+
     from streamflow.core.deployment import Connector, ExecutionLocation
     from streamflow.core.workflow import Token
+
+    T = TypeVar("T")
 
 
 class NamesStack:
@@ -56,7 +60,7 @@ def compare_tags(tag1: str, tag2: str) -> int:
     list2 = tag2.split(".")
     if (res := (len(list1) - len(list2))) != 0:
         return res
-    for elem1, elem2 in zip(list1, list2):
+    for elem1, elem2 in zip(list1, list2, strict=True):
         if (res := (int(elem1) - int(elem2))) != 0:
             return res
     return 0
@@ -150,11 +154,35 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
     keys = kwargs.keys()
     vals = kwargs.values()
     for instance in itertools.product(*vals):
-        yield dict(zip(keys, list(instance)))
+        yield dict(zip(keys, list(instance), strict=True))
 
 
 def encode_command(command: str, shell: str = "sh") -> str:
     return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | {shell}"
+
+
+async def eval_processors(unfinished: Iterable[asyncio.Task], name: str) -> Token:
+    error_msg = ""
+    while unfinished:
+        finished, unfinished = await asyncio.wait(
+            unfinished, return_when=asyncio.FIRST_COMPLETED
+        )
+        selected_task = None
+        for task in finished:
+            if isinstance(task.exception(), ProcessorTypeError):
+                error_msg += (
+                    f"\nTried {task.get_name()}, but received error {task.exception()}"
+                )
+            else:
+                for remaining in unfinished:
+                    remaining.cancel()
+                selected_task = task
+        if selected_task is not None:
+            if selected_task.exception() is not None:
+                raise selected_task.exception()
+            else:
+                return selected_task.result()
+    raise ProcessorTypeError(f"No suitable token processors in {name}:{error_msg}")
 
 
 def flatten_list(hierarchical_list):
@@ -292,6 +320,12 @@ def get_tag(tokens: Iterable[Token]) -> str:
         if len(tag) > len(output_tag):
             output_tag = tag
     return output_tag
+
+
+def make_future(obj: T) -> asyncio.Future[T]:
+    future = asyncio.Future()
+    future.set_result(obj)
+    return future
 
 
 def random_name() -> str:

@@ -12,7 +12,7 @@ venv() {
 }
 
 # Version of the standard to test against
-# Current options: v1.0, v1.1, v1.2
+# Current options: v1.0, v1.1, v1.2, and v1.3
 VERSION=${VERSION:-"v1.2"}
 
 # Which commit of the standard's repo to use
@@ -53,6 +53,10 @@ venv cwl-conformance-venv
 pip install -U setuptools wheel pip
 pip install -r "${SCRIPT_DIRECTORY}/requirements.txt"
 pip install -r "${SCRIPT_DIRECTORY}/test-requirements.txt"
+if [[ "${VERSION}" = "v1.3" ]] ; then
+  pip uninstall -y cwl-utils
+  pip install git+https://github.com/common-workflow-language/cwl-utils.git@refs/pull/370/head
+fi
 
 # Set conformance test filename
 if [[ "${VERSION}" = "v1.0" ]] ; then

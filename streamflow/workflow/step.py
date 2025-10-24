@@ -33,13 +33,13 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import compare_tags, get_entity_ids
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
-    CommandOutputProcessor,
     Job,
     Port,
     Status,
@@ -83,12 +83,13 @@ def _is_parent_tag(tag: str, parent: str) -> bool:
 def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
     num_skipped = 0
     for status in statuses:
-        if status == Status.FAILED:
-            return Status.FAILED
-        elif status == Status.CANCELLED:
-            return Status.CANCELLED
-        elif status == Status.SKIPPED:
-            num_skipped += 1
+        match status:
+            case Status.FAILED:
+                return Status.FAILED
+            case Status.CANCELLED:
+                return Status.CANCELLED
+            case Status.SKIPPED:
+                num_skipped += 1
     if num_skipped == len(statuses):
         return Status.SKIPPED
     else:
@@ -113,6 +114,7 @@ class BaseStep(Step, ABC):
                         for port_name, p in input_ports.items()
                     )
                 ),
+                strict=True,
             )
         }
         if logger.isEnabledFor(logging.DEBUG):
@@ -204,6 +206,7 @@ class Combinator(ABC):
                             for comb in self.combinators.values()
                         )
                     ),
+                    strict=True,
                 )
             },
             "combinators_map": self.combinators_map,
@@ -256,6 +259,7 @@ class Combinator(ABC):
                         for c in row["params"]["combinators"].values()
                     )
                 ),
+                strict=True,
             )
         )
         return combinator
@@ -455,10 +459,15 @@ class DefaultCommandOutputProcessor(CommandOutputProcessor):
     async def process(
         self,
         job: Job,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
-        return Token(tag=utils.get_tag(job.inputs.values()), value=command_output.value)
+        return Token(
+            tag=utils.get_tag(job.inputs.values()),
+            value=(await command_output).value,
+            recoverable=recoverable,
+        )
 
 
 class DeployStep(BaseStep):
@@ -653,6 +662,7 @@ class ExecuteStep(BaseStep):
                         for p in params["output_processors"].values()
                     )
                 ),
+                strict=True,
             )
         }
         if params["command"]:
@@ -666,12 +676,12 @@ class ExecuteStep(BaseStep):
         job: Job,
         output_name: str,
         output_port: Port,
-        command_output: CommandOutput,
+        command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
     ) -> None:
         if (
             token := await self.output_processors[output_name].process(
-                job, command_output, connector
+                job, command_output, connector, recoverable=True
             )
         ) is not None:
             job_token = get_job_token(
@@ -679,7 +689,7 @@ class ExecuteStep(BaseStep):
             )
             output_port.put(
                 await self._persist_token(
-                    token=token.update(token.value, recoverable=True),
+                    token=token,
                     port=output_port,
                     input_token_ids=get_entity_ids((*job.inputs.values(), job_token)),
                 )
@@ -694,28 +704,29 @@ class ExecuteStep(BaseStep):
     async def _execute_command(
         self, job: Job, connectors: MutableMapping[str, Connector]
     ):
-        command_output = await self.command.execute(job)
-        if command_output.status == Status.FAILED:
-            logger.error(f"FAILED Job {job.name} with error:\n\t{command_output.value}")
-            raise WorkflowExecutionException(
-                f"FAILED Job {job.name} with error:\n\t{command_output.value}"
+        command_task = asyncio.create_task(self.command.execute(job))
+        output_tasks = (
+            asyncio.create_task(
+                self._retrieve_output(
+                    job=job,
+                    output_name=output_name,
+                    output_port=self.workflow.ports[output_port],
+                    command_output=command_task,
+                    connector=connectors.get(output_name),
+                )
             )
-        elif command_output.status != Status.CANCELLED:
-            # Retrieve output tokens
-            if not self.terminated:
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._retrieve_output(
-                                job=job,
-                                output_name=output_name,
-                                output_port=self.workflow.ports[output_port],
-                                command_output=command_output,
-                                connector=connectors.get(output_name),
-                            )
-                        )
-                        for output_name, output_port in self.output_ports.items()
-                    )
+            for output_name, output_port in self.output_ports.items()
+        )
+        if (
+            command_output := await command_task
+        ).status == Status.COMPLETED and not self.terminated:
+            await asyncio.gather(*output_tasks)
+        else:
+            for output_task in output_tasks:
+                output_task.cancel()
+            if command_output.status == Status.FAILED:
+                raise WorkflowExecutionException(
+                    f"FAILED Job {job.name} with error:\n\t{command_output.value}"
                 )
 
     async def _run_job(
@@ -782,6 +793,7 @@ class ExecuteStep(BaseStep):
                             for p in self.output_processors.values()
                         )
                     ),
+                    strict=True,
                 )
             },
             "command": await self.command.save(context) if self.command else None,
@@ -822,6 +834,7 @@ class ExecuteStep(BaseStep):
                         for port_name, p in connector_ports.items()
                     )
                 ),
+                strict=True,
             )
         }
         # If there are input ports create jobs until termination token are received
@@ -1131,10 +1144,11 @@ class InputInjectorStep(BaseStep, ABC):
                         token,
                     ]
                     # Process value and inject token in the output port
-                    new_token = await self.process_input(job, token.value)
                     self.get_output_port().put(
                         await self._persist_token(
-                            token=new_token.update(new_token.value, recoverable=True),
+                            token=await self.process_input(
+                                job=job, token_value=token.value
+                            ),
                             port=self.get_output_port(),
                             input_token_ids=get_entity_ids(in_list),
                         )
@@ -1818,13 +1832,14 @@ class Transformer(BaseStep, ABC):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
 
+    def _filter_input_ports(self) -> MutableMapping[str, Port]:
+        return {k: v for k, v in self.get_input_ports().items() if k != "__job__"}
+
     async def run(self) -> None:
         try:
-            if self.input_ports:
+            if input_ports := self._filter_input_ports():
                 inputs_map = {}
-                input_ports = {
-                    k: v for k, v in self.get_input_ports().items() if k != "__job__"
-                }
+
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)

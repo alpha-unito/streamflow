@@ -133,6 +133,7 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
                             for p in row["processors"].values()
                         )
                     ),
+                    strict=True,
                 )
             },
         )
@@ -151,6 +152,7 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
                             for t in self.processors.values()
                         )
                     ),
+                    strict=True,
                 )
             }
         }

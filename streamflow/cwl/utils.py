@@ -141,9 +141,8 @@ async def _get_listing(
                         )
                     )
             break
-    return cast(
-        MutableSequence[MutableMapping[str, Any]],
-        await asyncio.gather(*listing_tokens.values()),
+    return sorted(
+        await asyncio.gather(*listing_tokens.values()), key=lambda t: t["basename"]
     )
 
 
@@ -160,66 +159,77 @@ async def _process_secondary_file(
     load_listing: LoadListing | None,
     only_retrieve_from_token: bool,
 ) -> MutableMapping[str, Any] | None:
-    # If value is None, simply return None
-    if secondary_file is None:
-        return None
-    # If value is a dictionary, simply append it to the list
-    elif isinstance(secondary_file, MutableMapping):
-        filepath = get_path_from_token(secondary_file)
-        for location in locations:
-            path = StreamFlowPath(filepath, context=context, location=location)
-            if await path.exists():
-                return await get_file_token(
-                    context=context,
-                    connector=connector,
-                    cwl_version=cwl_version,
-                    locations=locations,
-                    token_class=get_token_class(secondary_file),
-                    filepath=filepath,
-                    file_format=secondary_file.get("format"),
-                    basename=secondary_file.get("basename"),
-                    load_contents=load_contents,
-                    load_listing=load_listing,
+    match secondary_file:
+        # If value is None, simply return None
+        case None:
+            return None
+        # If value is a dictionary, simply append it to the list
+        case MutableMapping():
+            filepath = get_path_from_token(secondary_file)
+            for location in locations:
+                if await (
+                    path := StreamFlowPath(filepath, context=context, location=location)
+                ).exists():
+                    return await get_file_token(
+                        context=context,
+                        connector=connector,
+                        cwl_version=cwl_version,
+                        locations=locations,
+                        token_class=get_token_class(secondary_file),
+                        filepath=filepath,
+                        file_format=secondary_file.get("format"),
+                        basename=secondary_file.get("basename"),
+                        load_contents=load_contents,
+                        load_listing=load_listing,
+                    )
+            return None
+        # If value is a string
+        case str():
+            # If value doesn't come from an expression, apply it to the primary path
+            path_processor = get_path_processor(connector)
+            filepath = (
+                secondary_file
+                if from_expression
+                else _process_sf_path(
+                    path_processor, secondary_file, get_path_from_token(token_value)
                 )
-        return None
-    # If value is a string
-    else:
-        # If value doesn't come from an expression, apply it to the primary path
-        path_processor = get_path_processor(connector)
-        filepath = (
-            secondary_file
-            if from_expression
-            else _process_sf_path(
-                path_processor, secondary_file, get_path_from_token(token_value)
             )
-        )
-        if not path_processor.isabs(filepath):
-            filepath = path_processor.join(
-                path_processor.dirname(get_path_from_token(token_value)), filepath
-            )
-        if filepath not in existing_sf:
-            # If must only retrieve elements from token, return None
-            if only_retrieve_from_token:
-                return None
+            if not path_processor.isabs(filepath):
+                filepath = path_processor.join(
+                    path_processor.dirname(get_path_from_token(token_value)), filepath
+                )
+            if filepath not in existing_sf:
+                # If it must only retrieve elements from token, return None
+                if only_retrieve_from_token:
+                    return None
+                else:
+                    # Search file in job locations and build token value
+                    for location in locations:
+                        if await (
+                            path := StreamFlowPath(
+                                filepath, context=context, location=location
+                            )
+                        ).exists():
+                            token_class = (
+                                "File" if await path.is_file() else "Directory"
+                            )
+                            return await get_file_token(
+                                context=context,
+                                connector=connector,
+                                cwl_version=cwl_version,
+                                locations=locations,
+                                token_class=token_class,
+                                filepath=filepath,
+                                load_contents=load_contents,
+                                load_listing=load_listing,
+                            )
+                    return None
             else:
-                # Search file in job locations and build token value
-                for location in locations:
-                    path = StreamFlowPath(filepath, context=context, location=location)
-                    if await path.exists():
-                        token_class = "File" if await path.is_file() else "Directory"
-                        return await get_file_token(
-                            context=context,
-                            connector=connector,
-                            cwl_version=cwl_version,
-                            locations=locations,
-                            token_class=token_class,
-                            filepath=filepath,
-                            load_contents=load_contents,
-                            load_listing=load_listing,
-                        )
-                return None
-        else:
-            return existing_sf[filepath]
+                return existing_sf[filepath]
+        case _:
+            raise WorkflowExecutionException(
+                f"Invalid value `{secondary_file}` for a secondary file."
+            )
 
 
 def _process_sf_path(
@@ -345,34 +355,39 @@ async def build_token_value(
         if token_class == "streaming":
             return {"class": "streaming", "path": get_path_from_token(token_value)}
         path_processor = get_path_processor(connector)
-        # Get filepath
-        if (filepath := get_path_from_token(token_value)) is not None:
-            # Process secondary files in token value
-            sf_map = {}
-            if "secondaryFiles" in token_value:
-                sf_tasks = []
-                for sf in token_value.get("secondaryFiles", []):
-                    sf_tasks.append(
-                        asyncio.create_task(
-                            get_file_token(
-                                context=context,
-                                connector=connector,
-                                cwl_version=cwl_version,
-                                locations=locations,
-                                token_class=get_token_class(sf),
-                                filepath=get_path_from_token(sf),
-                                file_format=sf.get("format"),
-                                basename=sf.get("basename"),
-                                load_contents=load_contents,
-                                load_listing=load_listing,
-                            )
+        # Process secondary files in token value
+        sf_map = {}
+        if "secondaryFiles" in token_value:
+            sf_tasks = []
+            for sf in token_value.get("secondaryFiles", []):
+                sf_token_class = get_token_class(sf)
+                sf_tasks.append(
+                    asyncio.create_task(
+                        get_file_token(
+                            context=context,
+                            connector=connector,
+                            cwl_version=cwl_version,
+                            locations=locations,
+                            token_class=sf_token_class,
+                            filepath=get_path_from_token(sf)
+                            or path_processor.join(
+                                js_context["runtime"]["outdir"], sf.get("basename")
+                            ),
+                            file_format=sf.get("format"),
+                            basename=sf.get("basename"),
+                            contents=sf.get("contents"),
+                            is_literal=is_literal_file(sf_token_class, sf),
+                            load_contents=load_contents,
+                            load_listing=load_listing,
                         )
                     )
-                sf_map = {
-                    get_path_from_token(sf): sf
-                    for sf in await asyncio.gather(*sf_tasks)
-                }
-            # Compute the new token value
+                )
+            sf_map = {
+                get_path_from_token(sf): sf for sf in await asyncio.gather(*sf_tasks)
+            }
+        # Get filepath
+        is_literal = is_literal_file(token_class, token_value)
+        if (filepath := get_path_from_token(token_value)) is not None:
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
@@ -382,46 +397,27 @@ async def build_token_value(
                 filepath=filepath,
                 file_format=token_value.get("format"),
                 basename=token_value.get("basename"),
+                is_literal=is_literal,
                 load_contents=load_contents,
                 load_listing=load_listing,
             )
-            # Compute new secondary files from port specification
-            sf_context = cast(dict[str, Any], js_context) | {"self": token_value}
-            if secondary_files:
-                await process_secondary_files(
-                    context=context,
-                    cwl_version=cwl_version,
-                    secondary_files=secondary_files,
-                    sf_map=sf_map,
-                    js_context=sf_context,
-                    full_js=full_js,
-                    expression_lib=expression_lib,
-                    connector=connector,
-                    locations=locations,
-                    token_value=token_value,
-                    load_contents=load_contents,
-                    load_listing=load_listing,
-                )
-                # Add all secondary files to the token
-                if sf_map:
-                    token_value["secondaryFiles"] = list(sf_map.values())
         # If there is only a 'contents' field, propagate the parameter
         elif "contents" in token_value:
-            filepath = path_processor.join(
-                js_context["runtime"]["outdir"],
-                token_value.get("basename", random_name()),
-            )
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
                 cwl_version=cwl_version,
                 locations=locations,
                 token_class=token_class,
-                filepath=filepath,
+                filepath=path_processor.join(
+                    js_context["runtime"]["outdir"],
+                    token_value.get("basename", random_name()),
+                ),
                 file_format=token_value.get("format"),
                 basename=token_value.get("basename"),
-                load_listing=load_listing,
                 contents=token_value.get("contents"),
+                is_literal=is_literal,
+                load_listing=load_listing,
             )
         # If there is only a 'listing' field, build a folder token and process all the listing entries recursively
         elif "listing" in token_value:
@@ -464,10 +460,30 @@ async def build_token_value(
                 filepath=filepath,
                 file_format=token_value.get("format"),
                 basename=token_value.get("basename"),
+                is_literal=is_literal,
                 load_contents=load_contents,
                 load_listing=load_listing,
             )
             token_value["listing"] = listing_tokens
+        # Compute new secondary files from port specification
+        if secondary_files:
+            await process_secondary_files(
+                context=context,
+                cwl_version=cwl_version,
+                secondary_files=secondary_files,
+                sf_map=sf_map,
+                js_context=cast(dict[str, Any], js_context) | {"self": token_value},
+                full_js=full_js,
+                expression_lib=expression_lib,
+                connector=connector,
+                locations=locations,
+                token_value=token_value,
+                load_contents=load_contents,
+                load_listing=load_listing,
+            )
+        # Add all secondary files to the token
+        if sf_map:
+            token_value["secondaryFiles"] = list(sf_map.values())
     return token_value
 
 
@@ -513,8 +529,8 @@ def eval_expression(
     timeout: int | None = None,
     strip_whitespace: bool = True,
 ) -> Any:
-    if isinstance(expression, str) and ("$(" in expression or "${" in expression):
-        return cwl_utils.expression.interpolate(
+    return (
+        cwl_utils.expression.interpolate(
             expression,
             context,
             jslib=(
@@ -526,8 +542,9 @@ def eval_expression(
             strip_whitespace=strip_whitespace,
             timeout=timeout,
         )
-    else:
-        return expression
+        if is_expression(expression)
+        else expression
+    )
 
 
 async def expand_glob(
@@ -560,10 +577,12 @@ async def expand_glob(
                     real_path=ep or p,
                 )
             )
-            for p, ep in zip(paths, effective_paths)
+            for p, ep in zip(paths, effective_paths, strict=True)
         )
     )
-    return [(str(p), str(ep or p)) for p, ep in zip(paths, effective_paths)]
+    return [
+        (str(p), str(ep or p)) for p, ep in zip(paths, effective_paths, strict=True)
+    ]
 
 
 async def get_class_from_path(
@@ -589,9 +608,9 @@ async def get_file_token(
     token_class: str,
     filepath: str,
     basename: str | None = None,
-    check_content: bool = False,
     contents: str | None = None,
     file_format: str | None = None,
+    is_literal: bool = False,
     load_contents: bool = False,
     load_listing: LoadListing | None = None,
 ) -> MutableMapping[str, Any]:
@@ -609,32 +628,38 @@ async def get_file_token(
         if file_format:
             token["format"] = file_format
         token["nameroot"], token["nameext"] = path_processor.splitext(basename)
-        for location in locations:
-            path = StreamFlowPath(filepath, context=context, location=location)
-            if real_path := await path.resolve():
-                token["size"] = await real_path.size()
-                if load_contents:
-                    token["contents"] = await _get_contents(
-                        real_path,
-                        token["size"],
-                        cwl_version,
-                    )
-                if (checksum := await real_path.checksum()) is not None:
-                    token["checksum"] = f"sha1${checksum}"
-                else:
-                    raise WorkflowExecutionException(
-                        f"Impossible to retrieve checksum of {real_path} on {location}"
-                    )
-                break
-        else:
-            if check_content and contents is None:
+        if not is_literal:
+            for location in locations:
+                if real_path := await StreamFlowPath(
+                    filepath, context=context, location=location
+                ).resolve():
+                    token["size"] = await real_path.size()
+                    if load_contents:
+                        token["contents"] = await _get_contents(
+                            real_path,
+                            token["size"],
+                            cwl_version,
+                        )
+                    if (checksum := await real_path.checksum()) is not None:
+                        token["checksum"] = f"sha1${checksum}"
+                    else:
+                        raise WorkflowExecutionException(
+                            f"Impossible to retrieve checksum of {real_path} on {location}"
+                        )
+                    break
+            else:
                 raise WorkflowExecutionException(f"File {filepath} does not exist")
         if contents and not load_contents:
             token["contents"] = contents
-    elif token_class == "Directory" and load_listing != LoadListing.no_listing:  # nosec
+    elif (
+        token_class == "Directory"  # nosec
+        and load_listing != LoadListing.no_listing
+        and not is_literal
+    ):
         for location in locations:
-            path = StreamFlowPath(filepath, context=context, location=location)
-            if await path.exists():
+            if await (
+                path := StreamFlowPath(filepath, context=context, location=location)
+            ).exists():
                 token["listing"] = await _get_listing(
                     context=context,
                     connector=connector,
@@ -685,21 +710,48 @@ def get_token_class(token_value: Any) -> str | None:
 
 
 def infer_type_from_token(token_value: Any) -> str:
-    if isinstance(token_value, MutableMapping):
-        return get_token_class(token_value) or "record"
-    elif isinstance(token_value, MutableSequence):
-        return "array"
-    elif isinstance(token_value, str):
-        return "string"
-    elif isinstance(token_value, bool):
-        return "boolean"
-    elif isinstance(token_value, int):
-        return "long"
-    elif isinstance(token_value, float):
-        return "double"
+    match token_value:
+        case MutableMapping():
+            return get_token_class(token_value) or "record"
+        case MutableSequence():
+            return "array"
+        case str():
+            return "string"
+        case bool():
+            return "boolean"
+        case int():
+            return "long"
+        case float():
+            return "double"
+        case _:
+            # Could not infer token type: mark as Any
+            return "Any"
+
+
+def is_expression(expression: Any) -> bool:
+    return isinstance(expression, str) and ("$(" in expression or "${" in expression)
+
+
+def is_literal_file(
+    file_class: str, file_value: MutableMapping[str, Any], job_name: str | None = None
+) -> bool:
+    if not ("path" in file_value or "location" in file_value):
+        job_msg = f"Job {job_name} cannot process the file. " if job_name else ""
+        if file_class == "File" and ("contents" not in file_value):
+            # The file can have the `contents` field without the `basename` field
+            # but cannot have the `basename` field without the `contents` field
+            raise WorkflowDefinitionException(
+                f"{job_msg}Anonymous file object must have 'contents' and 'basename' fields."
+            )
+        if file_class == "Directory" and (
+            "listing" not in file_value or "basename" not in file_value
+        ):
+            raise WorkflowDefinitionException(
+                f"{job_msg}Anonymous directory object must have 'listing' and 'basename' fields."
+            )
+        return True
     else:
-        # Could not infer token type: mark as Any
-        return "Any"
+        return False
 
 
 class LoadListing(Enum):
@@ -783,7 +835,7 @@ async def process_secondary_files(
     sf_tasks, sf_specs = [], []
     for secondary_file in secondary_files:
         # If pattern is an expression, evaluate it and process result
-        if "$(" in secondary_file.pattern or "${" in secondary_file.pattern:
+        if is_expression(secondary_file.pattern):
             sf_value = eval_expression(
                 expression=secondary_file.pattern,
                 context=js_context,
@@ -852,7 +904,9 @@ async def process_secondary_files(
                 )
             )
             sf_specs.append(secondary_file)
-    for sf_value, sf_spec in zip(await asyncio.gather(*sf_tasks), sf_specs):
+    for sf_value, sf_spec in zip(
+        await asyncio.gather(*sf_tasks), sf_specs, strict=True
+    ):
         if sf_value is not None:
             sf_map[get_path_from_token(sf_value)] = sf_value
         else:
@@ -961,54 +1015,71 @@ def remap_path(
 def remap_token_value(
     path_processor: ModuleType, old_dir: str, new_dir: str, value: Any
 ) -> Any:
-    if isinstance(value, MutableSequence):
-        return [remap_token_value(path_processor, old_dir, new_dir, v) for v in value]
-    elif isinstance(value, MutableMapping):
-        if get_token_class(value) in ["File", "Directory"]:
-            if "location" in value:
-                value["location"] = remap_path(
-                    path_processor=path_processor,
-                    path=value["location"],
-                    old_dir=old_dir,
-                    new_dir=new_dir,
-                )
-            if "path" in value:
-                value["path"] = remap_path(
-                    path_processor=path_processor,
-                    path=value["path"],
-                    old_dir=old_dir,
-                    new_dir=new_dir,
-                )
-            if "secondaryFiles" in value:
-                value["secondaryFiles"] = [
-                    remap_token_value(path_processor, old_dir, new_dir, sf)
-                    for sf in value["secondaryFiles"]
-                ]
-            if "listing" in value:
-                value["listing"] = [
-                    remap_token_value(path_processor, old_dir, new_dir, sf)
-                    for sf in value["listing"]
-                ]
+    match value:
+        case MutableSequence():
+            return [
+                remap_token_value(path_processor, old_dir, new_dir, v) for v in value
+            ]
+        case MutableMapping():
+            match get_token_class(value):
+                case "File" | "Directory":
+                    if "location" in value:
+                        value["location"] = remap_path(
+                            path_processor=path_processor,
+                            path=value["location"],
+                            old_dir=old_dir,
+                            new_dir=new_dir,
+                        )
+                    if "path" in value:
+                        value["path"] = remap_path(
+                            path_processor=path_processor,
+                            path=value["path"],
+                            old_dir=old_dir,
+                            new_dir=new_dir,
+                        )
+                    if "secondaryFiles" in value:
+                        value["secondaryFiles"] = [
+                            remap_token_value(path_processor, old_dir, new_dir, sf)
+                            for sf in value["secondaryFiles"]
+                        ]
+                    if "listing" in value:
+                        value["listing"] = [
+                            remap_token_value(path_processor, old_dir, new_dir, sf)
+                            for sf in value["listing"]
+                        ]
+                    return value
+                case _:
+                    return {
+                        k: remap_token_value(path_processor, old_dir, new_dir, v)
+                        for k, v in value.items()
+                    }
+        case _:
             return value
-        else:
-            return {
-                k: remap_token_value(path_processor, old_dir, new_dir, v)
-                for k, v in value.items()
-            }
-    else:
-        return value
 
 
 def resolve_dependencies(
     expression: str,
     full_js: bool = False,
     expression_lib: MutableSequence[str] | None = None,
-    timeout: int | None = None,
+    context_key: str | None = None,
     strip_whitespace: bool = True,
 ) -> set[str]:
-    if isinstance(expression, str) and ("$(" in expression or "${" in expression):
+    """
+    Resolves the dependencies used in the CWL context (e.g., inputs, self, or runtime) of a given expression.
+    Dependencies refer to context values that are used in the specified expression, based on the provided context key.
+
+    :param expression: The expression whose dependencies are to be resolved.
+    :param full_js: A boolean flag indicating whether to use full JavaScript evaluation.
+    :param expression_lib: A list of JavaScript libraries to include in the evaluation.
+    :param context_key: The context key to use when resolving dependencies. If None, the "inputs" key is used by default.
+    :param strip_whitespace: A boolean flag indicating whether to strip whitespace from the expression.
+
+    :returns: A set of resolved dependencies (i.e., contextual values) used in the expression.
+    """
+    if is_expression(expression):
+        context_key = context_key or "inputs"
         context: MutableMapping[str, Any] = {"inputs": {}, "self": {}, "runtime": {}}
-        engine = DependencyResolver()
+        engine = DependencyResolver(context_key)
         cwl_utils.expression.interpolate(
             expression,
             context,
@@ -1019,7 +1090,6 @@ def resolve_dependencies(
             ),
             fullJS=full_js,
             strip_whitespace=strip_whitespace,
-            timeout=timeout,
             resolve_dependencies=True,
             js_engine=engine,
         )

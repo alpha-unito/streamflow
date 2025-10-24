@@ -2,12 +2,6 @@ import logging
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
-
-if sys.version_info < (3, 11):
-    from importlib.abc import Traversable
-else:
-    from importlib.resources.abc import Traversable
-
 from typing import Any
 
 from streamflow.config import ext_schemas
@@ -27,6 +21,12 @@ from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes
+
+if sys.version_info < (3, 11):
+    from importlib.abc import Traversable
+else:
+    from importlib.resources.abc import Traversable
+
 
 extension_points: MutableMapping[str, MutableMapping[str, Any]] = {
     "binding_filter": binding_filter_classes,

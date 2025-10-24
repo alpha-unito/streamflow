@@ -80,7 +80,9 @@ async def _run_many_to_one_transformer(
         name=f"{utils.random_name()}-scatter-size-transformer",
     )
     step.add_output_port("test", out_port)
-    for i, (token_list, input_port) in enumerate(zip(token_lists, input_ports)):
+    for i, (token_list, input_port) in enumerate(
+        zip(token_lists, input_ports, strict=True)
+    ):
         await inject_tokens(token_list, input_port, context)
         step.add_input_port(f"param{i}", input_port)
 
@@ -166,7 +168,12 @@ async def test_default_transformer(context: StreamFlowContext, step_cls: type[St
         kwargs_step={
             "name": utils.random_name() + "-transformer",
             "default_port": in_port,
-        },
+        }
+        | (
+            {"primary_port": "pci"}
+            if issubclass(step_cls, DefaultRetagTransformer)
+            else {}
+        ),
         token_list=token_list,
     )
 
@@ -292,6 +299,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=step_name,
                 workflow=cast(CWLWorkflow, workflow),
+                token_type="string",
             ),
         },
         token_list=token_list,
@@ -325,6 +333,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
             "processor": CWLTokenProcessor(
                 name=in_port.name,
                 workflow=cast(CWLWorkflow, workflow),
+                token_type="long",
             ),
             "port_name": in_port.name,
             "full_js": True,
@@ -641,7 +650,9 @@ async def test_empty_scatter_conditional_step(context: StreamFlowContext):
     )
 
     assert len(out_port.token_list) == 5
-    for in_token, out_token in zip(in_port.token_list[:-1], out_port.token_list[:-1]):
+    for in_token, out_token in zip(
+        in_port.token_list[:-1], out_port.token_list[:-1], strict=True
+    ):
         await verify_dependency_tokens(
             token=out_token,
             port=out_port,
@@ -702,6 +713,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         processor=CWLTokenProcessor(
             name=in_port.name,
             workflow=cast(CWLWorkflow, workflow),
+            token_type="long",
         ),
         port_name=port_name,
         full_js=True,

@@ -59,7 +59,7 @@ def pytest_configure(config):
     )
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def chosen_deployment_types(request):
     return request.config.getoption("--deploys")
 
@@ -67,23 +67,23 @@ def chosen_deployment_types(request):
 def pytest_generate_tests(metafunc):
     if "deployment" in metafunc.fixturenames:
         metafunc.parametrize(
-            "deployment", metafunc.config.getoption("deploys"), scope="module"
+            "deployment", metafunc.config.getoption("deploys"), scope="session"
         )
     if "deployment_src" in metafunc.fixturenames:
         metafunc.parametrize(
             "deployment_src",
             metafunc.config.getoption("deploys"),
-            scope="module",
+            scope="session",
         )
     if "deployment_dst" in metafunc.fixturenames:
         metafunc.parametrize(
             "deployment_dst",
             metafunc.config.getoption("deploys"),
-            scope="module",
+            scope="session",
         )
     if "communication_pattern" in metafunc.fixturenames:
         fst_remote = next(
-            d for d in metafunc.config.getoption("deploys") if d != "local"
+            (d for d in metafunc.config.getoption("deploys") if d != "local"), None
         )
         test_local = "local" in metafunc.config.getoption("deploys")
         comm_pattern = [
@@ -107,22 +107,30 @@ def pytest_generate_tests(metafunc):
             *((d, d) for d in metafunc.config.getoption("deploys") if d != "local"),
             # Remote to Remote testing the data receiving
             *(
-                (fst_remote, d)
-                for d in metafunc.config.getoption("deploys")
-                if d != fst_remote and d != "local"
+                (
+                    (fst_remote, d)
+                    for d in metafunc.config.getoption("deploys")
+                    if d != fst_remote and d != "local"
+                )
+                if fst_remote
+                else ()
             ),
             # Remote to Remote testing the data sending
             *(
-                (d, fst_remote)
-                for d in metafunc.config.getoption("deploys")
-                if d != fst_remote and d != "local"
+                (
+                    (d, fst_remote)
+                    for d in metafunc.config.getoption("deploys")
+                    if d != fst_remote and d != "local"
+                )
+                if fst_remote
+                else ()
             ),
         ]
         metafunc.parametrize(
             "communication_pattern",
             comm_pattern,
             ids=["-".join(locs) for locs in comm_pattern],
-            scope="module",
+            scope="session",
         )
 
 
@@ -133,8 +141,10 @@ def all_deployment_types():
     return deployments_
 
 
-@pytest_asyncio.fixture(scope="module")
-async def context(chosen_deployment_types) -> AsyncGenerator[StreamFlowContext, Any]:
+@pytest_asyncio.fixture(scope="session")
+async def context(
+    chosen_deployment_types: MutableSequence[str],
+) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
             "database": {"type": "default", "config": {"connection": ":memory:"}},
@@ -193,7 +203,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     if isinstance(elem1, Collection) and not isinstance(elem1, dict):
         if len(elem1) != len(elem2):
             return False
-        for e1, e2 in zip(elem1, elem2):
+        for e1, e2 in zip(elem1, elem2, strict=True):
             if not are_equals(e1, e2, obj_compared):
                 return False
         return True

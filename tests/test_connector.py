@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import pytest_asyncio
+from pytest import LogCaptureFixture
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation
@@ -37,28 +38,29 @@ def _get_future_connector_methods() -> MutableSequence[Callable]:
 
 def _get_connector_method_params(method_name: str) -> MutableSequence[Any]:
     loc = ExecutionLocation("test-location", "failure-test")
-    if method_name in ("copy_remote_to_local", "copy_local_to_remote"):
-        return ["test_src", "test_dst", [loc]]
-    elif method_name in ("deploy", "undeploy"):
-        return [False]
-    elif method_name == "copy_remote_to_remote":
-        return ["test_src", "test_dst", [loc], loc]
-    elif method_name == "get_available_locations":
-        return []
-    elif method_name in ("get_stream_reader", "get_stream_writer"):
-        return [["test_command"], loc]
-    elif method_name == "run":
-        return [loc, ["ls"]]
-    else:
-        raise pytest.fail(f"Unknown method_name: {method_name}")
+    match method_name:
+        case "copy_remote_to_local" | "copy_local_to_remote":
+            return ["test_src", "test_dst", [loc]]
+        case "deploy" | "undeploy":
+            return [False]
+        case "copy_remote_to_remote":
+            return ["test_src", "test_dst", [loc], loc]
+        case "get_available_locations":
+            return []
+        case "get_stream_reader" | "get_stream_writer":
+            return [["test_command"], loc]
+        case "run":
+            return [loc, ["ls"]]
+        case _:
+            raise pytest.fail(f"Unknown method_name: {method_name}")
 
 
-@pytest_asyncio.fixture(scope="module")
+@pytest_asyncio.fixture(scope="session")
 async def curr_location(context, deployment_src) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="session")
 def curr_connector(context, curr_location) -> Connector:
     return context.deployment_manager.get_connector(curr_location.deployment)
 
@@ -79,7 +81,7 @@ async def test_connector_run_command(
 @pytest.mark.asyncio
 async def test_connector_run_command_fails(
     curr_connector: Connector, curr_location: ExecutionLocation
-):
+) -> None:
     """Test connector run method on a job with an invalid command"""
     _, returncode = await curr_connector.run(
         curr_location, ["ls -2"], capture_output=True, job_name="job_test"
@@ -137,12 +139,16 @@ async def test_future_connector_multiple_request_fail(
 
 @pytest.mark.asyncio
 async def test_ssh_connector_channel_open_error(
-    caplog, context: StreamFlowContext
+    caplog: LogCaptureFixture,
+    chosen_deployment_types: MutableSequence[str],
+    context: StreamFlowContext,
 ) -> None:
     """
     Test SSHConnector on a channel open error which close the ssh connection.
     The SSHConnector retry mechanism will retry on a new ssh connection
     """
+    if "ssh" not in chosen_deployment_types:
+        pytest.skip("Deployment ssh was not activated")
     caplog.set_level(logging.WARNING)
     caplog_handler = caplog.handler
     logger.addHandler(caplog_handler)
@@ -160,8 +166,12 @@ async def test_ssh_connector_channel_open_error(
 
 
 @pytest.mark.asyncio
-async def test_ssh_connector_multiple_request_fail(context: StreamFlowContext) -> None:
+async def test_ssh_connector_multiple_request_fail(
+    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+) -> None:
     """Test SSHConnector with multiple requests but the deployment fails"""
+    if "ssh" not in chosen_deployment_types:
+        pytest.skip("Deployment ssh was not activated")
     deployment_config = await get_ssh_deployment_config(context)
     # changed username to get an exception for the test
     deployment_config.config["nodes"][0]["username"] = "test"

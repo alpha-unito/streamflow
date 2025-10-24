@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import tempfile
 from collections.abc import MutableSequence
 from importlib.resources import files
@@ -26,52 +27,77 @@ from streamflow.deployment import DefaultDeploymentManager
 from tests.utils.data import get_data_path
 
 
+def _get_free_tcp_port() -> int:
+    """
+    Return a free TCP port to be used for publishing services.
+    """
+    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    tcp.bind(("", 0))
+    addr, port = tcp.getsockname()
+    tcp.close()
+    return port
+
+
 def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
-    if deployment_t == "local":
-        return "__LOCAL__"
-    elif deployment_t == "docker":
-        return "alpine-docker"
-    elif deployment_t == "docker-wrapper":
-        return "alpine-docker-wrapper"
-    elif deployment_t == "docker-compose":
-        return "alpine-docker-compose"
-    elif deployment_t == "kubernetes":
-        return "alpine-kubernetes"
-    elif deployment_t == "parameterizable_hardware":
-        return "custom-hardware"
-    elif deployment_t == "singularity":
-        return "alpine-singularity"
-    elif deployment_t == "slurm":
-        return "docker-slurm"
-    elif deployment_t == "ssh":
-        return "linuxserver-ssh"
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
+    match deployment_t:
+        case "local":
+            return "__LOCAL__"
+        case "docker":
+            return "alpine-docker"
+        case "docker-wrapper":
+            return "alpine-docker-wrapper"
+        case "docker-compose":
+            return "alpine-docker-compose"
+        case "kubernetes":
+            return "alpine-kubernetes"
+        case "parameterizable_hardware":
+            return "custom-hardware"
+        case "singularity":
+            return "alpine-singularity"
+        case "slurm":
+            return "docker-slurm"
+        case "ssh":
+            return "linuxserver-ssh"
+        case "local-fs-volatile":
+            return "local-fs-volatile"
+        case _:
+            raise Exception(f"{deployment_t} deployment type not supported")
 
 
 async def get_deployment_config(
     _context: StreamFlowContext, deployment_t: str
 ) -> DeploymentConfig:
-    if deployment_t == "local":
-        return get_local_deployment_config()
-    elif deployment_t == "docker":
-        return get_docker_deployment_config()
-    elif deployment_t == "docker-compose":
-        return get_docker_compose_deployment_config()
-    elif deployment_t == "docker-wrapper":
-        return await get_docker_wrapper_deployment_config(_context)
-    elif deployment_t == "kubernetes":
-        return get_kubernetes_deployment_config()
-    elif deployment_t == "parameterizable_hardware":
-        return get_parameterizable_hardware_deployment_config()
-    elif deployment_t == "singularity":
-        return get_singularity_deployment_config()
-    elif deployment_t == "slurm":
-        return await get_slurm_deployment_config(_context)
-    elif deployment_t == "ssh":
-        return await get_ssh_deployment_config(_context)
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
+    match deployment_t:
+        case "local":
+            return get_local_deployment_config()
+        case "local-fs-volatile":
+            return get_local_deployment_config(
+                name="local-fs-volatile",
+                workdir=os.path.join(
+                    os.path.realpath(tempfile.gettempdir()),
+                    "streamflow-test",
+                    random_name(),
+                    "test-fs-volatile",
+                ),
+            )
+        case "docker":
+            return get_docker_deployment_config()
+        case "docker-compose":
+            return get_docker_compose_deployment_config()
+        case "docker-wrapper":
+            return await get_docker_wrapper_deployment_config(_context)
+        case "kubernetes":
+            return get_kubernetes_deployment_config()
+        case "parameterizable_hardware":
+            return get_parameterizable_hardware_deployment_config()
+        case "singularity":
+            return get_singularity_deployment_config()
+        case "slurm":
+            return await get_slurm_deployment_config(_context)
+        case "ssh":
+            return await get_ssh_deployment_config(_context)
+        case _:
+            raise Exception(f"{deployment_t} deployment type not supported")
 
 
 def get_docker_compose_deployment_config():
@@ -81,7 +107,8 @@ def get_docker_compose_deployment_config():
         config={
             "files": [
                 str(get_data_path("deployment", "docker-compose", "docker-compose.yml"))
-            ]
+            ],
+            "projectName": random_name(),
         },
         external=False,
         lazy=False,
@@ -148,13 +175,15 @@ def get_kubernetes_deployment_config():
     )
 
 
-def get_local_deployment_config():
-    workdir = os.path.join(
+def get_local_deployment_config(
+    name: str | None = None, workdir: str | None = None
+) -> DeploymentConfig:
+    workdir = workdir or os.path.join(
         os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
     )
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
-        name="__LOCAL__",
+        name=name or "__LOCAL__",
         type="local",
         config={},
         external=True,
@@ -189,23 +218,25 @@ def get_parameterizable_hardware_deployment_config():
 
 
 def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
-    if deployment_t in (
-        "local",
-        "docker",
-        "docker-wrapper",
-        "parameterizable_hardware",
-        "singularity",
-        "ssh",
-    ):
-        return None
-    elif deployment_t == "docker-compose":
-        return "alpine"
-    elif deployment_t == "kubernetes":
-        return "sf-test"
-    elif deployment_t == "slurm":
-        return "test"
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
+    match deployment_t:
+        case (
+            "local"
+            | "docker"
+            | "docker-wrapper"
+            | "parameterizable_hardware"
+            | "singularity"
+            | "ssh"
+            | "local-fs-volatile"
+        ):
+            return None
+        case "docker-compose":
+            return "alpine"
+        case "kubernetes":
+            return "sf-test"
+        case "slurm":
+            return "test"
+        case _:
+            raise Exception(f"{deployment_t} deployment type not supported")
 
 
 def get_singularity_deployment_config():
@@ -224,7 +255,7 @@ async def get_slurm_deployment_config(_context: StreamFlowContext):
         type="docker-compose",
         config={
             "files": [str(get_data_path("deployment", "slurm", "docker-compose.yml"))],
-            "projectName": "slurm",
+            "projectName": random_name(),
         },
         external=False,
     )
@@ -256,6 +287,7 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
     public_key = skey.export_public_key().decode("utf-8")
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         skey.write_private_key(f.name)
+    ssh_port = _get_free_tcp_port()
     docker_config = DeploymentConfig(
         name="linuxserver-ssh-docker",
         type="docker",
@@ -263,7 +295,7 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
             "image": "lscr.io/linuxserver/openssh-server",
             "env": [f"PUBLIC_KEY={public_key}"],
             "init": False,
-            "publish": ["2222:2222"],
+            "publish": [f"{ssh_port}:2222"],
         },
         external=False,
         lazy=False,
@@ -277,7 +309,7 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
             "nodes": [
                 {
                     "checkHostKey": False,
-                    "hostname": "127.0.0.1:2222",
+                    "hostname": f"127.0.0.1:{ssh_port}",
                     "sshKey": f.name,
                     "username": "linuxserver.io",
                     "retries": 2,
