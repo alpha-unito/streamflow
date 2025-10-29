@@ -563,7 +563,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                     self.create_action_map[wf_id].get(parent["@id"], {}).items()
                 ):
                     if step_name.startswith(action_name):
-                        for create_action in create_actions[tag]:
+                        for create_action in create_actions.get(tag, []):
                             if is_input and param["@id"] in [
                                 inp["@id"] for inp in parent.get("input", [])
                             ]:
