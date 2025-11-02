@@ -121,7 +121,7 @@ class DependencyResolver:
                     and not remaining_string[m.end(1) :]
                 ):
                     return None
-                self.deps = {key}
+                self.deps.add(key)
             return None
         else:
             return None
