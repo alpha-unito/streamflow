@@ -77,6 +77,7 @@ jobs:
         uses: douglascamata/setup-docker-macos-action@v1
         with:
           colima-additional-options: '--mount /private/var/folders:w'
+          lima: v1.2.2
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
@@ -256,6 +257,7 @@ jobs:
         uses: douglascamata/setup-docker-macos-action@v1
         with:
           colima-additional-options: '--mount /private/var/folders:w'
+          lima: v1.2.2
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
