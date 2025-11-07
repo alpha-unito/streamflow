@@ -388,7 +388,7 @@ class BaseConnector(Connector, FutureAware, ABC):
             )
         return await utils.run_in_subprocess(
             location=location,
-            command=[utils.encode_command(command_str, "sh")],
+            command=[utils.encode_command(command_str)],
             capture_output=capture_output,
             timeout=timeout,
         )
