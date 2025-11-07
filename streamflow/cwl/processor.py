@@ -114,14 +114,21 @@ async def _fill_context(
 class CWLCommandOutput(CommandOutput):
     __slots__ = "exit_code"
 
-    def __init__(self, value: Any, status: Status, exit_code: int):
+    def __init__(
+        self,
+        value: Any,
+        status: Status,
+        exit_code: int | None = 0,
+    ):
         super().__init__(value, status)
         self.exit_code: int = exit_code
 
-    def update(self, value: Any) -> CWLCommandOutput:
-        return CWLCommandOutput(
-            value=value, status=self.status, exit_code=self.exit_code
-        )
+    def update(self, value: Any) -> Self:
+        return self.__class__(value=value, status=self.status, exit_code=self.exit_code)
+
+
+class CWLOutputJSONCommandOutput(CWLCommandOutput):
+    pass
 
 
 class CWLTokenProcessor(TokenProcessor):
@@ -526,8 +533,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 globpaths.extend(
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
-            # Wait for command to finish and resolve glob
-            await command_output
+            # Resolve glob
             for location in locations:
                 globpaths = dict(
                     flatten_list(
@@ -663,6 +669,39 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             load_listing=self.load_listing,
         )
 
+    async def _process_command_output_json(
+        self,
+        job: Job,
+        command_output: asyncio.Future[CommandOutput],
+        connector: Connector | None,
+        context: MutableMapping[str, Any],
+    ) -> MutableMapping[str, Any]:
+        connector = self._get_connector(connector, job)
+        locations = await self._get_locations(connector, job)
+        result = cast(CWLCommandOutput, await command_output)
+        if not isinstance(result, CWLOutputJSONCommandOutput):
+            raise ProcessorTypeError(
+                f"Expected CWLOutputJSONCommandOutput, got {type(result)}"
+            )
+        token_value = result.value
+        if isinstance(token_value, MutableMapping) and self.name in token_value:
+            raise ProcessorTypeError(
+                f"Token {self.name} should be extracted by a `PopCommandOutputProcessor` before being evaluated"
+            )
+        return await utils.build_token_value(
+            context=self.workflow.context,
+            cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
+            js_context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib,
+            secondary_files=self.secondary_files,
+            connector=connector,
+            locations=locations,
+            token_value=token_value,
+            load_contents=self.load_contents,
+            load_listing=self.load_listing,
+        )
+
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
@@ -701,12 +740,20 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             tmp_directory=tmp_directory,
             hardware=self.workflow.context.scheduler.get_hardware(job.name),
         )
-        token_value = await self._process_command_output(
-            job,
-            command_output,
-            connector,
-            context,
-        )
+        if isinstance(await command_output, CWLOutputJSONCommandOutput):
+            token_value = await self._process_command_output_json(
+                job,
+                command_output,
+                connector,
+                context,
+            )
+        else:
+            token_value = await self._process_command_output(
+                job,
+                command_output,
+                connector,
+                context,
+            )
         if self.token_type != "Any":  # nosec
             if isinstance(token_value, MutableSequence):
                 if self.single:
