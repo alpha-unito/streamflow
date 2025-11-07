@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import copy
-import grp
 import os
-import pwd
 import re
 import shutil
 import stat
@@ -20,6 +18,15 @@ from typing_extensions import Self
 
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper
+
+try:
+    import grp
+except ImportError:
+    grp = None
+try:
+    import pwd
+except ImportError:
+    pwd = None
 
 if TYPE_CHECKING:
     StrOrBytesPath: TypeAlias = str | bytes | os.PathLike[str] | os.PathLike[bytes]
