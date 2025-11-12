@@ -47,7 +47,7 @@ class DefaultFailureManager(FailureManager):
             raise
         except Exception as e:
             logger.exception(e)
-            raise
+            await self.recover(job, step, e)
 
     async def close(self) -> None:
         pass

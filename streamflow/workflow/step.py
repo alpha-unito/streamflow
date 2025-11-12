@@ -698,7 +698,7 @@ class ExecuteStep(BaseStep):
     @recoverable
     async def _execute_command(
         self, job: Job, connectors: MutableMapping[str, Connector]
-    ):
+    ) -> None:
         command_task = asyncio.create_task(self.command.execute(job))
         output_tasks = (
             asyncio.create_task(
@@ -759,11 +759,13 @@ class ExecuteStep(BaseStep):
         except asyncio.CancelledError:
             job_status = Status.CANCELLED
         # When receiving a FailureHandling exception, mark the step as Failed
-        except FailureHandlingException:
+        except FailureHandlingException as err:
+            logger.error(err)
             job_status = Status.FAILED
-        # When receiving a generic exception, try to handle it
-        except Exception:
-            raise
+        # When receiving a generic exception, mark the step as Failed
+        except Exception as err:
+            logger.error(err)
+            job_status = Status.FAILED
         finally:
             # Notify completion to scheduler
             await self.workflow.context.scheduler.notify_status(job.name, job_status)
