@@ -763,7 +763,7 @@ class ExecuteStep(BaseStep):
             job_status = Status.FAILED
         # When receiving a generic exception, try to handle it
         except Exception:
-            job_status = Status.FAILED
+            raise
         finally:
             # Notify completion to scheduler
             await self.workflow.context.scheduler.notify_status(job.name, job_status)

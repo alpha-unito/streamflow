@@ -273,7 +273,9 @@ class DefaultRetagTransformer(DefaultTransformer):
             return token
         # Propagate the primary token
         else:
-            return token.update(token.value).retag(get_tag(inputs.values()))
+            token = token.update(token.value).retag(get_tag(inputs.values()))
+            token.recoverable = True
+            return token
 
     @classmethod
     async def _load(
@@ -327,6 +329,8 @@ class DefaultRetagTransformer(DefaultTransformer):
                 self._only_default = True
                 token = None
             token = await self._get_next_token(token, inputs)
+        if not token.recoverable:
+            raise WorkflowDefinitionException("AAA")
         return {self.get_output_name(): token}
 
 

@@ -14,7 +14,6 @@ from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.token_printer import graph_figure
 from streamflow.workflow.step import ExecuteStep, TransferStep
 from streamflow.workflow.token import JobToken
 
@@ -460,13 +459,6 @@ class ProvenanceGraph:
                     port_name=port_row["name"],
                 ),
             )
-        graph_figure(
-            {
-                token_to_str(k, self): [token_to_str(v, self) for v in vs]
-                for k, vs in self.dag_tokens.items()
-            },
-            "ft-provenance-graph",
-        )
 
 
 class ProvenanceToken:
