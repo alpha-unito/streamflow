@@ -846,8 +846,13 @@ class DockerBaseConnector(ContainerConnector, ABC):
             },
         )
         # Create instance
+        addresses = [
+            v["IPAddress"]
+            for v in container["NetworkSettings"]["Networks"].values()
+            if v["IPAddress"]
+        ]
         self._instances[name] = ContainerInstance(
-            address=container["NetworkSettings"]["IPAddress"],
+            address=addresses[0] if addresses else "",
             cores=cores,
             memory=memory,
             current_user=host_user == container_user,
@@ -888,7 +893,6 @@ class DockerConnector(DockerBaseConnector):
         deviceReadIops: MutableSequence[str] | None = None,
         deviceWriteBps: MutableSequence[str] | None = None,
         deviceWriteIops: MutableSequence[str] | None = None,
-        disableContentTrust: bool = True,
         dns: MutableSequence[str] | None = None,
         dnsOptions: MutableSequence[str] | None = None,
         dnsSearch: MutableSequence[str] | None = None,
@@ -988,7 +992,6 @@ class DockerConnector(DockerBaseConnector):
         self.deviceReadIops: MutableSequence[str] | None = deviceReadIops
         self.deviceWriteBps: MutableSequence[str] | None = deviceWriteBps
         self.deviceWriteIops: MutableSequence[str] | None = deviceWriteIops
-        self.disableContentTrust: bool = disableContentTrust
         self.dns: MutableSequence[str] | None = dns
         self.dnsOptions: MutableSequence[str] | None = dnsOptions
         self.dnsSearch: MutableSequence[str] | None = dnsSearch
@@ -1111,7 +1114,6 @@ class DockerConnector(DockerBaseConnector):
                 get_option("device-read-iops", self.deviceReadIops),
                 get_option("device-write-bps", self.deviceWriteBps),
                 get_option("device-write-iops", self.deviceWriteIops),
-                f"--disable-content-trust={'true' if self.disableContentTrust else 'false'}",
                 get_option("dns", self.dns),
                 get_option("dns-option", self.dnsOptions),
                 get_option("dns-search", self.dnsSearch),
