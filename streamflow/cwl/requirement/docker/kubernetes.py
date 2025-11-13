@@ -22,6 +22,7 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
         kubeContext: str | None = None,
         maxConcurrentConnections: int = 4096,
         namespace: str | None = None,
+        networkPolicy: bool = False,
         locationsCacheSize: int | None = None,
         locationsCacheTTL: int | None = None,
         transferBufferSize: int = (2**25) - 1,
@@ -45,6 +46,7 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
         self.kubeContext: str | None = kubeContext
         self.maxConcurrentConnections: int = maxConcurrentConnections
         self.namespace: str | None = namespace
+        self.networkPolicy: bool = networkPolicy
         self.locationsCacheSize: int | None = locationsCacheSize
         self.locationsCacheTTL: int | None = locationsCacheTTL
         self.transferBufferSize: int = transferBufferSize
@@ -73,6 +75,7 @@ class KubernetesCWLDockerTranslator(CWLDockerTranslator):
                 name=name,
                 image=image,
                 network_access=network_access,
+                network_policy=self.networkPolicy,
                 output_directory=output_directory,
             ).dump(f.name)
             return Target(

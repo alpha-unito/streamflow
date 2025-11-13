@@ -1,28 +1,197 @@
-replicaCount: 1
-
-image:
-  repository: alphaunito/streamflow
-  pullPolicy: Always
-
-args: ["streamflow", "version"]
-restartPolicy: OnFailure
-imagePullSecrets: []
+## String to partially override streamflow.fullname template (will maintain the release name)
+##
 nameOverride: ""
+
+## String to fully override streamflow.fullname template
+##
 fullnameOverride: ""
 
+## @section StreamFlow image version
+## ref: https://hub.docker.com/r/alphaunito/streamflow/tags/
+##
+image:
+  ## @param image.registry StreamFlow image registry
+  ##
+  registry: docker.io
+  ## @param image.repository StreamFlow image repository
+  ##
+  repository: alphaunito/streamflow
+  ## @skip image.tag StreamFlow image tag (immutable tags are recommended)
+  ##
+  tag: ""
+  ## @param image.digest StreamFlow image digest in the way sha256:aa.... Please note this parameter, if set, will override the tag
+  ##
+  digest: ""
+  ## @param image.pullPolicy StreamFLow image pull
+  ## ref: https://kubernetes.io/docs/concepts/containers/images/#pre-pulled-images
+  ##
+  pullPolicy: IfNotPresent
+  ## @param image.pullSecrets Specify image pull secrets
+  ## Secrets must be manually created in the namespace.
+  ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+  ##
+  pullSecrets: []
+
+## Override default container command
+##
+command: []
+
+## Override default container args
+##
+args: []
+
+## @section Container Security Context
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+##
+containerSecurityContext:
+  ## @param containerSecurityContext.enabled Enable security context
+  ##
+  enabled: true
+  ## @param containerSecurityContext.seLinuxOptions Set SELinux options in StreamFlow container
+  ##
+  seLinuxOptions: {}
+  ## @param containerSecurityContext.runAsUser Set user in StreamFlow container
+  ##
+  runAsUser: 1001
+  ## @param containerSecurityContext.runAsGroup Set group in StreamFlow container
+  ##
+  runAsGroup: 1001
+  ## @param containerSecurityContext.runAsNonRoot Require StreamFlow container to run as non-root user
+  ##
+  runAsNonRoot: true
+  ## @param containerSecurityContext.privileged Runs the StreamFlow container as privileged
+  ##
+  privileged: false
+  ## @param containerSecurityContext.readOnlyRootFilesystem Mounts the StreamFlow container's root filesystem as read-only
+  ##
+  readOnlyRootFilesystem: true
+  ## @param containerSecurityContext.allowPrivilegeEscalation controls whether a process can gain more privileges than its parent process in the StreamFlow container
+  ##
+  allowPrivilegeEscalation: false
+  ## @param containerSecurityContext.capabilities Controls processes' privileges in the StreamFlow container
+  ##
+  capabilities:
+    drop: ["ALL"]
+  ## @param containerSecurityContext.seccompProfile Filter processes' system calls in the StreamFlow container
+  ##
+  seccompProfile:
+    type: "RuntimeDefault"
+
+## @section Pod Security Context
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+##
+podSecurityContext:
+  ## @param podSecurityContext.enabled Enable security context
+  ##
+  enabled: true
+  ## @param podSecurityContext.fsGroupChangePolicy Set filesystem group change policy
+  ##
+  fsGroupChangePolicy: Always
+  ## @param podSecurityContext.sysctls Set kernel settings using the sysctl interface
+  ##
+  sysctls: []
+  ## @param podSecurityContext.supplementalGroups Set filesystem extra groups
+  ##
+  supplementalGroups: []
+  ## @param podSecurityContext.fsGroup Group ID for the StreamFlow pod
+  ##
+  fsGroup: 1001
+
+## @section Service account for StreamFlow to use.
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/
+##
 serviceAccount:
+  ## @param serviceAccount.create Enable creation of ServiceAccount for StreamFlow pod
+  ##
   create: true
+  ## @param serviceAccount.name The name of the ServiceAccount to use.
+  ## If not set and create is true, a name is generated using the streamflow.fullname template
+  ##
+  name: ""
+  ## @param serviceAccount.automountServiceAccountToken Allows auto mount of ServiceAccountToken on the serviceAccount created
+  ## Can be set to false if pods using this serviceAccount do not need to use K8s API
+  ##
+  automountServiceAccountToken: true
+  ## @param serviceAccount.annotations Additional custom annotations for the ServiceAccount
+  ##
   annotations: {}
-  name:
 
-podSecurityContext: {}
+## @section Creates role for ServiceAccount
+## ref: https://kubernetes.io/docs/reference/access-authn-authz/rbac/#service-account-permissions
+##
+rbac:
+  ## @param rbac.create Create Role and RoleBinding (required for StreamFlow to instantiate other Pods in the cluster)
+  ##
+  create: true
+  ## @param rbac.rules Custom RBAC rules to set
+  ##
+  rules: []
 
-securityContext: {}
+## @section Set up the StreamFlow comnfiguration file
+## ref: https://streamflow.di.unito.it/documentation/latest/
+##
+streamflow:
+  ## @section streamflow.workflow Specify which workflow should be executed
+  ##
+  workflow:
+    ## @param streamflow.workflow.name The name of the workflow (if not specified, a random name will be used)
+    ##
+    name: ""
+    ## @param streamflow.workflow.type The type of the workflow (defaults to cwl)
+    ##
+    type: "cwl"
+    ## @param streamflow.workflow.bindings Binds each workflow step to a target execution environment
+    ##
+    bindings: []
+    ## @section streamflow.workflow.cwl Configures the execution of a CWL workflow
+    ##
+    cwl:
+      ## @param streamflow.workflow.cwl.processfile The target CWL file to execute
+      ##
+      processfile: "example.cwl"
+      ## @param streamflow.workflow.cwl.jobfile A file describing the inputs of the CWL workflow
+      ##
+      jobfile: ""
+      ## @param streamflow.workflow.cwl.restrictNetworkAccess Use NetworkPolicy objects to restrict containers' network access according to the CWL NetworkAccess requirement
+      ##
+      restrictNetworkAccess: false
+    ## @param streamflow.workflow.config The workflow configuration
+    ##
+    config: {}
+  ## @param streamflow.configExtra Specify additional StreamFlow properties
+  ##
+  configExtra: {}
 
+## @section Configure persistent volumes for the StreamFlow Pod
+## Note that PersistentVolumeClaim objects are not managed by this Chart and should be manually created by the user
+## ref: https://kubernetes.io/docs/concepts/storage/volumes/
+##
+persistence:
+  ## @param Configure the $HOME/.streamflow volume to store StreamFlow metadata
+  ##
+  metadata: {}
+  ## @param Configure the /streamflow/results volume to store StreamFlow input and output data
+  ##
+  outdir: {}
+  ## @param Configure the /tmp/streamflow volume to store workflows' intermediate data
+  ##
+  workdir: {}
+
+## Configure the Restart Policy for the StreamFlow container
+## ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#restart-policy
+##
+restartPolicy: ""
+
+## Set requests and limits for different resources (e.g., CPU or memory) for the StreamFlow container
+##
 resources: {}
 
+## Node labels for StreamFlow pod assignment
+## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+##
 nodeSelector: {}
 
+## Tolerations for StreamFlow pod assignment
+## ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+##
 tolerations: []
-
-affinity: {}

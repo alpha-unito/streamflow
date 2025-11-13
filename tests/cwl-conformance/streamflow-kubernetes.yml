@@ -6,7 +6,8 @@ workflows:
         - step: /
           deployment:
             type: kubernetes
-            config: {}
+            config:
+              networkPolicy: true
 database:
   type: default
   config:
