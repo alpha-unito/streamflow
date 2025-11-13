@@ -764,6 +764,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         full_js: bool = False,
         output_eval: str | None = None,
         target: Target | None = None,
+        single: bool = False,
     ):
         super().__init__(
             name=name, processors=processors, workflow=workflow, target=target
@@ -771,6 +772,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
         self.output_eval: str | None = output_eval
+        self.single: bool = single
 
     @classmethod
     async def _load(
@@ -809,6 +811,53 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
             full_js=row["full_js"],
             output_eval=row["output_eval"],
         )
+
+    async def _process(
+        self,
+        job: Job,
+        command_output: asyncio.Future[CommandOutput],
+        connector: Connector | None = None,
+        recoverable: bool = False,
+    ) -> Token | None:
+        result = await command_output
+        if isinstance(token_value := result.value, MutableSequence):
+            if self.single:
+                if len(token_value) == 1:
+                    token_value = token_value[0]
+                    return await super().process(
+                        job=job,
+                        command_output=make_future(result.update(token_value)),
+                        connector=connector,
+                        recoverable=recoverable,
+                    )
+                else:
+                    raise ProcessorTypeError(
+                        f"Expected {self.name} token of type record, got list."
+                    )
+            else:
+                return ListToken(
+                    value=await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                super(CWLObjectCommandOutputProcessor, self).process(
+                                    job=job,
+                                    command_output=make_future(result.update(value)),
+                                    connector=connector,
+                                    recoverable=recoverable,
+                                )
+                            )
+                            for value in token_value
+                        ),
+                    ),
+                    tag=get_tag(job.inputs.values()),
+                )
+        else:
+            return await super().process(
+                job=job,
+                command_output=command_output,
+                connector=connector,
+                recoverable=recoverable,
+            )
 
     async def _propagate(
         self,
@@ -888,7 +937,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         # Process output
         process_tasks = [
             asyncio.create_task(
-                super().process(
+                self._process(
                     job=job,
                     command_output=command_output,
                     connector=connector,
