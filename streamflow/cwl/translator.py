@@ -2023,16 +2023,22 @@ class CWLTranslator:
             )
             # Add the output port as an input of the schedule step
             schedule_step.add_input_port(port_name, token_transformer.get_output_port())
-            # Create a TransferStep
-            transfer_step = workflow.create_step(
-                cls=CWLTransferStep,
-                name=posixpath.join(name_prefix, "__transfer__", port_name),
-                job_port=schedule_step.get_output_port(),
-            )
-            transfer_step.add_input_port(port_name, token_transformer.get_output_port())
-            transfer_step.add_output_port(port_name, workflow.create_port())
-            # Connect the transfer step with the ExecuteStep
-            step.add_input_port(port_name, transfer_step.get_output_port(port_name))
+            if isinstance(cwl_element, get_args(cwl_utils.parser.CommandLineTool)):
+                # Create a TransferStep
+                transfer_step = workflow.create_step(
+                    cls=CWLTransferStep,
+                    name=posixpath.join(name_prefix, "__transfer__", port_name),
+                    job_port=schedule_step.get_output_port(),
+                )
+                transfer_step.add_input_port(
+                    port_name, token_transformer.get_output_port()
+                )
+                transfer_step.add_output_port(port_name, workflow.create_port())
+                # Connect the transfer step with the ExecuteStep
+                step.add_input_port(port_name, transfer_step.get_output_port(port_name))
+            elif isinstance(cwl_element, get_args(cwl_utils.parser.ExpressionTool)):
+                # Connect the token transformer step with the ExecuteStep
+                step.add_input_port(port_name, token_transformer.get_output_port())
             # Store input port and token transformer
             token_transformers.append(token_transformer)
         # Add input ports to token transformers
