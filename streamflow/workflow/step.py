@@ -606,7 +606,7 @@ class ExecuteStep(BaseStep):
         input_ports: MutableMapping[str, Port],
         inputs_map: MutableMapping[str, MutableMapping[str, Token]],
         connectors: MutableMapping[str, Connector],
-        unfinished: MutableSet[asyncio.Task[MutableMapping[str, Token]]],
+        unfinished: MutableSet[asyncio.Task[MutableMapping[str, Token] | Status]],
     ) -> None:
         if (
             job := await cast(JobPort, self.get_input_port("__job__")).get_job(
