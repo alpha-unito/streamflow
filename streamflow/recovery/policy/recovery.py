@@ -62,7 +62,10 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
 
 
 async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for port_name in mapper.dcg_port[DirectGraph.ROOT]:
+    if DirectGraph.ROOT not in mapper.dcg_port:
+        logger.info(f"mapper no root. is it empty? {mapper.dcg_port.keys()}")
+        return
+    for port_name in mapper.dcg_port[DirectGraph.ROOT]:  # new_workflow.ports.items()
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
@@ -83,6 +86,9 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
             for token in token_list
         ):
             raise FailureHandlingException("Impossible to load a TerminationToken")
+        if port_name not in new_workflow.ports.keys():
+            logger.info(f"Missing port name {port_name}")
+            continue
         port = new_workflow.ports[port_name]
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
@@ -267,6 +273,31 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 # Remove tokens that will be recovered in other workflows
                 for token_id in await mapper.get_output_tokens(job_token.persistent_id):
                     mapper.remove_token(token_id, preserve_token=True)
+                port_name = await mapper.get_schedule_port_name(job_token)
+                cast(
+                    InterWorkflowJobPort, retry_request.workflow.ports[port_name]
+                ).add_inter_port(
+                    workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
+                    boundary_tag=get_job_tag(job_token.value.name),
+                    inter_terminate=True,
+                    intra_terminate=False,
+                )
+                mapper.move_token_to_root(job_token.persistent_id)
+                # mapper.remove_token(job_token.persistent_id, preserve_token=True)
+
+                # for port_name in await mapper.get_output_ports(job_token):
+                #     if port_name in retry_request.workflow.ports.keys():
+                #         cast(
+                #             InterWorkflowPort, retry_request.workflow.ports[port_name]
+                #         ).add_inter_port(
+                #             workflow.create_port(cls=InterWorkflowPort, name=port_name),
+                #             boundary_tag=get_job_tag(job_token.value.name),
+                #             inter_terminate=True,
+                #             intra_terminate=False,
+                #         )
+                # # Remove tokens that will be recovered in other workflows
+                # for token_id in await mapper.get_output_tokens(job_token.persistent_id):
+                #     mapper.remove_token(token_id, preserve_token=True)
             elif is_available == TokenAvailability.Available:
                 job_token = get_job_token(job_name, job_tokens)
                 if logger.isEnabledFor(logging.DEBUG):
@@ -283,9 +314,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                             new_token,
                             True,
                         )
-                        mapper.remove_token(
-                            new_token.persistent_id, preserve_token=True
-                        )
+                        mapper.move_token_to_root(new_token.persistent_id)
             else:
                 await self.context.failure_manager.update_request(job_name)
                 retry_request.workflow = workflow

@@ -47,7 +47,7 @@ class DefaultFailureManager(FailureManager):
             raise
         except Exception as e:
             logger.exception(e)
-            await self.recover(job, step, e)
+            raise
 
     async def close(self) -> None:
         pass
@@ -118,7 +118,9 @@ class DefaultFailureManager(FailureManager):
         if self.max_retries is None or retry_request.version < self.max_retries:
             retry_request.version += 1
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Updated Job {job_name} at {retry_request.version} times")
+                logger.debug(
+                    f"Updated Job {job_name} at {retry_request.version} times (max retries {self.max_retries})"
+                )
             await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
         else:
             logger.error(
