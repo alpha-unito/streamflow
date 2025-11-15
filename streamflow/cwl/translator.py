@@ -1008,7 +1008,7 @@ def _create_token_processor_base(
             expression_lib=expression_lib,
             file_format=getattr(cwl_element, "format", None),
             full_js=full_js,
-            load_contents=_get_load_contents(cwl_element, is_token_processor=True),
+            load_contents=_get_load_contents(cwl_element, only_input=True),
             load_listing=(
                 LoadListing.deep_listing
                 if force_deep_listing
@@ -1028,7 +1028,7 @@ def _create_token_processor_base(
             token_type=port_type[0] if len(port_type) == 1 else port_type,
             expression_lib=expression_lib,
             full_js=full_js,
-            load_contents=_get_load_contents(cwl_element, is_token_processor=True),
+            load_contents=_get_load_contents(cwl_element, only_input=True),
             load_listing=(
                 LoadListing.deep_listing
                 if force_deep_listing
@@ -1142,8 +1142,8 @@ def _get_load_contents(
         | cwl_utils.parser.OutputParameter
         | cwl_utils.parser.WorkflowStepInput
     ),
-    is_token_processor: bool,
-):
+    only_input: bool = False,
+) -> bool | None:
     if getattr(port_description, "loadContents", None) is not None:
         return port_description.loadContents
     elif (
@@ -1154,7 +1154,7 @@ def _get_load_contents(
     elif (
         getattr(port_description, "outputBinding", None)
         and port_description.outputBinding.loadContents is not None
-        and not is_token_processor
+        and not only_input
     ):
         return port_description.outputBinding.loadContents
     else:
@@ -1519,7 +1519,7 @@ def create_command_output_processor_base(
                 if getattr(cwl_element, "outputBinding", None)
                 else None
             ),
-            load_contents=_get_load_contents(cwl_element, is_token_processor=False),
+            load_contents=_get_load_contents(cwl_element),
             load_listing=_get_load_listing(cwl_element, context),
             optional=optional,
             output_eval=(
@@ -1547,7 +1547,7 @@ def create_command_output_processor_base(
                 if getattr(cwl_element, "outputBinding", None)
                 else None
             ),
-            load_contents=_get_load_contents(cwl_element, is_token_processor=False),
+            load_contents=_get_load_contents(cwl_element),
             load_listing=_get_load_listing(cwl_element, context),
             optional=optional,
             output_eval=(
