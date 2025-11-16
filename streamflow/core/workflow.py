@@ -4,7 +4,7 @@ import asyncio
 import sys
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Iterable, MutableMapping, MutableSequence
 from enum import IntEnum
 from typing import TYPE_CHECKING, TypeVar, cast
 
@@ -448,6 +448,14 @@ class Step(PersistableEntity, ABC):
             d["name"]: p.name for d, p in zip(output_deps, output_ports)
         }
         return step
+
+    @abstractmethod
+    async def resume(self, on_tags: Iterable[str]) -> None:
+        """
+        TODO: improve docstring
+        On tags are the missing tags in the output ports
+        """
+        ...
 
     @abstractmethod
     async def run(self) -> None: ...

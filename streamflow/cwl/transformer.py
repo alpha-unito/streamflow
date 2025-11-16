@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Iterable, MutableMapping, MutableSequence
 from typing import Any, cast
 
 from typing_extensions import Self
@@ -14,7 +14,7 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import TokenProcessor
 from streamflow.core.utils import get_tag
-from streamflow.core.workflow import Port, Token
+from streamflow.core.workflow import Port, Status, Token
 from streamflow.cwl import utils
 from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow
@@ -204,6 +204,11 @@ class DefaultTransformer(ManyToOneTransformer):
         return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "default_port": self.default_port.persistent_id
         }
+
+    async def resume(self, on_tags: Iterable[str]) -> None:
+        if len(self.default_port.token_list) == 0:
+            self.default_port.put(Token(None))
+            self.default_port.put(TerminationToken(Status.COMPLETED))
 
     async def transform(
         self, inputs: MutableMapping[str, Token]

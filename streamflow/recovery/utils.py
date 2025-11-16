@@ -67,16 +67,19 @@ class DirectGraph:
             self.graph[src].remove(DirectGraph.LEAF)
         # Add the edge
         self.graph.setdefault(src, set()).add(dst)
-        # The node is no more a root node
-        if src != DirectGraph.ROOT and dst in self.graph.keys() and dst in self.graph[DirectGraph.ROOT]:
-            self.graph[DirectGraph.ROOT].remove(dst)
         # The node is a leaf
         if dst not in self.graph.keys():
             self.graph.setdefault(dst, set()).add(DirectGraph.LEAF)
-        if DirectGraph.LEAF in self.graph[DirectGraph.ROOT]:
+        # The node is no more a root node
+        if src != DirectGraph.ROOT and dst in self.graph[DirectGraph.ROOT]:
+            self.graph[DirectGraph.ROOT].remove(dst)
+        # Remove the leaf from the root when the first node is added
+        if (
+            src != DirectGraph.ROOT or dst != DirectGraph.LEAF
+        ) and DirectGraph.LEAF in self.graph[DirectGraph.ROOT]:
             self.graph[DirectGraph.ROOT].remove(DirectGraph.LEAF)
-        if not self.graph[DirectGraph.ROOT]:
-            raise FailureHandlingException("root vuot")
+        if not self.graph[DirectGraph.ROOT]:  # todo: debug code. remove me.
+            raise FailureHandlingException("root empty")
 
     def empty(self) -> bool:
         return False if self.graph else True
@@ -89,9 +92,9 @@ class DirectGraph:
 
     def move_to_root(self, vertex: Any) -> MutableSequence[Any]:
         """
-        Move a vertex to be a direct successor of ROOT, keeping all its successors.
-        All nodes on the path from ROOT to the vertex that lose all their successors are deleted.
-        Returns list of all deleted vertices.
+        Move a vertex to be a direct successor of ROOT. This implies that all the edges with its
+        previous vertices are deleted. All vertices on the path from ROOT to the vertex that have
+        no other successors are deleted. Returns list of all deleted vertices.
         """
         if vertex in (DirectGraph.ROOT, DirectGraph.LEAF):
             raise FailureHandlingException(f"Impossible to move {vertex}")

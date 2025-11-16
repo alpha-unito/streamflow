@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import (
     AsyncIterable,
+    Iterable,
     MutableMapping,
     MutableSequence,
     MutableSet,
@@ -147,6 +148,9 @@ class BaseStep(Step, ABC):
                 inputs=input_token_ids, token=token.persistent_id
             )
         return token
+
+    async def resume(self, on_tags: Iterable[str]) -> None:
+        pass
 
     async def terminate(self, status: Status) -> None:
         if not self.terminated:
@@ -1249,16 +1253,19 @@ class LoopCombinatorStep(CombinatorStep):
         # Terminate step
         await self.terminate(self._get_status(status))
 
-    async def set_iteration(self, tag: str) -> None:
+    async def resume(self, on_tags: Iterable[str]) -> None:
+        last = max(on_tags, key=cmp_to_key(compare_tags))
         # 0 -> internal status [], input 0
-        if ".".join(prefix := ".".join(tag.split(".")[:-1])) != "":
+        if ".".join(prefix := ".".join(last.split(".")[:-1])) != "":
             # 0.0 -> previous input [0], current input 0
             # 0.1 -> previous input [0], current input 0.0
             # 0.2 -> previous input [0, 0.0], current input 0.1
             for curr_tag in [
                 prefix,
-                *(f"{prefix}.{i}" for i in range(int(tag.split(".")[-1]) - 1)),
+                *(f"{prefix}.{i}" for i in range(int(last.split(".")[-1]) - 2)),
             ]:
+                # todo
+                # await self.combinator.resume(curr_tag, last)
                 for port_name in self.input_ports.keys():
                     async for _ in cast(
                         AsyncIterable,

@@ -8,7 +8,7 @@ from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
-from streamflow.core.utils import compare_tags, get_job_tag, get_tag
+from streamflow.core.utils import get_job_tag, get_tag
 from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
@@ -22,12 +22,10 @@ from streamflow.recovery.utils import (
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
-    FilterTokenPort,
     InterWorkflowJobPort,
     InterWorkflowPort,
     JobPort,
 )
-from streamflow.workflow.step import LoopCombinatorStep, ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -62,10 +60,7 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
 
 
 async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    if DirectGraph.ROOT not in mapper.dcg_port:
-        logger.info(f"mapper no root. is it empty? {mapper.dcg_port.keys()}")
-        return
-    for port_name in mapper.dcg_port[DirectGraph.ROOT]:  # new_workflow.ports.items()
+    for port_name in mapper.dcg_port[DirectGraph.ROOT]:
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
@@ -88,21 +83,13 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
             raise FailureHandlingException("Impossible to load a TerminationToken")
         if port_name not in new_workflow.ports.keys():
             logger.info(f"Missing port name {port_name}")
-            continue
+            raise FailureHandlingException(f"Missing port name {port_name}")
+            # continue
         port = new_workflow.ports[port_name]
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
-        # if any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()):
-        #     pass
-        # if (
-        #     any(isinstance(s, LoopCombinatorStep) for s in port.get_output_steps())
-        #     # and len(port.get_input_steps()) >= 3
-        # ):
-        #     if logger.isEnabledFor(logging.DEBUG):
-        #         logger.debug(f"Injecting termination token on port {port.name}")
-        #     port.put(TerminationToken(Status.SKIPPED))
         if len(port.token_list) > 0 and len(port.token_list) == len(
             mapper.port_tokens[port_name]
         ):
@@ -153,32 +140,6 @@ async def _populate_workflow(
         )
 
 
-async def _set_step_states(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for step in new_workflow.steps.values():
-        if isinstance(step, ScatterStep):
-            port = step.get_output_port()
-            missing_tokens = tuple(
-                mapper.token_instances[token_id].tag
-                for token_id in mapper.port_tokens[port.name]
-                if not mapper.token_available[token_id]
-            )
-            new_workflow.ports[port.name] = FilterTokenPort(
-                new_workflow,
-                port.name,
-                filter_function=lambda t, tokens=missing_tokens: t.tag in tokens,
-            )
-            new_workflow.ports[port.name].token_list = port.token_list
-        elif isinstance(step, LoopCombinatorStep):
-            smallest_tag = None
-            for p in step.get_input_ports().values():
-                if p.token_list:
-                    if smallest_tag is None:
-                        smallest_tag = p.token_list[0].tag
-                    elif compare_tags(p.token_list[0].tag, smallest_tag) > 0:
-                        smallest_tag = p.token_list[0].tag
-            await cast(LoopCombinatorStep, step).set_iteration(tag=smallest_tag)
-
-
 class RollbackRecoveryPolicy(RecoveryPolicy):
     async def _recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
         workflow = failed_step.workflow
@@ -223,6 +184,16 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             self.context.failure_manager.get_request(job_name).workflow_ready.set()
         await _inject_tokens(mapper, new_workflow)
         await _set_step_states(mapper, new_workflow)
+        # Resume steps
+        for step in new_workflow.steps.values():
+            await step.resume(
+                on_tags=(
+                    mapper.token_instances[token_id].tag
+                    for port in step.get_output_ports().values()
+                    for token_id in mapper.port_tokens[port.name]
+                    if not mapper.token_available[token_id]
+                )
+            )
         return new_workflow
 
     async def _sync_workflows(
@@ -260,26 +231,13 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     logger.debug(
                         f"Synchronizing rollbacks: Job {job_name} has resumed after the rollback workflow is ready."
                     )
-                for port_name in await mapper.get_output_ports(job_token):
-                    if port_name in retry_request.workflow.ports.keys():
-                        cast(
-                            InterWorkflowPort, retry_request.workflow.ports[port_name]
-                        ).add_inter_port(
-                            workflow.create_port(cls=InterWorkflowPort, name=port_name),
-                            boundary_tag=get_job_tag(job_token.value.name),
-                            inter_terminate=True,
-                            intra_terminate=False,
-                        )
-                # Remove tokens that will be recovered in other workflows
-                for token_id in await mapper.get_output_tokens(job_token.persistent_id):
-                    mapper.remove_token(token_id, preserve_token=True)
                 port_name = await mapper.get_schedule_port_name(job_token)
                 cast(
                     InterWorkflowJobPort, retry_request.workflow.ports[port_name]
                 ).add_inter_port(
                     workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
                     boundary_tag=get_job_tag(job_token.value.name),
-                    inter_terminate=True,
+                    inter_terminate=False,
                     intra_terminate=False,
                 )
                 mapper.move_token_to_root(job_token.persistent_id)
