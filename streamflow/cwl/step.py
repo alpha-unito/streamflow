@@ -752,23 +752,23 @@ class CWLTransferStep(TransferStep):
                 path=location, dst_deployment=dst_connector.deployment_name
             )
         ):
+            # Build unique destination path and transfer file
+            filepath = dst_path or (dst_dir / selected_location.relpath)
             try:
-                # Build unique destination path
-                filepath = dst_path or (dst_dir / selected_location.relpath)
-                if not self.prefix_path:
-                    filepath = cast(CWLWorkflow, self.workflow).get_unique_output_path(
-                        path=filepath, src_location=selected_location
+                async with await cast(CWLWorkflow, self.workflow).get_output_path(
+                    unique=not self.prefix_path,
+                    path=filepath,
+                    src_location=selected_location,
+                ) as filepath:
+                    await self.workflow.context.data_manager.transfer_data(
+                        src_location=selected_location.location,
+                        src_path=selected_location.path,
+                        dst_locations=dst_locations,
+                        dst_path=str(filepath),
+                        writable=self.writable,
                     )
-                # Perform and transfer
-                await self.workflow.context.data_manager.transfer_data(
-                    src_location=selected_location.location,
-                    src_path=selected_location.path,
-                    dst_locations=dst_locations,
-                    dst_path=str(filepath),
-                    writable=self.writable,
-                )
             except FileExistsError:
-                filepath = dst_path or (dst_dir / selected_location.relpath)
+                pass
             # Transform token value
             new_token_value = {
                 "class": token_class,
@@ -844,56 +844,54 @@ class CWLTransferStep(TransferStep):
         # Otherwise, create elements remotely
         else:
             # Build unique destination path
-            filepath = dst_path or dst_dir
-            if not self.prefix_path:
-                filepath = cast(CWLWorkflow, self.workflow).get_unique_output_path(
-                    path=filepath
-                )
-            # If the token contains a directory, simply create it
-            if token_class == "Directory":  # nosec
-                await utils.create_remote_directory(
-                    context=self.workflow.context,
-                    locations=dst_locations,
-                    path=str(filepath),
-                    relpath=(
-                        str(filepath.relative_to(job.output_directory))
-                        if filepath.is_relative_to(job.output_directory)
-                        else (
-                            str(filepath.relative_to(dst_dir))
-                            if filepath != dst_dir
-                            else str(dst_dir)
-                        )
-                    ),
-                )
-            # Otherwise, create the parent directories structure and write file contents
-            else:
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            StreamFlowPath(
-                                str(filepath.parent),
-                                context=self.workflow.context,
-                                location=location,
-                            ).mkdir(mode=0o777, exist_ok=True)
-                        )
-                        for location in dst_locations
+            async with await cast(CWLWorkflow, self.workflow).get_output_path(
+                unique=not self.prefix_path, path=dst_path or dst_dir
+            ) as filepath:
+                # If the token contains a directory, simply create it
+                if token_class == "Directory":  # nosec
+                    await utils.create_remote_directory(
+                        context=self.workflow.context,
+                        locations=dst_locations,
+                        path=str(filepath),
+                        relpath=(
+                            str(filepath.relative_to(job.output_directory))
+                            if filepath.is_relative_to(job.output_directory)
+                            else (
+                                str(filepath.relative_to(dst_dir))
+                                if filepath != dst_dir
+                                else str(dst_dir)
+                            )
+                        ),
                     )
-                )
-                await utils.write_remote_file(
-                    context=self.workflow.context,
-                    locations=dst_locations,
-                    content=token_value.get("contents", ""),
-                    path=str(filepath),
-                    relpath=(
-                        str(filepath.relative_to(job.output_directory))
-                        if filepath.is_relative_to(job.output_directory)
-                        else (
-                            str(filepath.relative_to(dst_dir))
-                            if filepath != dst_dir
-                            else str(dst_dir)
+                # Otherwise, create the parent directories structure and write file contents
+                else:
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                StreamFlowPath(
+                                    str(filepath.parent),
+                                    context=self.workflow.context,
+                                    location=location,
+                                ).mkdir(mode=0o777, exist_ok=True)
+                            )
+                            for location in dst_locations
                         )
-                    ),
-                )
+                    )
+                    await utils.write_remote_file(
+                        context=self.workflow.context,
+                        locations=dst_locations,
+                        content=token_value.get("contents", ""),
+                        path=str(filepath),
+                        relpath=(
+                            str(filepath.relative_to(job.output_directory))
+                            if filepath.is_relative_to(job.output_directory)
+                            else (
+                                str(filepath.relative_to(dst_dir))
+                                if filepath != dst_dir
+                                else str(dst_dir)
+                            )
+                        ),
+                    )
             # Build file token
             new_token_value = await utils.get_file_token(
                 context=self.workflow.context,
