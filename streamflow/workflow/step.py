@@ -36,7 +36,7 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import compare_tags, get_entity_ids
+from streamflow.core.utils import compare_tags, flatten_list, get_entity_ids
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -50,7 +50,7 @@ from streamflow.core.workflow import (
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
-from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.workflow.port import ConnectorPort, FilterTokenPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
@@ -149,6 +149,9 @@ class BaseStep(Step, ABC):
                 inputs=input_token_ids, token=token.persistent_id
             )
         return token
+
+    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+        pass
 
     async def terminate(self, status: Status) -> None:
         if not self.terminated:
@@ -1171,6 +1174,29 @@ class LoopCombinatorStep(CombinatorStep):
         super().__init__(name, workflow, combinator)
         self.iteration_termination_checklist: MutableMapping[str, set[str]] = {}
 
+    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+        last = max(flatten_list(on_tags.values()), key=cmp_to_key(compare_tags))
+        # 0 -> internal status [], input 0
+        if ".".join(prefix := ".".join(last.split(".")[:-1])) != "":
+            # 0.0 -> previous input [0], current input 0
+            # 0.1 -> previous input [0], current input 0.0
+            # 0.2 -> previous input [0, 0.0], current input 0.1
+            for curr_tag in [
+                prefix,
+                *(f"{prefix}.{i}" for i in range(int(last.split(".")[-1]) - 2)),
+            ]:
+                # todo
+                # await self.combinator.resume(curr_tag, last)
+                for port_name in self.input_ports.keys():
+                    async for _ in cast(
+                        AsyncIterable,
+                        self.combinator.combine(
+                            port_name=port_name,
+                            token=Token(value=None, tag=curr_tag),
+                        ),
+                    ):
+                        pass
+
     async def run(self) -> None:
         # Set default status to SKIPPED
         status = Status.SKIPPED
@@ -1710,6 +1736,16 @@ class ScatterStep(BaseStep):
 
     def get_size_port(self) -> Port:
         return self.get_output_port("__size__")
+
+    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+        port = self.get_output_port()
+        self.workflow.ports[port.name] = FilterTokenPort(
+            self.workflow,
+            port.name,
+            filter_function=lambda t: t.tag in on_tags[port.name],
+        )
+        for token in port.token_list:
+            self.workflow.ports[port.name].put(token)
 
     async def run(self) -> None:
         if len(self.input_ports) != 1:
