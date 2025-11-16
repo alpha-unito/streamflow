@@ -703,7 +703,7 @@ class ExecuteStep(BaseStep):
     @recoverable
     async def _execute_command(
         self, job: Job, connectors: MutableMapping[str, Connector]
-    ):
+    ) -> None:
         command_task = asyncio.create_task(self.command.execute(job))
         output_tasks = (
             asyncio.create_task(
@@ -764,10 +764,12 @@ class ExecuteStep(BaseStep):
         except asyncio.CancelledError:
             job_status = Status.CANCELLED
         # When receiving a FailureHandling exception, mark the step as Failed
-        except FailureHandlingException:
+        except FailureHandlingException as err:
+            logger.error(err)
             job_status = Status.FAILED
-        # When receiving a generic exception, try to handle it
-        except Exception:
+        # When receiving a generic exception, mark the step as Failed
+        except Exception as err:
+            logger.error(err)
             job_status = Status.FAILED
         finally:
             # Notify completion to scheduler
@@ -1051,7 +1053,9 @@ class GatherStep(BaseStep):
                     logger.debug(f"Step {self.name} forces gather on key {key}")
 
                 # Update size_map with the current size
-                self.size_map[key] = Token(value=len(self.token_map[key]), tag=key)
+                self.size_map[key] = Token(
+                    value=len(self.token_map[key]), tag=key, recoverable=True
+                )
                 await self.size_map[key].save(
                     self.workflow.context, size_port.persistent_id
                 )
@@ -1225,7 +1229,9 @@ class LoopCombinatorStep(CombinatorStep):
                             )
 
                         async for schema in self.combinator.combine(task_name, token):
-                            ins = [id for t in schema.values() for id in t["input_ids"]]
+                            ins = [
+                                id_ for t in schema.values() for id_ in t["input_ids"]
+                            ]
                             for port_name, token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
@@ -1659,7 +1665,7 @@ class ScatterStep(BaseStep):
             "size_port": self.get_size_port().persistent_id
         }
 
-    async def _scatter(self, token: Token) -> Token:
+    async def _scatter(self, token: Token) -> None:
         if isinstance(token, ListToken):
             output_port = self.get_output_port()
             for i, t in enumerate(token.value):

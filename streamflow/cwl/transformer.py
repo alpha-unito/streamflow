@@ -273,7 +273,9 @@ class DefaultRetagTransformer(DefaultTransformer):
             return token
         # Propagate the primary token
         else:
-            return token.update(token.value).retag(get_tag(inputs.values()))
+            token = token.update(token.value).retag(get_tag(inputs.values()))
+            token.recoverable = True
+            return token
 
     @classmethod
     async def _load(

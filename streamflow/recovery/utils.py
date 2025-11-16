@@ -266,8 +266,8 @@ class GraphMapper:
             )
             for dependency_row in dependency_rows
         }
-        # Remove steps with some missing input ports
-        # A port can have multiple input steps. It is necessary to load only the needed steps
+        # Remove steps with missing input ports
+        # Since a port may have multiple input steps, only load the necessary ones.
         step_to_remove = set()
         for step_id, dependency_rows in zip(
             step_ids,
@@ -343,10 +343,22 @@ class GraphMapper:
                 self.remove_port(port_name)
 
     def replace_token(self, port_name: str, token: Token, is_available: bool) -> None:
-        old_token_id = self.get_equal_token(port_name, token)
-        if old_token_id is None:
-            raise FailureHandlingException("Impossible replace token")
-        if logger.isEnabledFor(logging.INFO):
+        if (old_token_id := self.get_equal_token(port_name, token)) is None:
+            raise FailureHandlingException(
+                f"Unable to find a token for replacement with {token.persistent_id}."
+            )
+        if old_token_id == token.persistent_id:
+            if self.token_available[old_token_id] != is_available:
+                raise FailureHandlingException(
+                    f"Availability mismatch for token {old_token_id}. "
+                    f"Expected: {self.token_available[old_token_id]}, Got: {is_available}."
+                )
+            elif logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    f"Token {old_token_id} is already in desired state. Skipping replacement."
+                )
+            return
+        elif logger.isEnabledFor(logging.INFO):
             logger.info(f"Replacing {old_token_id} with {token.persistent_id}")
         # Replace
         self.dag_tokens.replace(old_token_id, token.persistent_id)
@@ -376,11 +388,11 @@ class ProvenanceGraph:
 
     async def build_graph(self, inputs: Iterable[Token]):
         """
-        The provenance graph represent the execution, and is always a DAG.
-        Visit the provenance graph with a breadth-first search and is done
-        backward starting from the input tokens. At the end of the search,
-        we have a tree where at root there are token which data are available
-        in some location and leaves will be the input tokens.
+        The provenance graph represents the execution and is always a DAG.
+        To traverse the graph, a breadth-first search is performed
+        starting from the input tokens and moving backward. At the end of the search,
+        a graph is generated where the root nodes represent the tokens whose data
+        are available at a specific location, and the leaves correspond to the input tokens.
         """
         token_frontier = deque(inputs)
         loading_context = DefaultDatabaseLoadingContext()

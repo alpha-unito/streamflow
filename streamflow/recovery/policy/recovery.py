@@ -111,14 +111,16 @@ async def _populate_workflow(
             for step_id in step_ids
         )
     )
-    # Add failed step into new_workflow
+    # Add the failed step to the new workflow
     await workflow_builder.load_step(
         new_workflow.context,
         failed_step.persistent_id,
     )
-    # Instantiate ports capable of moving tokens across workflows
+    # Instantiate ports that can transfer tokens between workflows
     for port in new_workflow.ports.values():
-        if not isinstance(port, ConnectorPort):
+        if not isinstance(
+            port, (ConnectorPort, InterWorkflowJobPort, InterWorkflowPort)
+        ):
             new_workflow.create_port(
                 (
                     InterWorkflowJobPort
@@ -175,7 +177,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             ]
         )
         mapper = await create_graph_mapper(self.context, provenance)
-        # Synchronize across multiple recovery workflows
+        # Synchronize between multiple recovery workflows
         job_tokens = list(
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
