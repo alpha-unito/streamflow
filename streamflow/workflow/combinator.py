@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import AsyncIterable, MutableMapping, MutableSequence
+from functools import cmp_to_key
 from typing import Any, cast
 
 from typing_extensions import Self
@@ -10,6 +11,7 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.utils import compare_tags
 from streamflow.core.workflow import Token, Workflow
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import IterationTerminationToken
@@ -185,6 +187,18 @@ class LoopCombinator(DotProductCombinator):
                 k: {"token": t["token"].retag(tag), "input_ids": t["input_ids"]}
                 for k, t in schema.items()
             }
+
+    async def resume(self, on_tags: MutableMapping[str, str]) -> None:
+        last = max(on_tags.values(), key=cmp_to_key(compare_tags))
+        for port_name in on_tags.keys():
+            self.items.append(port_name)
+
+        if last != "0":
+            *prefix, last_iter = last.split(".")
+            prefix = ".".join(prefix)
+            self.iteration_map[prefix] = int(last_iter)
+        else:
+            self.iteration_map[last] = 0
 
 
 class LoopTerminationCombinator(DotProductCombinator):

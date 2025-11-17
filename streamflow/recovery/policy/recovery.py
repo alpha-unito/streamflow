@@ -183,7 +183,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         for job_name in job_names:
             self.context.failure_manager.get_request(job_name).workflow_ready.set()
         await _inject_tokens(mapper, new_workflow)
-        await _set_step_states(mapper, new_workflow)
         # Resume steps
         for step in new_workflow.steps.values():
             await step.resume(

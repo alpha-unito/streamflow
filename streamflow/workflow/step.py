@@ -1275,6 +1275,14 @@ class LoopCombinatorStep(CombinatorStep):
                         ),
                     ):
                         pass
+            # *prefix, next_iter = last.split(".")
+            # if int(next_iter) > 1:
+            #     prev_iter = f"{'.'.join(prefix)}.{int(next_iter) - 2}"
+            # else:
+            #     prev_iter='.'.join(prefix)
+            # await self.combinator.resume(
+            #     {p: prev_iter for p in self.input_ports.keys()}
+            # )
 
 
 class LoopOutputStep(BaseStep, ABC):
