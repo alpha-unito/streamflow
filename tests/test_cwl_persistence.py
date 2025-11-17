@@ -342,6 +342,7 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
                     full_js=True,
                     output_eval="$(1 == 1)",
                     target=LocalTarget("/shared"),
+                    single=True,
                 )
             case "union":
                 inner_p = _create_cwl_command_output_processor(

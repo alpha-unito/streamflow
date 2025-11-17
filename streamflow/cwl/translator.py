@@ -246,7 +246,7 @@ def _create_command_output_processor(
     optional: bool = False,
     single: bool = True,
 ) -> CommandOutputProcessor:
-    # Array type: -> MapCommandOutputProcessor
+    # Array type: -> single is False
     if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
         return _create_command_output_processor(
             port_name=port_name,
@@ -327,6 +327,7 @@ def _create_command_output_processor(
                 if getattr(cwl_element, "outputBinding", None)
                 else None
             ),
+            single=single,
         )
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
