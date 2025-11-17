@@ -810,6 +810,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
             expression_lib=row["expression_lib"],
             full_js=row["full_js"],
             output_eval=row["output_eval"],
+            single=row["single"],
         )
 
     async def _process(
@@ -896,6 +897,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,
             "output_eval": self.output_eval,
+            "single": self.single,
         }
 
     async def process(
