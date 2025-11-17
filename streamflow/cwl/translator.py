@@ -2359,6 +2359,12 @@ class CWLTranslator:
                 ]
         else:
             scatter_inputs = []
+        # Check if `ScatterFeatureRequirement` is defined when a step defines the `scatter` property
+        if scatter_inputs and "ScatterFeatureRequirement" not in requirements:
+            raise WorkflowDefinitionException(
+                "Workflow contains scatter but ScatterFeatureRequirement "
+                "not in requirements"
+            )
 
         # Process inner element
         run_command, inner_cwl_name_prefix, inner_context = process_embedded_tool(
@@ -2368,7 +2374,13 @@ class CWLTranslator:
             cwl_name_prefix=cwl_name_prefix,
             context=context,
         )
-
+        # If the inner command is a workflow, check if `SubworkflowFeatureRequirement` is defined
+        if isinstance(cwl_element, get_args(cwl_utils.parser.Workflow)):
+            if "SubworkflowFeatureRequirement" not in requirements:
+                raise WorkflowDefinitionException(
+                    "Workflow contains embedded workflow but "
+                    "SubworkflowFeatureRequirement not in requirements"
+                )
         # Handle optional input variables
         default_ports: MutableMapping[str, Port] = {}
         # Process inputs
