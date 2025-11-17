@@ -264,6 +264,42 @@ class Combinator(ABC):
         )
         return combinator
 
+    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+        """
+        Resume the combinator's internal state based on the provided tags.
+
+        Args:
+            on_tags: Dictionary mapping port names to lists of tags that were
+                     previously processed by this combinator.
+        """
+        # Clear existing state
+        self._token_values.clear()
+
+        # Build the set of all unique parent tags we need to track
+        all_tags = set()
+        for tags_list in on_tags.values():
+            for tag in tags_list:
+                # Add all parent tags in the hierarchy
+                parts = tag.split(".")
+                for i in range(1, len(parts) + 1):
+                    all_tags.add(".".join(parts[:i]))
+
+        # Initialize the internal structure for all relevant tags
+        for tag in all_tags:
+            self._token_values[tag] = {}
+
+        # Recursively resume nested combinators with their relevant tags
+        for combinator_name, combinator in self.combinators.items():
+            combinator_items = combinator.get_items(recursive=True)
+            filtered_tags = {
+                port: tags
+                for port, tags in on_tags.items()
+                if port in combinator_items
+            }
+
+            if filtered_tags:
+                await combinator.resume(filtered_tags)
+
     async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
             "type": utils.get_class_fullname(type(self)),
@@ -1281,7 +1317,7 @@ class LoopCombinatorStep(CombinatorStep):
             # else:
             #     prev_iter='.'.join(prefix)
             # await self.combinator.resume(
-            #     {p: prev_iter for p in self.input_ports.keys()}
+            #     {p: [prev_iter] for p in self.input_ports.keys()}
             # )
 
 
