@@ -186,6 +186,13 @@ class LoopCombinator(DotProductCombinator):
                 for k, t in schema.items()
             }
 
+    async def resume(self, last: MutableMapping[str, str]) -> None:
+        for port_name, tag in last.items():
+            self.items.append(port_name)
+            *prefix, last_iter = tag.split(".")[:-1]
+            prefix = ".".join(prefix)
+            self.iteration_map[prefix] = int(last_iter)
+
 
 class LoopTerminationCombinator(DotProductCombinator):
     def __init__(self, name: str, workflow: Workflow):

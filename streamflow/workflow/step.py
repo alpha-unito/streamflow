@@ -1178,24 +1178,11 @@ class LoopCombinatorStep(CombinatorStep):
         last = max(flatten_list(on_tags.values()), key=cmp_to_key(compare_tags))
         # 0 -> internal status [], input 0
         if ".".join(prefix := ".".join(last.split(".")[:-1])) != "":
-            # 0.0 -> previous input [0], current input 0
-            # 0.1 -> previous input [0], current input 0.0
-            # 0.2 -> previous input [0, 0.0], current input 0.1
-            for curr_tag in [
-                prefix,
-                *(f"{prefix}.{i}" for i in range(int(last.split(".")[-1]) - 2)),
-            ]:
-                # todo
-                # await self.combinator.resume(curr_tag, last)
-                for port_name in self.input_ports.keys():
-                    async for _ in cast(
-                        AsyncIterable,
-                        self.combinator.combine(
-                            port_name=port_name,
-                            token=Token(value=None, tag=curr_tag),
-                        ),
-                    ):
-                        pass
+            *prefix, next_iter = last.split(".")
+            prev_iter = f"{prefix}.{int(next_iter) - 2}"
+            await self.combinator.resume(
+                {p: prev_iter for p in self.input_ports.keys()}
+            )
 
     async def run(self) -> None:
         # Set default status to SKIPPED
