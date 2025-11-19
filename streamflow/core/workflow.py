@@ -452,7 +452,6 @@ class Step(PersistableEntity, ABC):
         }
         return step
 
-    @abstractmethod
     async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
         """
         Resumes the execution of the step from a specific state.
@@ -463,7 +462,7 @@ class Step(PersistableEntity, ABC):
             A mapping of ports to token tags. The ports are the output ports
             of the step, and the tags represent the missing output tokens.
         """
-        ...
+        pass
 
     @abstractmethod
     async def run(self) -> None: ...
