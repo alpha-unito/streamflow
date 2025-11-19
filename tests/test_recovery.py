@@ -312,16 +312,27 @@ async def test_resume_loop_combinator_step(
     new_workflow, new_combinator_step = await duplicate_elements(
         combinator_step, workflow, context
     )
-    restart_idx = num_iter // 2 if resume_from == "half" else 0
+    if resume_from == "begin":
+        restart_idx = 0
+    elif resume_from == "first":
+        restart_idx = 1
+    elif resume_from == "half":
+        restart_idx = num_iter // 2
+    else:
+        raise NotImplementedError
     await new_combinator_step.resume(
         on_tags={
-            name: [port.token_list[i].tag for i in range(restart_idx + 1)]
+            name: [
+                port.token_list[i].tag
+                for i in range(restart_idx + 1)
+                if not isinstance(port.token_list[i], (TerminationToken, IterationTerminationToken))
+            ]
             for name, port in combinator_step.get_output_ports().items()
         }
     )
     # Inject same input tokens and execute the new workflow
     for port_name, port in new_combinator_step.get_input_ports().items():
-        tag = combinator_step.get_input_port(port_name).token_list[restart_idx].tag
+        tag = [t for t in combinator_step.get_input_port(port_name).token_list if not isinstance(t, (TerminationToken, IterationTerminationToken))][restart_idx].tag
         await inject_tokens(
             token_list=[
                 Token(
@@ -336,6 +347,13 @@ async def test_resume_loop_combinator_step(
     await new_workflow.save(context)
     executor = StreamFlowExecutor(new_workflow)
     await executor.run()
+    # Test input values                            -  New_combinator_step port tags
+    # prefix='0'     resume_from='begin' ('0')     -  input='0'     output='0.0'
+    # prefix='0'     resume_from='first' ('0.0')   -  input='0.0'   output='0.1'
+    # prefix='0'     resume_from='half' ('0.1')    -  input='0.1'   output='0.2'
+    # prefix='0.1'   resume_from='begin' ('0.1')   -  input='0.1'   output='0.1.0'
+    # prefix='0.1'   resume_from='first' ('0.1.0') -  input='0.1.0' output='0.1.1'
+    # prefix='0.1'   resume_from='half' ('0.1.1')  -  input='0.1.1' output='0.1.2'
     for port_name, new_port in new_combinator_step.get_output_ports().items():
         old_port = combinator_step.get_output_port(port_name)
         # Expected: num_iter + IterationTerminationToken + TerminationToken
@@ -344,6 +362,8 @@ async def test_resume_loop_combinator_step(
         assert len(new_port.token_list) == 2
         assert isinstance(new_port.token_list[-1], TerminationToken)
         assert old_port.token_list[restart_idx].tag == new_port.token_list[-2].tag
+        print("input", [t.tag for t in new_combinator_step.get_input_port(port_name).token_list if not isinstance(t, (TerminationToken, IterationTerminationToken))])
+        print("output", [t.tag for t in new_combinator_step.get_output_port(port_name).token_list if not isinstance(t, (TerminationToken, IterationTerminationToken))])
 
 
 @pytest.mark.asyncio
