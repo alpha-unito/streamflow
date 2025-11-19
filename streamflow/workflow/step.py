@@ -36,7 +36,12 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import compare_tags, get_entity_ids
+from streamflow.core.utils import (
+    compare_tags,
+    decrease_tag,
+    flatten_list,
+    get_entity_ids,
+)
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -267,38 +272,12 @@ class Combinator(ABC):
         )
         return combinator
 
+    @abstractmethod
     async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
         """
         Resume the combinator's internal state based on the provided tags.
-
-        Args:
-            on_tags: Dictionary mapping port names to lists of tags that were
-                     previously processed by this combinator.
         """
-        # Build the set of all unique parent tags we need to track
-        all_tags = set()
-        for tags_list in on_tags.values():
-            for tag in tags_list:
-                # Add all parent tags in the hierarchy
-                parts = tag.split(".")
-                for i in range(1, len(parts) + 1):
-                    all_tags.add(".".join(parts[:i]))
-
-        # Initialize the internal structure for all relevant tags
-        for tag in all_tags:
-            self._token_values[tag] = {}
-            for port_name in self.items:
-                self._token_values[tag][port_name] = deque()
-
-        # Recursively resume nested combinators with their relevant tags
-        for _combinator_name, combinator in self.combinators.items():
-            combinator_items = combinator.get_items(recursive=True)
-            filtered_tags = {
-                port: tags for port, tags in on_tags.items() if port in combinator_items
-            }
-
-            if filtered_tags:
-                await combinator.resume(filtered_tags)
+        ...
 
     async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
@@ -371,17 +350,6 @@ class CombinatorStep(BaseStep):
         return cast(dict[str, Any], await super()._save_additional_params(context)) | {
             "combinator": await self.combinator.save(context)
         }
-
-    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
-        # last = max(flatten_list(on_tags.values()), key=cmp_to_key(compare_tags))
-        # # 0 -> internal status [], input 0
-        # if ".".join(prefix := ".".join(last.split(".")[:-1])) != "":
-        # *prefix_1, next_iter = last.split(".")
-        # prev_iter = ".".join((prefix_1, next_iter))
-        await self.combinator.resume(
-            on_tags
-            # {p: [prev_iter] for p in self.input_ports.keys()}
-        )
 
     async def run(self) -> None:
         # Set default status to SKIPPED
@@ -1217,6 +1185,26 @@ class LoopCombinatorStep(CombinatorStep):
     def __init__(self, name: str, workflow: Workflow, combinator: Combinator):
         super().__init__(name, workflow, combinator)
         self.iteration_termination_checklist: MutableMapping[str, set[str]] = {}
+
+    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+        # The `on_tags` parameter contains the output tags.
+        # We need to determine whether a tag is a starting tag or an intermediate tag.
+        # For example, if the input tag is `0.1`, the next tag must be either `0.2` or `0.1.0`.
+        # To make this distinction, we use the tag history.
+        from_tags = {}
+        for name, tags in on_tags.items():
+            # It is a starting tag
+            if len(tags) == 1:
+                from_tags[name] = [tags[0]]
+            elif all(
+                len(tags[0].split(".")) != len(tag.split(".")) for tag in tags[1:]
+            ):
+                raise WorkflowExecutionException(f"Multiple tags not supported: {tags}")
+            else:
+                # It is an intermediate tag, so we need to retrieve the prefix.
+                last = max(flatten_list(tags), key=cmp_to_key(compare_tags))
+                from_tags[name] = [".".join(last.split(".")[:-1]), decrease_tag(last)]
+        await self.combinator.resume(from_tags)
 
     async def run(self) -> None:
         # Set default status to SKIPPED

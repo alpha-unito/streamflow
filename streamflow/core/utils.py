@@ -128,6 +128,16 @@ def create_command(
     )
 
 
+def decrease_tag(tag: str) -> str:
+    if tag == "0":
+        raise WorkflowExecutionException("Impossible decrease base tag: '0")
+    values = tag.split(".")
+    if values[-1] == "0":
+        return ".".join(values[:-1])
+    else:
+        return ".".join((*values[:-1], str(int(values[-1]) - 1)))
+
+
 def get_job_step_name(job_name: str) -> str:
     return PurePosixPath(job_name).parent.as_posix()
 

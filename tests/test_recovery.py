@@ -305,17 +305,21 @@ async def test_execute(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "num_scatter_ports,scatter_method,on_tag",
+    "num_scatter_ports,scatter_method,resume_from",
     (
         elems
         for elems in itertools.product(
             (1, 2), ("dotproduct", "nested_crossproduct"), ("begin", "half")
         )
+        # nested_crossproduct needs at least two inputs
         if elems[0] != 1 or elems[1] != "nested_crossproduct"
     ),
 )
 async def test_resume_combinator_step(
-    context: StreamFlowContext, num_scatter_ports: int, scatter_method: str, on_tag: str
+    context: StreamFlowContext,
+    num_scatter_ports: int,
+    scatter_method: str,
+    resume_from: str,
 ) -> None:
     input_names = ["in_a", "in_b", "in_c"]
     scatter_inputs = input_names[:num_scatter_ports]
@@ -373,7 +377,7 @@ async def test_resume_combinator_step(
     executor = StreamFlowExecutor(workflow)
     await executor.run()
     # Duplicate the combinator and resume it
-    restart_idx = scatter_size // 2 if on_tag == "half" else 0
+    restart_idx = scatter_size // 2 if resume_from == "half" else 0
     new_workflow, new_combinator_step = await duplicate_elements(
         combinator_step, workflow, context
     )
@@ -421,12 +425,14 @@ async def test_resume_combinator_step(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("on_tag", ("begin", "half"))
+@pytest.mark.parametrize(
+    "prefix_tag,resume_from",
+    itertools.product(("0", "0.1"), ("begin", "first", "half")),
+)
 async def test_resume_loop_combinator_step(
-    context: StreamFlowContext, on_tag: str
+    context: StreamFlowContext, prefix_tag: str, resume_from: str
 ) -> None:
     input_names = ["in_a", "in_b", "in_c"]
-    prefix_tag = "0"
     num_iter = 5
     workflow, ports = await create_workflow(
         context, num_port=len(input_names), type_="default"
@@ -470,23 +476,23 @@ async def test_resume_loop_combinator_step(
     new_workflow, new_combinator_step = await duplicate_elements(
         combinator_step, workflow, context
     )
-    restart_idx = num_iter if on_tag == "half" else 0
+    restart_idx = num_iter // 2 if resume_from == "half" else 0
     await new_combinator_step.resume(
         on_tags={
-            name: [
-                t.tag for t in port.token_list if not isinstance(t, TerminationToken)
-            ]
+            name: [port.token_list[i].tag for i in range(restart_idx + 1)]
             for name, port in combinator_step.get_output_ports().items()
         }
     )
     # Inject same input tokens and execute the new workflow
     for port_name, port in new_combinator_step.get_input_ports().items():
+        tag = combinator_step.get_input_port(port_name).token_list[restart_idx].tag
         await inject_tokens(
             token_list=[
                 Token(
                     value=f"{port_name}_a",
-                    tag=combinator_step.get_input_port(port_name).token_list[-2].tag,
-                )
+                    tag=tag,
+                ),
+                IterationTerminationToken(tag),
             ],
             in_port=port,
             context=context,
@@ -496,9 +502,12 @@ async def test_resume_loop_combinator_step(
     await executor.run()
     for port_name, new_port in new_combinator_step.get_output_ports().items():
         old_port = combinator_step.get_output_port(port_name)
+        # Expected: num_iter + IterationTerminationToken + TerminationToken
+        assert len(old_port.token_list) == num_iter + 2
+        # Expected: Token + TerminationToken
         assert len(new_port.token_list) == 2
         assert isinstance(new_port.token_list[-1], TerminationToken)
-        assert old_port.token_list[-2].tag == new_port.token_list[-2].tag
+        assert old_port.token_list[restart_idx].tag == new_port.token_list[-2].tag
 
 
 @pytest.mark.asyncio
