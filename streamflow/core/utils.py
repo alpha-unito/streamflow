@@ -130,7 +130,7 @@ def create_command(
 
 def decrease_tag(tag: str) -> str:
     if tag == "0":
-        raise WorkflowExecutionException("Impossible decrease base tag: '0")
+        raise WorkflowExecutionException("Impossible decrease base tag: '0'")
     values = tag.split(".")
     if values[-1] == "0":
         return ".".join(values[:-1])

@@ -462,7 +462,6 @@ class Step(PersistableEntity, ABC):
         :param on_tags:
             A mapping of ports to token tags. The ports are the output ports
             of the step, and the tags represent the missing output tokens.
-            These tags indicate the points at which execution should resume.
         """
         ...
 
