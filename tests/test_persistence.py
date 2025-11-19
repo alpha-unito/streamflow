@@ -218,7 +218,7 @@ async def test_scatter_step(context: StreamFlowContext):
     "combinator_t",
     [
         "cartesian_product_combinator",
-        "dot_combinator",
+        "dot_product_combinator",
         "loop_combinator",
         "loop_termination_combinator",
     ],

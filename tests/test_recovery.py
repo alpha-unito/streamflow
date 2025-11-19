@@ -13,19 +13,34 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ExecutionLocation
-from streamflow.core.workflow import Job, Token
+from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.main import build_context
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.persistence.utils import load_dependee_tokens
+from streamflow.workflow.combinator import (
+    CartesianProductCombinator,
+    DotProductCombinator,
+    LoopCombinator,
+)
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.step import GatherStep, ScatterStep
+from streamflow.workflow.step import (
+    Combinator,
+    CombinatorStep,
+    GatherStep,
+    LoopCombinatorStep,
+    ScatterStep,
+)
 from streamflow.workflow.token import (
     FileToken,
+    IterationTerminationToken,
     JobToken,
     ListToken,
     ObjectToken,
     TerminationToken,
 )
 from tests.utils.deployment import get_deployment_config, get_location
+from tests.utils.utils import duplicate_elements, inject_tokens
 from tests.utils.workflow import (
     BaseFileToken,
     InjectorFailureCommand,
@@ -70,6 +85,14 @@ async def _assert_token_result(
         assert input_value == output_token.value
 
 
+def _clear_combinator_queues(combinator: Combinator) -> None:
+    for c in combinator.combinators.values():
+        _clear_combinator_queues(c)
+    for values in combinator._token_values.values():
+        for queue in values.values():
+            queue.clear()
+
+
 async def _create_file(
     context: StreamFlowContext, location: ExecutionLocation
 ) -> MutableMapping[str, Any]:
@@ -88,6 +111,29 @@ async def _create_file(
         "path": str(path),
         "size": await path.size(),
     }
+
+
+def _create_residual_combinator(
+    workflow: Workflow,
+    step_name: str,
+    inner_combinator: Combinator,
+    inner_inputs: MutableSequence[str],
+    input_ports: MutableMapping[str, Port],
+) -> Combinator:
+    dot_product_combinator = DotProductCombinator(
+        workflow=workflow, name=step_name + "-dot-product-combinator"
+    )
+    if inner_combinator:
+        dot_product_combinator.add_combinator(
+            inner_combinator, inner_combinator.get_items(recursive=True)
+        )
+    else:
+        for name in inner_inputs:
+            dot_product_combinator.add_item(name)
+    for name in input_ports:
+        if name not in inner_inputs:
+            dot_product_combinator.add_item(name)
+    return dot_product_combinator
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -255,6 +301,204 @@ async def test_execute(
             # Version starts from 1
             retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             assert retry_request.version == expected_failures + 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "num_scatter_ports,scatter_method,on_tag",
+    (
+        elems
+        for elems in itertools.product(
+            (1, 2), ("dotproduct", "nested_crossproduct"), ("begin", "half")
+        )
+        if elems[0] != 1 or elems[1] != "nested_crossproduct"
+    ),
+)
+async def test_resume_combinator_step(
+    context: StreamFlowContext, num_scatter_ports: int, scatter_method: str, on_tag: str
+) -> None:
+    input_names = ["in_a", "in_b", "in_c"]
+    scatter_inputs = input_names[:num_scatter_ports]
+    prefix_tag = "0.1"
+    scatter_size = 5
+    workflow, ports = await create_workflow(
+        context, num_port=len(input_names), type_="default"
+    )
+    input_ports = {name: port for name, port in zip(input_names, ports, strict=True)}
+    step_name = posixpath.join(posixpath.sep, utils.random_name())
+    scatter_combinator = None
+    if len(scatter_inputs) > 1:
+        # Build combinator
+        if scatter_method == "dotproduct":
+            scatter_combinator = DotProductCombinator(
+                workflow=workflow, name=step_name + "-scatter-combinator"
+            )
+            for name in scatter_inputs:
+                scatter_combinator.add_item(name)
+        else:
+            scatter_combinator = CartesianProductCombinator(
+                workflow=workflow, name=step_name + "-scatter-combinator"
+            )
+            for name in scatter_inputs:
+                scatter_combinator.add_item(name)
+    # If there are both scatter and non-scatter inputs
+    if len(scatter_inputs) < len(input_ports):
+        scatter_combinator = _create_residual_combinator(
+            workflow=workflow,
+            step_name=step_name,
+            inner_combinator=scatter_combinator,
+            inner_inputs=scatter_inputs,
+            input_ports=input_ports,
+        )
+    combinator_step = workflow.create_step(
+        cls=CombinatorStep,
+        name=step_name + "-scatter-combinator",
+        combinator=scatter_combinator,
+    )
+    for port_name, port in input_ports.items():
+        combinator_step.add_input_port(port_name, port)
+        await inject_tokens(
+            token_list=[
+                Token(
+                    value=f"{port_name}_a",
+                    tag=prefix_tag + (f".{i}" if port_name in scatter_inputs else ""),
+                )
+                for i in range(scatter_size if port_name in scatter_inputs else 1)
+            ],
+            in_port=port,
+            context=context,
+        )
+        combinator_step.add_output_port(port_name, workflow.create_port())
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+    # Duplicate the combinator and resume it
+    restart_idx = scatter_size // 2 if on_tag == "half" else 0
+    new_workflow, new_combinator_step = await duplicate_elements(
+        combinator_step, workflow, context
+    )
+    await new_combinator_step.resume(
+        on_tags={
+            name: [port.token_list[restart_idx].tag]
+            for name, port in combinator_step.get_output_ports().items()
+        }
+    )
+    # Inject same input tokens and execute the new workflow
+    loading_context = DefaultDatabaseLoadingContext()
+    for port_name, port in new_combinator_step.get_input_ports().items():
+        value = f"{port_name}_a"
+        tag = next(
+            t.tag
+            for t in await load_dependee_tokens(
+                persistent_id=combinator_step.get_output_port(port_name)
+                .token_list[restart_idx]
+                .persistent_id,
+                context=context,
+                loading_context=loading_context,
+            )
+            if t.value == value
+        )
+        await inject_tokens(
+            token_list=[Token(value=value, tag=tag)],
+            in_port=port,
+            context=context,
+        )
+    await new_workflow.save(context)
+    executor = StreamFlowExecutor(new_workflow)
+    await executor.run()
+    # Check that the new combinator behavior is the same as the original one
+    for port_name, new_port in new_combinator_step.get_output_ports().items():
+        old_port = combinator_step.get_output_port(port_name)
+        assert (
+            len(old_port.token_list)
+            == scatter_size
+            ** (num_scatter_ports if scatter_method == "nested_crossproduct" else 1)
+            + 1
+        )
+        assert len(new_port.token_list) == 2
+        assert isinstance(new_port.token_list[-1], TerminationToken)
+        assert old_port.token_list[restart_idx].tag == new_port.token_list[-2].tag
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("on_tag", ("begin", "half"))
+async def test_resume_loop_combinator_step(
+    context: StreamFlowContext, on_tag: str
+) -> None:
+    input_names = ["in_a", "in_b", "in_c"]
+    prefix_tag = "0"
+    num_iter = 5
+    workflow, ports = await create_workflow(
+        context, num_port=len(input_names), type_="default"
+    )
+    input_ports = {name: port for name, port in zip(input_names, ports, strict=True)}
+    step_name = posixpath.join(posixpath.sep, utils.random_name())
+    loop_combinator = LoopCombinator(
+        workflow=workflow, name=step_name + "-loop-combinator"
+    )
+    for port_name in input_ports:
+        loop_combinator.add_item(port_name)
+    combinator_step = workflow.create_step(
+        cls=LoopCombinatorStep,
+        name=step_name + "-loop-combinator",
+        combinator=loop_combinator,
+    )
+
+    for port_name, port in input_ports.items():
+        combinator_step.add_input_port(port_name, port)
+        await inject_tokens(
+            token_list=[
+                Token(
+                    value=f"{port_name}_a",
+                    tag=prefix_tag,
+                ),
+                TerminationToken(Status.COMPLETED),
+                *(
+                    Token(value=f"{port_name}_a", tag=f"{prefix_tag}.{i}")
+                    for i in range(num_iter)
+                ),
+                IterationTerminationToken(tag=prefix_tag),
+            ],
+            in_port=port,
+            context=context,
+        )
+        combinator_step.add_output_port(port_name, workflow.create_port())
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+    # Duplicate the combinator and resume it
+    new_workflow, new_combinator_step = await duplicate_elements(
+        combinator_step, workflow, context
+    )
+    restart_idx = num_iter if on_tag == "half" else 0
+    await new_combinator_step.resume(
+        on_tags={
+            name: [
+                t.tag for t in port.token_list if not isinstance(t, TerminationToken)
+            ]
+            for name, port in combinator_step.get_output_ports().items()
+        }
+    )
+    # Inject same input tokens and execute the new workflow
+    for port_name, port in new_combinator_step.get_input_ports().items():
+        await inject_tokens(
+            token_list=[
+                Token(
+                    value=f"{port_name}_a",
+                    tag=combinator_step.get_input_port(port_name).token_list[-2].tag,
+                )
+            ],
+            in_port=port,
+            context=context,
+        )
+    await new_workflow.save(context)
+    executor = StreamFlowExecutor(new_workflow)
+    await executor.run()
+    for port_name, new_port in new_combinator_step.get_output_ports().items():
+        old_port = combinator_step.get_output_port(port_name)
+        assert len(new_port.token_list) == 2
+        assert isinstance(new_port.token_list[-1], TerminationToken)
+        assert old_port.token_list[-2].tag == new_port.token_list[-2].tag
 
 
 @pytest.mark.asyncio
