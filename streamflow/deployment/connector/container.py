@@ -64,14 +64,23 @@ async def _get_storage_from_binds(
     )
     if returncode == 0:
         for line in stdout.splitlines():
-            mount_point, fs_type, size = line.split(" ")
-            if fs_type not in FS_TYPES_TO_SKIP:
-                storage[mount_point] = Storage(
-                    mount_point=mount_point,
-                    size=float(size) / 2**10,
+            try:
+                mount_point, fs_type, size = line.split(" ")
+                if fs_type not in FS_TYPES_TO_SKIP:
+                    storage[mount_point] = Storage(
+                        mount_point=mount_point,
+                        size=float(size) / 2**10,
+                    )
+                    if mount_point in binds:
+                        storage[mount_point].bind = binds[mount_point]
+            except ValueError as e:
+                logger.warning(
+                    f"Skipping partition for deployment {location.deployment}: {e}"
                 )
-                if mount_point in binds:
-                    storage[mount_point].bind = binds[mount_point]
+            except Exception as e:
+                raise WorkflowExecutionException(
+                    f"Error parsing {line} for deployment {location.deployment}: {e}"
+                )
         return storage
     else:
         raise WorkflowExecutionException(

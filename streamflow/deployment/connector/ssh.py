@@ -494,11 +494,20 @@ class SSHConnector(BaseConnector):
                             f"An error message occurred: {cores}"
                         ) from None
                     for line in dir_info_list:
-                        mount_point, fs_type, size = line.split(" ")
-                        if fs_type not in FS_TYPES_TO_SKIP:
-                            self.hardware[location].storage[mount_point] = Storage(
-                                mount_point=mount_point,
-                                size=float(size) / 2**10,
+                        try:
+                            mount_point, fs_type, size = line.split(" ")
+                            if fs_type not in FS_TYPES_TO_SKIP:
+                                self.hardware[location].storage[mount_point] = Storage(
+                                    mount_point=mount_point,
+                                    size=float(size) / 2**10,
+                                )
+                        except ValueError as e:
+                            logger.warning(
+                                f"Skipping partition for deployment {self.deployment_name}: {e}"
+                            )
+                        except Exception as e:
+                            raise WorkflowExecutionException(
+                                f"Error parsing {line} for deployment {self.deployment_name}: {e}"
                             )
                 else:
                     raise WorkflowExecutionException(result.returncode)
