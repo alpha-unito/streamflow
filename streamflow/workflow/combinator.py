@@ -186,12 +186,31 @@ class LoopCombinator(DotProductCombinator):
                 for k, t in schema.items()
             }
 
-    async def resume(self, last: MutableMapping[str, str]) -> None:
-        for port_name, tag in last.items():
-            self.items.append(port_name)
-            *prefix, last_iter = tag.split(".")[:-1]
-            prefix = ".".join(prefix)
-            self.iteration_map[prefix] = int(last_iter)
+    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+        """
+        Resume the loop combinator and restore iteration counters.
+        """
+        # Call parent implementation to restore _token_values structure
+        await super().resume(on_tags)
+        # Extract iteration numbers from tags to restore iteration_map
+        for tags_list in on_tags.values():
+            for tag in tags_list:
+                parts = tag.split(".")
+                if len(parts) >= 2:
+                    # Get the prefix (all parts except the last one which is the iteration number)
+                    prefix = ".".join(parts[:-1])
+                    try:
+                        iteration_num = int(parts[-1])
+                        # Keep track of the maximum iteration number seen for each prefix
+                        if prefix not in self.iteration_map:
+                            self.iteration_map[prefix] = iteration_num
+                        else:
+                            self.iteration_map[prefix] = max(
+                                self.iteration_map[prefix], iteration_num
+                            )
+                    except ValueError:
+                        # Not a loop iteration tag, skip it
+                        pass
 
 
 class LoopTerminationCombinator(DotProductCombinator):
