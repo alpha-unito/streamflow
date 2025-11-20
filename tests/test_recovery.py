@@ -321,18 +321,24 @@ async def test_resume_loop_combinator_step(
     else:
         raise NotImplementedError
     await new_combinator_step.resume(
-        on_tags={
+        on_tokens={
             name: [
-                port.token_list[i].tag
+                port.token_list[i]
                 for i in range(restart_idx + 1)
-                if not isinstance(port.token_list[i], (TerminationToken, IterationTerminationToken))
+                if not isinstance(
+                    port.token_list[i], (TerminationToken, IterationTerminationToken)
+                )
             ]
             for name, port in combinator_step.get_output_ports().items()
         }
     )
     # Inject same input tokens and execute the new workflow
     for port_name, port in new_combinator_step.get_input_ports().items():
-        tag = [t for t in combinator_step.get_input_port(port_name).token_list if not isinstance(t, (TerminationToken, IterationTerminationToken))][restart_idx].tag
+        tag = [
+            t
+            for t in combinator_step.get_input_port(port_name).token_list
+            if not isinstance(t, (TerminationToken, IterationTerminationToken))
+        ][restart_idx].tag
         await inject_tokens(
             token_list=[
                 Token(
@@ -362,8 +368,22 @@ async def test_resume_loop_combinator_step(
         assert len(new_port.token_list) == 2
         assert isinstance(new_port.token_list[-1], TerminationToken)
         assert old_port.token_list[restart_idx].tag == new_port.token_list[-2].tag
-        print("input", [t.tag for t in new_combinator_step.get_input_port(port_name).token_list if not isinstance(t, (TerminationToken, IterationTerminationToken))])
-        print("output", [t.tag for t in new_combinator_step.get_output_port(port_name).token_list if not isinstance(t, (TerminationToken, IterationTerminationToken))])
+        print(
+            "input",
+            [
+                t.tag
+                for t in new_combinator_step.get_input_port(port_name).token_list
+                if not isinstance(t, (TerminationToken, IterationTerminationToken))
+            ],
+        )
+        print(
+            "output",
+            [
+                t.tag
+                for t in new_combinator_step.get_output_port(port_name).token_list
+                if not isinstance(t, (TerminationToken, IterationTerminationToken))
+            ],
+        )
 
 
 @pytest.mark.asyncio
