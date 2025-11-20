@@ -1,5 +1,6 @@
+import logging
 import re
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence, MutableSet
 from importlib.resources import files
 
 from streamflow.core.deployment import BindingFilter, Target
@@ -14,41 +15,63 @@ from streamflow.workflow.token import FileToken, ListToken, ObjectToken
 
 class MatchingBindingFilter(BindingFilter):
     # TODO: Add documentation
-    #  example:
-    #  bindingFilters:
-    #   f_local:
-    #     type: matching
-    #     config:
-    #       match:
-    #         - deployment: locally
-    #           job:
-    #             - input: extractfile
-    #               regex: ".*.java"
-    #         - deployment: leonardo
-    #           job:
-    #             - input: extractfile
-    #               regex: ".*.txt"
-    # TODO: Add service
-    # TODO: Add a check to ensure that the deployments and services defined inside the filter exist in the deployments section.
-    # TODO: Refactor constructor parameters
-    def __init__(self, **kwargs):
-        self.deployments: MutableMapping[str, MutableMapping[str, str]] = {}
-        for deployments in kwargs["match"]:
-            deployment = deployments["deployment"]
-            self.deployments.setdefault(deployment, {})
+    def __init__(
+        self,
+        name: str,
+        targets: MutableSequence[
+            MutableMapping[
+                str,
+                MutableMapping[str, str] | MutableSequence[MutableMapping[str, str]],
+            ]
+        ],
+    ):
+        super().__init__(name)
+        self.deployments_regex: MutableMapping[str, MutableMapping[str, str]] = {}
+        self.deployments_services: MutableMapping[str, MutableSet[str]] = {}
+        for deployments in targets:
+            # Retrieve deployment
+            target = deployments["target"]
+            deployment = target if isinstance(target, str) else target["deployment"]
+            self.deployments_regex.setdefault(deployment, {})
+            self.deployments_services.setdefault(deployment, set())
+            if isinstance(target, MutableMapping) and "service" in target:
+                self.deployments_services[deployment].add(target["service"])
+            # Retrieve job
             for job in deployments["job"]:
-                if job["input"] in self.deployments[deployment]:
+                if job["port"] in self.deployments_regex[deployment]:
                     raise ValueError("Duplicate input")
-                self.deployments[deployment][job["input"]] = job["regex"]
+                self.deployments_regex[deployment][job["port"]] = job["regex"]
 
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
     ) -> MutableSequence[Target]:
         filtered_targets = []
+        target_deployments = {t.deployment.name for t in targets}
+        filter_deployments = self.deployments_regex.keys()
+        if target_deployments - filter_deployments:
+            logger.warning(
+                f"Filter {self.name} on job {job.name} discards the following deployments because "
+                f"no matching rules are defined: {target_deployments - filter_deployments}"
+            )
+        if filter_deployments - target_deployments:
+            logger.warning(
+                f"Filter {self.name} on job {job.name} contains filter deployments that do not match "
+                f"any target deployment. Please check for potential typos in the filter: "
+                f"{filter_deployments - target_deployments}"
+            )
+
         for target in targets:
-            # TODO: If the target.deployment.name is not defined in the filter,
-            #  should it be removed from the targets list? Evaluate if this is the correct behavior.
-            for input_name, regex in self.deployments.get(
+            if (
+                services := self.deployments_services.get(target.deployment.name, [])
+            ) and target.service not in services:
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Filter {self.name} on job {job.name} is filtering on "
+                        f"the {target.deployment.name} deployment, but no match was found "
+                        f"for the {target.service} service."
+                    )
+                continue
+            for input_name, regex in self.deployments_regex.get(
                 target.deployment.name, {}
             ).items():
                 if input_name not in job.inputs:
@@ -57,19 +80,27 @@ class MatchingBindingFilter(BindingFilter):
                     job.inputs[input_name], (FileToken, ListToken, ObjectToken)
                 ):
                     raise WorkflowDefinitionException(
-                        f"Job {job.name} input '{input_name}' cannot be of type 'file', 'list', or 'object'. "
+                        f"Filter {self.name} on port {input_name} cannot be of type 'file', 'list', or 'object'. "
                         f"These types are not supported for matching."
                     )
                 if not isinstance(job.inputs[input_name].value, str):
                     logger.warning(
-                        f"Job {job.name} input '{input_name}' is not a string. "
+                        f"Filter {self.name} on job {job.name} is processing port {input_name}, "
+                        f"but the value is not a string. "
                         f"It will be implicitly cast to a string for matching."
                     )
                 if re.match(regex, str(job.inputs[input_name].value)):
                     filtered_targets.append(target)
+                elif logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Filter {self.name} on the port {input_name} of the job {job.name} "
+                        f"did not match the regex {regex}. "
+                        f"The deployment {target.deployment.name} is discarded."
+                    )
+
         if len(filtered_targets) == 0:
             raise WorkflowExecutionException(
-                f"No matching targets found for job '{job.name}' based on the provided inputs. "
+                f"Filter {self.name} did not find any matching targets for job {job.name} with the provided inputs."
             )
         return filtered_targets
 

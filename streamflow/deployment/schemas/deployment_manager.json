@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://streamflow.di.unito.it/schemas/deployment/depoloyment_manager.json",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/deployment_manager.json",
   "type": "object",
   "properties": {},
   "additionalProperties": false

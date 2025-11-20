@@ -3,35 +3,58 @@
   "$id": "https://streamflow.di.unito.it/schemas/deployment/filter/matching.json",
   "type": "object",
   "properties": {
-    "match": {
+    "targets": {
       "type": "array",
       "title": "Deployments",
-      "description": "A list of deployments with associated jobs.",
+      "description": "A list of deployments and their conditions. A deployment will be discarded unless its condition is satisfied.",
       "items": {
         "type": "object",
         "properties": {
-          "deployment": {
-            "type": "string",
-            "description": "The name of the deployment."
+          "target": {
+            "title": "Deployment",
+            "description": "The name of the deployment.",
+            "oneOf": [
+              {
+                "type": "string",
+                "title": "Deployment"
+              },
+              {
+                "type": "object",
+                "title": "Deployment and service",
+                "properties": {
+                  "deployment": {
+                    "type": "string",
+                    "title": "Deployment"
+                  },
+                  "service": {
+                    "type": "string",
+                    "title": "Service"
+                  }
+                },
+                "required": [
+                  "deployment"
+                ]
+              }
+            ]
           },
           "job": {
             "type": "array",
             "title": "Job inputs",
-            "description": "A list of jobs associated with the deployment.",
+            "description": "A list of ports and regular expressions that must match the port values.",
             "items": {
               "type": "object",
               "properties": {
-                "input": {
+                "port": {
                   "type": "string",
-                  "description": "The input for the job."
+                  "description": "The input port of the binding step."
                 },
                 "regex": {
                   "type": "string",
-                  "description": "The regex the input must match."
+                  "description": "The regular expression that the input must match."
                 }
               },
               "required": [
-                "input",
+                "port",
                 "regex"
               ],
               "additionalProperties": false
@@ -39,7 +62,7 @@
           }
         },
         "required": [
-          "deployment",
+          "target",
           "job"
         ],
         "additionalProperties": false
@@ -47,7 +70,7 @@
     }
   },
   "required": [
-    "match"
+    "targets"
   ],
   "additionalProperties": false
 }
