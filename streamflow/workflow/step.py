@@ -36,12 +36,7 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import (
-    compare_tags,
-    decrease_tag,
-    flatten_list,
-    get_entity_ids,
-)
+from streamflow.core.utils import compare_tags, get_entity_ids
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -55,6 +50,8 @@ from streamflow.core.workflow import (
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.persistence.utils import load_dependee_tokens
 from streamflow.workflow.port import ConnectorPort, FilterTokenPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
@@ -155,7 +152,9 @@ class BaseStep(Step, ABC):
             )
         return token
 
-    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
         pass
 
     async def terminate(self, status: Status) -> None:
@@ -1186,24 +1185,45 @@ class LoopCombinatorStep(CombinatorStep):
         super().__init__(name, workflow, combinator)
         self.iteration_termination_checklist: MutableMapping[str, set[str]] = {}
 
-    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
-        # The `on_tags` parameter contains the output tags.
-        # We need to determine whether a tag is a starting tag or an intermediate tag.
-        # For example, if the input tag is `0.1`, the next tag must be either `0.2` or `0.1.0`.
-        # To make this distinction, we use the tag history.
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
+        # The `on_tokens` parameter contains the output tokens, and the iteration begins from the
+        # token with the smallest tag. First, we need to determine whether a tag is a starting tag
+        # or an intermediate tag. For example, if the input tag is `0.1`, the next tag must be
+        # either `0.2` or `0.1.0`. To make this distinction, we use the port history by retrieving
+        # all the tokens from the previous execution.
         from_tags = {}
-        for name, tags in on_tags.items():
-            # It is a starting tag
-            if len(tags) == 1:
-                from_tags[name] = [tags[0]]
-            elif all(
-                len(tags[0].split(".")) != len(tag.split(".")) for tag in tags[1:]
-            ):
-                raise WorkflowExecutionException(f"Multiple tags not supported: {tags}")
+        loading_context = DefaultDatabaseLoadingContext()
+        for name, tokens in on_tokens.items():
+            tags = set()
+            token = max(tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag)))
+            # for token in tokens:
+            prev_tags = {
+                t.tag
+                for t in await load_dependee_tokens(
+                    persistent_id=token.persistent_id,
+                    context=self.workflow.context,
+                    loading_context=loading_context,
+                )
+            }
+            if len(prev_tags) == 0:
+                raise WorkflowDefinitionException(
+                    "Output token must have previous tokens."
+                )
+            prev_iter = iter(prev_tags)
+            fst = next(prev_iter)
+            if any(len(fst.split(".")) != len(t.split(".")) for t in prev_iter):
+                raise WorkflowDefinitionException(
+                    "Input of a LoopCombinatorStep must have the same tag depth level"
+                )
+            # If tags are different, it means that it is necessary to restart from the first iteration
+            if len(fst.split(".")) != len(token.tag.split(".")):
+                tags.add(token.tag)
             else:
-                # It is an intermediate tag, so we need to retrieve the prefix.
-                last = max(flatten_list(tags), key=cmp_to_key(compare_tags))
-                from_tags[name] = [".".join(last.split(".")[:-1]), decrease_tag(last)]
+                tags |= prev_tags
+                pass
+            from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
         await self.combinator.resume(from_tags)
 
     async def run(self) -> None:
@@ -1746,12 +1766,14 @@ class ScatterStep(BaseStep):
     def get_size_port(self) -> Port:
         return self.get_output_port("__size__")
 
-    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
         port = self.get_output_port()
         self.workflow.ports[port.name] = FilterTokenPort(
             self.workflow,
             port.name,
-            filter_function=lambda t: t.tag in on_tags[port.name],
+            filter_function=lambda t: t.tag in on_tokens[port.name],
         )
         for token in port.token_list:
             self.workflow.ports[port.name].put(token)
