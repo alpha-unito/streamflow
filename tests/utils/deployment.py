@@ -50,6 +50,8 @@ def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
             return "alpine-docker-compose"
         case "kubernetes":
             return "alpine-kubernetes"
+        case "openpbs":
+            return "docker-openpbs"
         case "parameterizable_hardware":
             return "custom-hardware"
         case "singularity":
@@ -88,6 +90,8 @@ async def get_deployment_config(
             return await get_docker_wrapper_deployment_config(_context)
         case "kubernetes":
             return get_kubernetes_deployment_config()
+        case "openpbs":
+            return await get_openpbs_deployment_config(_context)
         case "parameterizable_hardware":
             return get_parameterizable_hardware_deployment_config()
         case "singularity":
@@ -202,6 +206,37 @@ async def get_location(
     return next(iter(locations.values())).location
 
 
+async def get_openpbs_deployment_config(_context: StreamFlowContext):
+    docker_compose_config = DeploymentConfig(
+        name="docker-compose-openpbs",
+        type="docker-compose",
+        config={
+            "files": [
+                str(get_data_path("deployment", "openpbs", "docker-compose.yml"))
+            ],
+            "projectName": random_name(),
+        },
+        external=False,
+    )
+    await _context.deployment_manager.deploy(docker_compose_config)
+    return DeploymentConfig(
+        name="docker-openpbs",
+        type="pbs",
+        config={
+            "services": {
+                "test": {
+                    "destination": "workq",
+                    "resources": {"nodes": "2:ppn=1"},
+                    "userList": "hpcuser",
+                }
+            }
+        },
+        external=False,
+        lazy=False,
+        wraps=WrapsConfig(deployment="docker-compose-openpbs", service="server"),
+    )
+
+
 def get_parameterizable_hardware_deployment_config():
     workdir = os.path.join(
         os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
@@ -233,7 +268,7 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
             return "alpine"
         case "kubernetes":
             return "sf-test"
-        case "slurm":
+        case "slurm" | "openpbs":
             return "test"
         case _:
             raise Exception(f"{deployment_t} deployment type not supported")

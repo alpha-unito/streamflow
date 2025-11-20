@@ -135,7 +135,14 @@ def pytest_generate_tests(metafunc):
 
 
 def all_deployment_types():
-    deployments_ = ["local", "docker", "docker-compose", "docker-wrapper", "slurm"]
+    deployments_ = [
+        "local",
+        "docker",
+        "docker-compose",
+        "docker-wrapper",
+        "openpbs",
+        "slurm",
+    ]
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity", "ssh"])
     return deployments_
