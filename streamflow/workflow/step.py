@@ -271,12 +271,13 @@ class Combinator(ABC):
         )
         return combinator
 
-    @abstractmethod
-    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+    async def resume(  # noqa: B027
+        self, on_tags: MutableMapping[str, MutableSequence[str]]
+    ) -> None:
         """
         Resume the combinator's internal state based on the provided tags.
         """
-        ...
+        pass
 
     async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
@@ -1213,7 +1214,9 @@ class LoopCombinatorStep(CombinatorStep):
                 )
             prev_iter = iter(prev_tags)
             fst = next(prev_iter)
-            if any(len(fst.split(".")) != len(t.split(".")) for t in prev_iter):
+            if len(prev_tags) > 1 and any(
+                len(fst.split(".")) != len(t.split(".")) for t in prev_iter
+            ):
                 raise WorkflowDefinitionException(
                     "Input of a LoopCombinatorStep must have the same tag depth level"
                 )
@@ -1222,7 +1225,6 @@ class LoopCombinatorStep(CombinatorStep):
                 tags.add(token.tag)
             else:
                 tags |= prev_tags
-                pass
             from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
         await self.combinator.resume(from_tags)
 
@@ -1770,10 +1772,11 @@ class ScatterStep(BaseStep):
         self, on_tokens: MutableMapping[str, MutableSequence[Token]]
     ) -> None:
         port = self.get_output_port()
+        valid_tags = [token.tag for token in on_tokens[port.name]]
         self.workflow.ports[port.name] = FilterTokenPort(
-            self.workflow,
-            port.name,
-            filter_function=lambda t: t.tag in on_tokens[port.name],
+            filter_function=lambda t: t.tag in valid_tags,
+            name=port.name,
+            workflow=self.workflow,
         )
         for token in port.token_list:
             self.workflow.ports[port.name].put(token)

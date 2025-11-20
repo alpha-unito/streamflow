@@ -452,6 +452,7 @@ class Step(PersistableEntity, ABC):
         }
         return step
 
+    @abstractmethod
     async def resume(
         self, on_tokens: MutableMapping[str, MutableSequence[Token]]
     ) -> None:
@@ -464,7 +465,7 @@ class Step(PersistableEntity, ABC):
             A mapping of ports to tokens. The ports are the output ports
             of the step, and the tokens represent the missing output tokens.
         """
-        pass
+        ...
 
     @abstractmethod
     async def run(self) -> None: ...
