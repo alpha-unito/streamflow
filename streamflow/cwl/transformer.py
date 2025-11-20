@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Iterable, MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
 from typing_extensions import Self
@@ -205,7 +205,9 @@ class DefaultTransformer(ManyToOneTransformer):
             "default_port": self.default_port.persistent_id
         }
 
-    async def resume(self, on_tags: Iterable[str]) -> None:
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
         if len(self.default_port.token_list) == 0:
             self.default_port.put(Token(None))
             self.default_port.put(TerminationToken(Status.COMPLETED))

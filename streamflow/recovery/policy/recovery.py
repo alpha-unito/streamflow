@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
+import os
 import posixpath
 from collections.abc import Iterable, MutableSequence, MutableSet
 from typing import cast
@@ -19,6 +21,7 @@ from streamflow.recovery.utils import (
     TokenAvailability,
     create_graph_mapper,
 )
+from streamflow.token_printer import dag_workflow
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
@@ -186,13 +189,26 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         # Resume steps
         for step in new_workflow.steps.values():
             await step.resume(
-                on_tags=(
-                    mapper.token_instances[token_id].tag
+                on_tokens={
+                    port.name: [
+                        mapper.token_instances[token_id]
+                        for token_id in mapper.port_tokens[port.name]
+                        if not mapper.token_available[token_id]
+                    ]
                     for port in step.get_output_ports().values()
-                    for token_id in mapper.port_tokens[port.name]
-                    if not mapper.token_available[token_id]
-                )
+                    if port.name in mapper.port_tokens.keys()
+                }
             )
+        dag_workflow(
+            new_workflow,
+            title=posixpath.join(
+                os.getcwd(),
+                "dev",
+                str(datetime.datetime.now()),
+                failed_job.name.lstrip(posixpath.sep),
+                "wf",
+            ),
+        )
         return new_workflow
 
     async def _sync_workflows(

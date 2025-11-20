@@ -7,7 +7,6 @@ from abc import ABC, abstractmethod
 from collections import deque
 from collections.abc import (
     AsyncIterable,
-    Iterable,
     MutableMapping,
     MutableSequence,
     MutableSet,
@@ -51,7 +50,9 @@ from streamflow.core.workflow import (
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
-from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.persistence.utils import load_dependee_tokens
+from streamflow.workflow.port import ConnectorPort, FilterTokenPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
@@ -149,7 +150,9 @@ class BaseStep(Step, ABC):
             )
         return token
 
-    async def resume(self, on_tags: Iterable[str]) -> None:
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
         pass
 
     async def terminate(self, status: Status) -> None:
@@ -263,42 +266,6 @@ class Combinator(ABC):
             )
         )
         return combinator
-
-    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
-        """
-        Resume the combinator's internal state based on the provided tags.
-
-        Args:
-            on_tags: Dictionary mapping port names to lists of tags that were
-                     previously processed by this combinator.
-        """
-        # Clear existing state
-        self._token_values.clear()
-
-        # Build the set of all unique parent tags we need to track
-        all_tags = set()
-        for tags_list in on_tags.values():
-            for tag in tags_list:
-                # Add all parent tags in the hierarchy
-                parts = tag.split(".")
-                for i in range(1, len(parts) + 1):
-                    all_tags.add(".".join(parts[:i]))
-
-        # Initialize the internal structure for all relevant tags
-        for tag in all_tags:
-            self._token_values[tag] = {}
-
-        # Recursively resume nested combinators with their relevant tags
-        for combinator_name, combinator in self.combinators.items():
-            combinator_items = combinator.get_items(recursive=True)
-            filtered_tags = {
-                port: tags
-                for port, tags in on_tags.items()
-                if port in combinator_items
-            }
-
-            if filtered_tags:
-                await combinator.resume(filtered_tags)
 
     async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
@@ -1289,36 +1256,48 @@ class LoopCombinatorStep(CombinatorStep):
         # Terminate step
         await self.terminate(self._get_status(status))
 
-    async def resume(self, on_tags: Iterable[str]) -> None:
-        last = max(on_tags, key=cmp_to_key(compare_tags))
-        # 0 -> internal status [], input 0
-        if ".".join(prefix := ".".join(last.split(".")[:-1])) != "":
-            # 0.0 -> previous input [0], current input 0
-            # 0.1 -> previous input [0], current input 0.0
-            # 0.2 -> previous input [0, 0.0], current input 0.1
-            for curr_tag in [
-                prefix,
-                *(f"{prefix}.{i}" for i in range(int(last.split(".")[-1]) - 2)),
-            ]:
-                # todo
-                # await self.combinator.resume(curr_tag, last)
-                for port_name in self.input_ports.keys():
-                    async for _ in cast(
-                        AsyncIterable,
-                        self.combinator.combine(
-                            port_name=port_name,
-                            token=Token(value=None, tag=curr_tag),
-                        ),
-                    ):
-                        pass
-            # *prefix, next_iter = last.split(".")
-            # if int(next_iter) > 1:
-            #     prev_iter = f"{'.'.join(prefix)}.{int(next_iter) - 2}"
-            # else:
-            #     prev_iter='.'.join(prefix)
-            # await self.combinator.resume(
-            #     {p: [prev_iter] for p in self.input_ports.keys()}
-            # )
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
+        # The `on_tokens` parameter contains the output tokens, and the iteration begins from the
+        # token with the smallest tag. First, we need to determine whether a tag is a starting tag
+        # or an intermediate tag. For example, if the input tag is `0.1`, the next tag must be
+        # either `0.2` or `0.1.0`. To make this distinction, we use the port history by retrieving
+        # all the tokens from the previous execution.
+        from_tags = {}
+        loading_context = DefaultDatabaseLoadingContext()
+        for name, tokens in on_tokens.items():
+            if tokens:
+                tags = set()
+                token = max(
+                    tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
+                )
+                # for token in tokens:
+                prev_tags = {
+                    t.tag
+                    for t in await load_dependee_tokens(
+                        persistent_id=token.persistent_id,
+                        context=self.workflow.context,
+                        loading_context=loading_context,
+                    )
+                }
+                if len(prev_tags) == 0:
+                    raise WorkflowDefinitionException(
+                        "Output token must have previous tokens."
+                    )
+                prev_iter = iter(prev_tags)
+                fst = next(prev_iter)
+                if any(len(fst.split(".")) != len(t.split(".")) for t in prev_iter):
+                    raise WorkflowDefinitionException(
+                        "Input of a LoopCombinatorStep must have the same tag depth level"
+                    )
+                # If tags are different, it means that it is necessary to restart from the first iteration
+                if len(fst.split(".")) != len(token.tag.split(".")):
+                    tags.add(token.tag)
+                else:
+                    tags |= prev_tags
+                from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
+        await self.combinator.resume(from_tags)
 
 
 class LoopOutputStep(BaseStep, ABC):
@@ -1774,6 +1753,19 @@ class ScatterStep(BaseStep):
 
     def get_size_port(self) -> Port:
         return self.get_output_port("__size__")
+
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
+        port = self.get_output_port()
+        valid_tags = [token.tag for token in on_tokens[port.name]]
+        self.workflow.ports[port.name] = FilterTokenPort(
+            self.workflow,
+            port.name,
+            filter_function=lambda t: t.tag in valid_tags,
+        )
+        for token in port.token_list:
+            self.workflow.ports[port.name].put(token)
 
     async def run(self) -> None:
         if len(self.input_ports) != 1:

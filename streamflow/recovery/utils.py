@@ -333,15 +333,13 @@ class GraphMapper:
         port_names = set()
         try:
             p = next(
-                    port
-                    for port, token_ids in self.port_tokens.items()
-                    if job_token.persistent_id in token_ids
+                port
+                for port, token_ids in self.port_tokens.items()
+                if job_token.persistent_id in token_ids
             )
         except StopIteration as e:
             raise FailureHandlingException(e)
-        for port_name in self.dcg_port.succ(
-            p
-        ):
+        for port_name in self.dcg_port.succ(p):
             if port_name in (DirectGraph.ROOT, DirectGraph.LEAF):
                 continue
             # Get newest port

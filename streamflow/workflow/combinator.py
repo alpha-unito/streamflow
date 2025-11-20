@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import AsyncIterable, MutableMapping, MutableSequence
-from functools import cmp_to_key
 from typing import Any, cast
 
 from typing_extensions import Self
@@ -11,7 +10,6 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.utils import compare_tags
 from streamflow.core.workflow import Token, Workflow
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import IterationTerminationToken
@@ -190,33 +188,22 @@ class LoopCombinator(DotProductCombinator):
 
     async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
         """
-        Resume the loop combinator and restore iteration counters.
+        Resume the iteration counters.
+        For each port, the input is a list of tags where the first tag is the prefix,
+        and the second tag contains the iteration from the resume.
         """
-        # Call parent implementation to restore _token_values structure
-        await super().resume(on_tags)
-
-        # Clear and rebuild iteration map based on tags
-        self.iteration_map.clear()
-
-        # Extract iteration numbers from tags to restore iteration_map
         for tags_list in on_tags.values():
             for tag in tags_list:
                 parts = tag.split(".")
                 if len(parts) >= 2:
-                    # Get the prefix (all parts except the last one which is the iteration number)
                     prefix = ".".join(parts[:-1])
-                    try:
-                        iteration_num = int(parts[-1])
-                        # Keep track of the maximum iteration number seen for each prefix
-                        if prefix not in self.iteration_map:
-                            self.iteration_map[prefix] = iteration_num
-                        else:
-                            self.iteration_map[prefix] = max(
-                                self.iteration_map[prefix], iteration_num
-                            )
-                    except ValueError:
-                        # Not a loop iteration tag, skip it
-                        pass
+                    iteration_num = int(parts[-1])
+                    if prefix not in self.iteration_map:
+                        self.iteration_map[prefix] = iteration_num
+                    else:
+                        self.iteration_map[prefix] = max(
+                            self.iteration_map[prefix], iteration_num
+                        )
 
 
 class LoopTerminationCombinator(DotProductCombinator):

@@ -4,7 +4,7 @@ import asyncio
 import sys
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence
 from enum import IntEnum
 from typing import TYPE_CHECKING, TypeVar, cast
 
@@ -449,13 +449,19 @@ class Step(PersistableEntity, ABC):
         }
         return step
 
-    @abstractmethod
-    async def resume(self, on_tags: Iterable[str]) -> None:
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
         """
-        TODO: improve docstring
-        On tags are the missing tags in the output ports
+        Resumes the execution of the step from a specific state.
+        This method sets the appropriate attributes within the step to allow it
+        to continue execution from the desired state.
+
+        :param on_tokens:
+            A mapping of ports to tokens. The ports are the output ports
+            of the step, and the tokens represent the missing output tokens.
         """
-        ...
+        pass
 
     @abstractmethod
     async def run(self) -> None: ...
