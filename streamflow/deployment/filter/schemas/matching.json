@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/filter/matching.json",
+  "type": "object",
+  "properties": {
+    "match": {
+      "type": "array",
+      "title": "Deployments",
+      "description": "A list of deployments with associated jobs.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "deployment": {
+            "type": "string",
+            "description": "The name of the deployment."
+          },
+          "job": {
+            "type": "array",
+            "title": "Job inputs",
+            "description": "A list of jobs associated with the deployment.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "input": {
+                  "type": "string",
+                  "description": "The input for the job."
+                },
+                "regex": {
+                  "type": "string",
+                  "description": "The regex the input must match."
+                }
+              },
+              "required": [
+                "input",
+                "regex"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "deployment",
+          "job"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "match"
+  ],
+  "additionalProperties": false
+}
