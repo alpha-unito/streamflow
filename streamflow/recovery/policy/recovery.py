@@ -177,9 +177,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         # Resume steps
         for step in new_workflow.steps.values():
             await step.resume(
-                on_tags={
+                on_tokens={
                     port.name: [
-                        mapper.token_instances[token_id].tag
+                        mapper.token_instances[token_id]
                         for token_id in mapper.port_tokens[port.name]
                         if not mapper.token_available[token_id]
                     ]
