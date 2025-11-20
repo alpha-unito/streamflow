@@ -368,22 +368,6 @@ async def test_resume_loop_combinator_step(
         assert len(new_port.token_list) == 2
         assert isinstance(new_port.token_list[-1], TerminationToken)
         assert old_port.token_list[restart_idx].tag == new_port.token_list[-2].tag
-        print(
-            "input",
-            [
-                t.tag
-                for t in new_combinator_step.get_input_port(port_name).token_list
-                if not isinstance(t, (TerminationToken, IterationTerminationToken))
-            ],
-        )
-        print(
-            "output",
-            [
-                t.tag
-                for t in new_combinator_step.get_output_port(port_name).token_list
-                if not isinstance(t, (TerminationToken, IterationTerminationToken))
-            ],
-        )
 
 
 @pytest.mark.asyncio
