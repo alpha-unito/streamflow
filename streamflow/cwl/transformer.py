@@ -506,16 +506,20 @@ class ValueFromTransformer(ManyToOneTransformer):
             full_js=self.full_js,
             expression_lib=self.expression_lib,
         )
-        return {
+        job_token = await self.get_input_port("__job__").get(self.name)
+        inputs |= {"__job__": job_token}
+        result = {
             output_name: await build_token(
-                job=await cast(JobPort, self.get_input_port("__job__")).get_job(
-                    self.name
-                ),
+                job=job_token.value,
                 token_value=token_value,
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 streamflow_context=self.workflow.context,
             )
         }
+        await self.workflow.context.scheduler.notify_status(
+            job_name=job_token.value.name, status=Status.COMPLETED
+        )
+        return result
 
 
 class LoopValueFromTransformer(ValueFromTransformer):
@@ -543,6 +547,51 @@ class LoopValueFromTransformer(ValueFromTransformer):
         self.loop_input_ports: MutableSequence[str] = []
         self.loop_source_port: str | None = None
 
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Self:
+        params = row["params"]
+        loop_value = cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            port_name=params["port_name"],
+            processor=await TokenProcessor.load(
+                context, params["processor"], loading_context
+            ),
+            value_from=params["value_from"],
+            expression_lib=params["expression_lib"],
+            full_js=params["full_js"],
+            job_port=cast(
+                JobPort, await loading_context.load_port(context, params["job_port"])
+            ),
+        )
+        loop_value.loop_input_ports = params["loop_input_port"]
+        loop_value.loop_source_port = params["loop_source_port"]
+        return loop_value
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        job_port = self.get_input_port("__job__")
+        await job_port.save(context)
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "port_name": self.port_name,
+            "processor": await self.processor.save(context),
+            "value_from": self.value_from,
+            "expression_lib": self.expression_lib,
+            "full_js": self.full_js,
+            "job_port": job_port.persistent_id,
+            "loop_source_port": self.loop_source_port,
+            "loop_input_port": self.loop_input_ports,
+        }
+
     def add_loop_input_port(self, name: str, port: Port):
         self.add_input_port(name + "-in", port)
         self.loop_input_ports.append(name)
@@ -565,8 +614,13 @@ class LoopValueFromTransformer(ValueFromTransformer):
         context = cast(dict[str, Any], utils.build_context(loop_inputs)) | {
             "self": get_token_value(self_token)
         }
+        job_token = await self.get_input_port("__job__").get(self.name)
+        inputs |= {"__job__": job_token}
+        await self.workflow.context.scheduler.notify_status(
+            job_name=job_token.value.name, status=Status.COMPLETED
+        )
         return {
-            self.get_output_name(): Token(
+            self.get_output_name(): Token(  # todo: no build_token?
                 tag=get_tag(inputs.values()),
                 value=utils.eval_expression(
                     expression=self.value_from,

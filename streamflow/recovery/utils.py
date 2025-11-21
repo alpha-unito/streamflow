@@ -41,6 +41,8 @@ class DirectGraph:
     ROOT = "root"
     LEAF = "leaf"
 
+    # todo: set self.graph as private (ie. self._graph) and from outside access to it with methods
+    #  eg get_roots, get_leaves, ...
     def __init__(self, name: str):
         """
         A directed graph which maintains a single connected structure that always starts from ROOT
@@ -80,9 +82,24 @@ class DirectGraph:
             self.graph[DirectGraph.ROOT].remove(DirectGraph.LEAF)
         if not self.graph[DirectGraph.ROOT]:  # todo: debug code. remove me.
             raise FailureHandlingException("root empty")
+        # TODO: improve this check
+        if src == DirectGraph.ROOT:
+            for vertex, values in self.graph.items():
+                if vertex != DirectGraph.ROOT and dst in values:
+                    self.graph[DirectGraph.ROOT].remove(dst)
+                    break
+        for p in self.graph[DirectGraph.ROOT]:
+            for p1 in self.graph[p]:
+                if p1 in self.graph[DirectGraph.ROOT]:
+                    raise FailureHandlingException(
+                        "Impossible src and dst are both roots, only src should be"
+                    )
 
     def empty(self) -> bool:
         return False if self.graph else True
+
+    def get_roots(self) -> MutableSet[Any]:
+        return self.graph[DirectGraph.ROOT]
 
     def items(self):
         return self.graph.items()
@@ -139,7 +156,6 @@ class DirectGraph:
                 raise FailureHandlingException(
                     f"Impossible to remove {vertex} from the graph"
                 )
-            logger.info(f"dg removing {current}")
             self.graph.pop(current)
             removed.append(current)
             # Find and remove references to current node, and identify dead-end nodes
@@ -364,6 +380,13 @@ class GraphMapper:
             min(self.port_name_ids[port_name])
             for port_name in self.port_tokens.keys()
             if port_name not in output_port_names
+            and (
+                port_name
+                not in self.dcg_port.get_roots()
+                # or all(
+                #     not self.token_available[t_id] for t_id in self.port_tokens[port_name]
+                # )
+            )
         }
         step_ids = {
             dependency_row["step"]
@@ -387,15 +410,24 @@ class GraphMapper:
                 )
             ),
         ):
-            for port_row in await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        self.context.database.get_port(row_dependency["port"])
+            for dep_row, port_row in zip(
+                dependency_rows,
+                await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self.context.database.get_port(row_dependency["port"])
+                        )
+                        for row_dependency in dependency_rows
                     )
-                    for row_dependency in dependency_rows
-                )
+                ),
             ):
                 if port_row["name"] not in self.port_tokens.keys():
+                    step_row = await self.context.database.get_step(step_id)
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"The port {port_row['name']} is missing. "
+                            f"However, it is an input {dep_row['name']} of the step {step_row['name']}"
+                        )
                     step_to_remove.add(step_id)
         for step_id in step_to_remove:
             if logger.isEnabledFor(logging.DEBUG):

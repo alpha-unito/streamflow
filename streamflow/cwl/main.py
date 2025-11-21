@@ -85,6 +85,21 @@ async def main(
     if getattr(args, "validate", False):
         return
     await workflow.save(context)
+
+    import datetime
+    import posixpath
+
+    from streamflow.token_printer import dag_workflow
+
+    dag_workflow(
+        workflow,
+        title=posixpath.join(
+            os.getcwd(),
+            "dev",
+            str(datetime.datetime.now()).replace(" ", "_"),
+            "wf",
+        ),
+    )
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)

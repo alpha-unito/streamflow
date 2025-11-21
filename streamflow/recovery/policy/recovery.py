@@ -63,12 +63,16 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
 
 
 async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for port_name in mapper.dcg_port[DirectGraph.ROOT]:
+    for port_name in mapper.dcg_port.get_roots():  # mapper.dcg_port[DirectGraph.ROOT]:
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
                 for token_id in mapper.port_tokens[port_name]
-                if token_id not in (DirectGraph.ROOT, DirectGraph.LEAF)
+                if token_id
+                not in (
+                    DirectGraph.ROOT,
+                    DirectGraph.LEAF,
+                )  # fixme: root and leaf must not be in the port_tokens attribute
                 and mapper.token_available[token_id]
             ],
             key=lambda x: x.tag,
@@ -172,11 +176,13 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         job_tokens = list(
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
+        sync_port_names = []
         job_names = await self._sync_workflows(
             job_names={*(t.value.name for t in job_tokens), failed_job.name},
             job_tokens=job_tokens,
             mapper=mapper,
             workflow=new_workflow,
+            sync_port_names=sync_port_names,
         )
         # Populate new workflow
         steps = await mapper.get_port_and_step_ids(failed_step.output_ports.values())
@@ -185,6 +191,15 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         for job_name in job_names:
             self.context.failure_manager.get_request(job_name).workflow_ready.set()
+        dag_workflow(
+            new_workflow,
+            title=posixpath.join(
+                os.getcwd(),
+                "dev",
+                str(datetime.datetime.now()).replace(" ", "_"),
+                "wf" + failed_job.name.replace(posixpath.sep, "."),
+            ),
+        )
         await _inject_tokens(mapper, new_workflow)
         # Resume steps
         for step in new_workflow.steps.values():
@@ -199,16 +214,25 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     if port.name in mapper.port_tokens.keys()
                 }
             )
-        dag_workflow(
-            new_workflow,
-            title=posixpath.join(
-                os.getcwd(),
-                "dev",
-                str(datetime.datetime.now()),
-                failed_job.name.lstrip(posixpath.sep),
-                "wf",
-            ),
-        )
+        for port in (
+            p
+            for p in new_workflow.ports.values()
+            if len(p.get_input_steps()) == 0 and p.name not in sync_port_names
+        ):
+            if len(port.token_list) == 0:
+                raise FailureHandlingException(f"Port {port.name} has no tokens")
+            elif len(port.token_list) == 1:
+                raise FailureHandlingException(f"Port {port.name} has 1 token")
+            elif not isinstance(port.token_list[-1], TerminationToken):
+                raise FailureHandlingException(
+                    f"Port {port.name} has no termination token as last token"
+                )
+        for p in new_workflow.ports.values():
+            if len(steps := p.get_input_steps()) == 1:
+                for s in steps:
+                    if "back-prop" in s.name and len(p.token_list) == 0:
+                        logger.debug(f"Step {s.name} has no input token in its input port {p.name}")
+                        # raise FailureHandlingException("The back prop is an input port and is empty")
         return new_workflow
 
     async def _sync_workflows(
@@ -217,6 +241,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         job_tokens: MutableSequence[Token],
         mapper: GraphMapper,
         workflow: Workflow,
+        sync_port_names: MutableSequence[str],
     ) -> MutableSequence[str]:
         new_job_names = []
         for job_name in job_names:
@@ -256,8 +281,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     intra_terminate=False,
                 )
                 mapper.move_token_to_root(job_token.persistent_id)
-                # mapper.remove_token(job_token.persistent_id, preserve_token=True)
-
+                sync_port_names.append(port_name)
                 # for port_name in await mapper.get_output_ports(job_token):
                 #     if port_name in retry_request.workflow.ports.keys():
                 #         cast(
