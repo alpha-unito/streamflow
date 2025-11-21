@@ -181,12 +181,12 @@ def test_schema_generation():
     """Check that the `streamflow schema` command generates a correct JSON Schema."""
     assert (
         hashlib.sha256(SfSchema().dump("v1.0", False).encode()).hexdigest()
-        == "a8622b58ad7aead6fc5d3757296f074b3a119a3028067f69a3ea82e8f552ff28"
+        == "319195f80fdf5f8accd7f6e14998de26ea486c353636004e6da7eab0c6bc88e2"
     )
     print(SfSchema().dump("v1.0", True))
     assert (
         hashlib.sha256(SfSchema().dump("v1.0", True).encode()).hexdigest()
-        == "6afb9fec0c4f90bdb59800f6e6b85f4cde80408acf58759078bd6fb790d57413"
+        == "d5a5c7e7f976c2795be7b5fcb4c98a7bb7d8c070bb0970b8a79fd0aba88661ea"
     )
 
 

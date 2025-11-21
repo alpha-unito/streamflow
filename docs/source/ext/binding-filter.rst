@@ -32,15 +32,11 @@ The ``ShuffleBindingFilter`` implementation does not discard any location, but s
 
 MatchingBindingFilter
 ^^^^^^^^^^^^^^^^^^^^^
-The ``MatchingBindingFilter`` filters ``deployments`` by applying ``regex`` conditions to the job input ``ports``. A ``deployment`` is considered a match if its name matches one of the ``targets`` and the input ``port`` values of the ``Job`` object satisfy the specified regular expressions. Otherwise, it is discarded.
+The ``MatchingBindingFilter`` filters ``deployments`` by applying ``regex`` conditions to the job input ``ports``. A ``deployment`` is considered a match if its name matches one of the ``targets`` and the input ``port`` values of the ``Job`` object satisfy the specified regular expressions. Otherwise, the target deployment is discarded.
 
-If a ``service`` is provided for a ``deployment``, the filter ensures that both the ``deployment`` name and the ``service`` name match the ``target``.
+The ``MatchingBindingFilter`` allows to define a list of ``filters``, and each filter has a ``target`` and a ``job`` definition:
 
-The main structure of the YAML configuration consists of a list of ``filters``.
-
-Each filter defines a ``target`` and a ``job``:
-
-* A ``target`` can either be a single string representing the ``deployment`` name or a record with keys ``deployment`` and ``service``, specifying both a ``deployment`` name and an optional ``service`` name.
+* A ``target`` should be a ``deployment`` on which the step is bound. If the ``deployment`` does not match any target in the filters list, the ``deployment`` is discarded. The filter can be stricter, including the ``service`` of the ``deployment`` as well.
 * A ``job`` is a list that specifies ``port`` names and ``regex`` conditions. The ``port`` is an input of the step; ensure that the bound step has the input ``port`` with the same name as defined in the filter. The ``regex`` is used to match the value inside the ``port``. The filter works with string data types, automatically casting non-string values, although this should be used with caution. It does not support matching file, list, or object types. It is possible to define multiple ``ports``, and the ``deployment`` is chosen if all the ``regex`` conditions for the ``ports`` are satisfied.
 
 An example of the filter follows:
@@ -57,7 +53,15 @@ An example of the filter follows:
           - port: extractfile
             regex: ".*.java"
         - target:
-          deployment: leonardo
+            deployment: lumi
+          job:
+          - port: extractfile
+            regex: ".*.c"
+          - port: compiler
+            regex: "gcc"
+        - target:
+          	deployment: leonardo
+            service: boost
           job:
           - port: extractfile
             regex: ".*.c"

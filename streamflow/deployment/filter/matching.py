@@ -14,11 +14,10 @@ from streamflow.workflow.token import FileToken, ListToken, ObjectToken
 
 
 class MatchingBindingFilter(BindingFilter):
-    # TODO: Add documentation
     def __init__(
         self,
         name: str,
-        targets: MutableSequence[
+        filters: MutableSequence[
             MutableMapping[
                 str,
                 MutableMapping[str, str] | MutableSequence[MutableMapping[str, str]],
@@ -28,7 +27,7 @@ class MatchingBindingFilter(BindingFilter):
         super().__init__(name)
         self.deployments_regex: MutableMapping[str, MutableMapping[str, str]] = {}
         self.deployments_services: MutableMapping[str, MutableSet[str]] = {}
-        for deployments in targets:
+        for deployments in filters:
             # Retrieve deployment
             target = deployments["target"]
             deployment = target if isinstance(target, str) else target["deployment"]
