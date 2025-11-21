@@ -32,28 +32,26 @@ The ``ShuffleBindingFilter`` implementation does not discard any location, but s
 
 MatchingBindingFilter
 ^^^^^^^^^^^^^^^^^^^^^
-The ``MatchingBindingFilter`` filters ``deployments`` by applying regex conditions to the job input ``ports``. A ``deployment`` is considered a match if its name matches one of the ``targets`` and the job input ``port`` values satisfy the specified regular expressions.
+The ``MatchingBindingFilter`` filters ``deployments`` by applying ``regex`` conditions to the job input ``ports``. A ``deployment`` is considered a match if its name matches one of the ``targets`` and the input ``port`` values of the ``Job`` object satisfy the specified regular expressions. Otherwise, it is discarded.
 
-Make sure that the bound step has the input ``port`` with the same name defined in the filter.
+If a ``service`` is provided for a ``deployment``, the filter ensures that both the ``deployment`` name and the ``service`` name match the ``target``.
 
-The filter works with string data types, automatically casting non-string values, though this should be used with caution. It does not support matching on file, list, or object types.
+The main structure of the YAML configuration consists of a list of ``filters``.
 
-If a ``service`` is provided for a ``deployment``, the filter ensures that both the ``deployment`` name and the ``service`` name match the target.
+Each filter defines a ``target`` and a ``job``:
 
-The main structure of the YAML configuration consists of a list of ``targets``. Each ``target` can either be defined by a single string representing the ``deployment`` name or by a record that specifies both a ``deployment`` name and an optional ``service`` name.
-
-A ``job`` is a list that specifies ``port`` names and ``regex`` conditions. The ``ports`` and ``regex`` are used to filter the ``deployments`` based on the values of the specified ``ports``. Each ``deployment`` is considered a match for a given job if it satisfies all the ``regex`` conditions for all ``ports`` defined in that `job`.
-
+* A ``target`` can either be a single string representing the ``deployment`` name or a record with keys ``deployment`` and ``service``, specifying both a ``deployment`` name and an optional ``service`` name.
+* A ``job`` is a list that specifies ``port`` names and ``regex`` conditions. The ``port`` is an input of the step; ensure that the bound step has the input ``port`` with the same name as defined in the filter. The ``regex`` is used to match the value inside the ``port``. The filter works with string data types, automatically casting non-string values, although this should be used with caution. It does not support matching file, list, or object types. It is possible to define multiple ``ports``, and the ``deployment`` is chosen if all the ``regex`` conditions for the ``ports`` are satisfied.
 
 An example of the filter follows:
 
 .. code-block:: yaml
 
   bindingFilters:
-    f_local:
+    myfilter:
       type: matching
       config:
-        targets:
+        filters:
         - target: locally
           job:
           - port: extractfile
@@ -66,3 +64,4 @@ An example of the filter follows:
           - port: compiler
             regex: "gcc"
 
+.. jsonschema:: https://streamflow.di.unito.it/schemas/deployment/filter/matching.json
