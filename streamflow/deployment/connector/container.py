@@ -75,7 +75,7 @@ async def _get_storage_from_binds(
                         storage[mount_point].bind = binds[mount_point]
             except ValueError as e:
                 logger.warning(
-                    f"Skipping partition for deployment {location.deployment}: {e}"
+                    f"Skipping line {line} for deployment {location.deployment}: {e}"
                 )
             except Exception as e:
                 raise WorkflowExecutionException(

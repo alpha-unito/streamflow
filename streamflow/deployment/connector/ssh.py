@@ -503,7 +503,7 @@ class SSHConnector(BaseConnector):
                                 )
                         except ValueError as e:
                             logger.warning(
-                                f"Skipping partition for deployment {self.deployment_name}: {e}"
+                                f"Skipping line {line} for deployment {self.deployment_name}: {e}"
                             )
                         except Exception as e:
                             raise WorkflowExecutionException(
