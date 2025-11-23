@@ -24,7 +24,7 @@
         "job": {
           "type": "array",
           "title": "Job inputs",
-          "description": "A list of ports and regular expressions that the port data must match.",
+          "description": "A list of ports and values that the port data must match.",
           "items": {
             "type": "object",
             "$ref": "#/$defs/job",
@@ -41,22 +41,22 @@
     "job": {
       "type": "object",
       "title": "Job",
-      "description": "The input port and the regular expression that the port data must match.",
+      "description": "The input port and the value that the port data must match.",
       "properties": {
         "port": {
           "type": "string",
           "title": "Input port name",
           "description": "The input port of the binding step."
         },
-        "regex": {
+        "match": {
           "type": "string",
-          "title": "Regular expression",
-          "description": "The regular expression that the input must match."
+          "title": "Expected value",
+          "description": "The desiderated value that the input must match."
         }
       },
       "required": [
         "port",
-        "regex"
+        "match"
       ],
       "additionalProperties": false
     },

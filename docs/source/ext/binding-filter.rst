@@ -32,12 +32,12 @@ The ``ShuffleBindingFilter`` implementation does not discard any location, but s
 
 MatchingBindingFilter
 ^^^^^^^^^^^^^^^^^^^^^
-The ``MatchingBindingFilter`` filters ``deployments`` by applying ``regex`` conditions to the job input ``ports``. A ``deployment`` is considered a match if its name matches one of the ``targets`` and the input ``port`` values of the ``Job`` object satisfy the specified regular expressions. Otherwise, the target deployment is discarded.
+The ``MatchingBindingFilter`` filters ``deployments`` by applying an exact ``match`` between an expected value and the job input ``ports``. A ``deployment`` is considered a match if its name matches one of the ``targets`` and the input ``port`` values of the ``Job`` object satisfy the specified value. Otherwise, the target ``deployment`` is discarded.
 
-The ``MatchingBindingFilter`` allows to define a list of ``filters``, and each filter has a ``target`` and a ``job`` definition:
+The ``MatchingBindingFilter`` allows to define a list of ``filters``, where each filter has a ``target`` and a ``job`` definition:
 
-* A ``target`` should be a ``deployment`` on which the step is bound. If the ``deployment`` does not match any target in the filters list, the ``deployment`` is discarded. The filter can be stricter, including the ``service`` of the ``deployment`` as well.
-* A ``job`` is a list that specifies ``port`` names and ``regex`` conditions. The ``port`` is an input of the step; ensure that the bound step has the input ``port`` with the same name as defined in the filter. The ``regex`` is used to match the value inside the ``port``. The filter works with string data types, automatically casting non-string values, although this should be used with caution. It does not support matching file, list, or object types. It is possible to define multiple ``ports``, and the ``deployment`` is chosen if all the ``regex`` conditions for the ``ports`` are satisfied.
+* A ``target`` should be a ``deployment`` on which the step is bound. If the ``deployment`` does not match any target in the filters list, it is discarded. The filter can be stricter, including the ``service`` of the ``deployment`` as well.
+* A ``job`` is a list that specifies ``port`` names and ``match`` values. The ``port`` is an input of the step; ensure that the bound step has an input ``port`` with the same name as defined in the filter. The ``match`` value must be equal to the value inside the ``port``. The ``filter`` works with string data types, automatically casting non-string values, although this should be done with caution. It does not support matching file, list, or object types. Multiple ``ports`` can be defined, and the ``deployment`` is chosen only if all the ``ports`` match the expected values.
 
 An example of the filter follows:
 
@@ -51,21 +51,21 @@ An example of the filter follows:
         - target: locally
           job:
           - port: extractfile
-            regex: ".*.java"
+            match: "Hello.java"
         - target:
             deployment: lumi
           job:
           - port: extractfile
-            regex: ".*.c"
+            match: "hello.c"
           - port: compiler
-            regex: "gcc"
+            match: "gcc"
         - target:
           	deployment: leonardo
             service: boost
           job:
           - port: extractfile
-            regex: ".*.c"
+            match: "hello.c"
           - port: compiler
-            regex: "gcc"
+            match: "gcc"
 
 .. jsonschema:: https://streamflow.di.unito.it/schemas/deployment/filter/matching.json

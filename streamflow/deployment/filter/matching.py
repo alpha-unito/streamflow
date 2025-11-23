@@ -1,5 +1,4 @@
 import logging
-import re
 from collections.abc import MutableMapping, MutableSequence, MutableSet
 from importlib.resources import files
 
@@ -25,28 +24,28 @@ class MatchingBindingFilter(BindingFilter):
         ],
     ):
         super().__init__(name)
-        self.deployments_regex: MutableMapping[str, MutableMapping[str, str]] = {}
+        self.deployments_match: MutableMapping[str, MutableMapping[str, str]] = {}
         self.deployments_services: MutableMapping[str, MutableSet[str]] = {}
         for deployments in filters:
             # Retrieve deployment
             target = deployments["target"]
             deployment = target if isinstance(target, str) else target["deployment"]
-            self.deployments_regex.setdefault(deployment, {})
+            self.deployments_match.setdefault(deployment, {})
             self.deployments_services.setdefault(deployment, set())
             if isinstance(target, MutableMapping) and "service" in target:
                 self.deployments_services[deployment].add(target["service"])
             # Retrieve job
             for job in deployments["job"]:
-                if job["port"] in self.deployments_regex[deployment]:
+                if job["port"] in self.deployments_match[deployment]:
                     raise ValueError("Duplicate input")
-                self.deployments_regex[deployment][job["port"]] = job["regex"]
+                self.deployments_match[deployment][job["port"]] = job["match"]
 
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
     ) -> MutableSequence[Target]:
         filtered_targets = []
         target_deployments = {t.deployment.name for t in targets}
-        filter_deployments = self.deployments_regex.keys()
+        filter_deployments = self.deployments_match.keys()
         if target_deployments - filter_deployments:
             logger.warning(
                 f"Filter {self.name} on job {job.name} discards the following deployments because "
@@ -70,7 +69,7 @@ class MatchingBindingFilter(BindingFilter):
                         f"for the {target.service} service."
                     )
                 continue
-            for input_name, regex in self.deployments_regex.get(
+            for input_name, match in self.deployments_match.get(
                 target.deployment.name, {}
             ).items():
                 if input_name not in job.inputs:
@@ -88,12 +87,12 @@ class MatchingBindingFilter(BindingFilter):
                         f"but the value is not a string. "
                         f"It will be implicitly cast to a string for matching."
                     )
-                if re.match(regex, str(job.inputs[input_name].value)):
+                if match == str(job.inputs[input_name].value):
                     filtered_targets.append(target)
                 elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
                         f"Filter {self.name} on the port {input_name} of the job {job.name} "
-                        f"did not match the regex {regex}. "
+                        f"did not match {match}. "
                         f"The deployment {target.deployment.name} is discarded."
                     )
 
