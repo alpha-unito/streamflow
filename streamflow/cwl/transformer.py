@@ -494,11 +494,12 @@ class ValueFromTransformer(ManyToOneTransformer):
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         output_name = self.get_output_name()
+        new_inputs = dict(inputs)
         if output_name in inputs:
-            inputs = {
-                output_name: await self.processor.process(inputs, inputs[output_name])
-            } | cast(dict[str, Token], inputs)
-        context = utils.build_context(inputs)
+            new_inputs[output_name] = await self.processor.process(
+                inputs, inputs[output_name]
+            )
+        context = utils.build_context(new_inputs)
         context |= {"self": context["inputs"].get(output_name)}
         token_value = utils.eval_expression(
             expression=self.value_from,
@@ -507,7 +508,7 @@ class ValueFromTransformer(ManyToOneTransformer):
             expression_lib=self.expression_lib,
         )
         job_token = await self.get_input_port("__job__").get(self.name)
-        inputs |= {"__job__": job_token}
+        inputs["__job__"] = job_token
         result = {
             output_name: await build_token(
                 job=job_token.value,
@@ -615,7 +616,7 @@ class LoopValueFromTransformer(ValueFromTransformer):
             "self": get_token_value(self_token)
         }
         job_token = await self.get_input_port("__job__").get(self.name)
-        inputs |= {"__job__": job_token}
+        inputs["__job__"] = job_token
         await self.workflow.context.scheduler.notify_status(
             job_name=job_token.value.name, status=Status.COMPLETED
         )

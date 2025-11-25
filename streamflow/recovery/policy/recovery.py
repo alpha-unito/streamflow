@@ -21,7 +21,8 @@ from streamflow.recovery.utils import (
     TokenAvailability,
     create_graph_mapper,
 )
-from streamflow.token_printer import dag_workflow
+
+# from streamflow.token_printer import dag_workflow
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
@@ -191,15 +192,15 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         for job_name in job_names:
             self.context.failure_manager.get_request(job_name).workflow_ready.set()
-        dag_workflow(
-            new_workflow,
-            title=posixpath.join(
-                os.getcwd(),
-                "dev",
-                str(datetime.datetime.now()).replace(" ", "_"),
-                "wf" + failed_job.name.replace(posixpath.sep, "."),
-            ),
-        )
+        # dag_workflow(
+        #     new_workflow,
+        #     title=posixpath.join(
+        #         os.getcwd(),
+        #         "dev",
+        #         str(datetime.datetime.now()).replace(" ", "_"),
+        #         "wf" + failed_job.name.replace(posixpath.sep, "."),
+        #     ),
+        # )
         await _inject_tokens(mapper, new_workflow)
         # Resume steps
         for step in new_workflow.steps.values():
@@ -231,7 +232,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             if len(steps := p.get_input_steps()) == 1:
                 for s in steps:
                     if "back-prop" in s.name and len(p.token_list) == 0:
-                        logger.debug(f"Step {s.name} has no input token in its input port {p.name}")
+                        logger.debug(
+                            f"Step {s.name} has no input token in its input port {p.name}"
+                        )
                         # raise FailureHandlingException("The back prop is an input port and is empty")
         return new_workflow
 

@@ -349,7 +349,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
         token=out_port.token_list[0],
         port=out_port,
         context=context,
-        expected_dependee=token_list,
+        expected_dependee=[*token_list, job_token],
     )
 
 
@@ -736,7 +736,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         token=out_port.token_list[0],
         port=out_port,
         context=context,
-        expected_dependee=token_list,
+        expected_dependee=[*token_list, job_token],
     )
 
 
