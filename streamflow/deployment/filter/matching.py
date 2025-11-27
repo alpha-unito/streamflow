@@ -12,16 +12,16 @@ from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken, ListToken, ObjectToken
 
 
-class ConjunctionExpression:
+class MatchingRule:
     def __init__(
         self,
         deployment_name: str,
         service: str | None,
-        additional_predicates: MutableMapping[str, str],
+        predicates: MutableMapping[str, str],
     ) -> None:
         self.deployment: str = deployment_name
         self.service: str | None = service
-        self.additional_predicates: MutableMapping[str, str] = additional_predicates
+        self.predicates: MutableMapping[str, str] = predicates
 
     def eval(
         self, filter_name: str, deployment_name: str, service: str | None, job: Job
@@ -36,7 +36,7 @@ class ConjunctionExpression:
                     f"for the {service} service."
                 )
             return False
-        for input_name, match in self.additional_predicates.items():
+        for input_name, match in self.predicates.items():
             if input_name not in job.inputs.keys():
                 raise ValueError(f"Job {job.name} has no input '{input_name}'.")
             if isinstance(job.inputs[input_name], (FileToken, ListToken, ObjectToken)):
@@ -73,7 +73,7 @@ class MatchingBindingFilter(BindingFilter):
         ],
     ):
         super().__init__(name)
-        self.conditions: MutableSequence[ConjunctionExpression] = []
+        self.match_rules: MutableSequence[MatchingRule] = []
         for deployments in filters:
             # Retrieve deployment
             target = deployments["target"]
@@ -83,11 +83,11 @@ class MatchingBindingFilter(BindingFilter):
                 if isinstance(target, MutableMapping) and "service" in target
                 else None
             )
-            self.conditions.append(
-                ConjunctionExpression(
+            self.match_rules.append(
+                MatchingRule(
                     deployment_name=deployment,
                     service=service,
-                    additional_predicates={
+                    predicates={
                         job["port"]: job["match"] for job in deployments["job"]
                     },
                 )
@@ -97,7 +97,7 @@ class MatchingBindingFilter(BindingFilter):
         self, job: Job, targets: MutableSequence[Target]
     ) -> MutableSequence[Target]:
         target_deployments = {t.deployment.name for t in targets}
-        filter_deployments = {c.deployment for c in self.conditions}
+        filter_deployments = {c.deployment for c in self.match_rules}
         if target_deployments - filter_deployments:
             logger.warning(
                 f"Filter {self.name} on job {job.name} discards the following deployments because "
@@ -111,9 +111,9 @@ class MatchingBindingFilter(BindingFilter):
             )
         filtered_targets = set()
         for target in targets:
-            for condition in self.conditions:
-                # Disjunction expression. The target is added if at least one condition is satisfied
-                if condition.eval(
+            for match_rule in self.match_rules:
+                # The target is added if at least one match rule is satisfied
+                if match_rule.eval(
                     filter_name=self.name,
                     deployment_name=target.deployment.name,
                     service=target.service,
