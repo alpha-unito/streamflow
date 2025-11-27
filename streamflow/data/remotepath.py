@@ -822,13 +822,14 @@ async def download(
                         f"Downloading {url} failed with status {response.status}:\n{response.content}"
                     )
         connector = context.deployment_manager.get_connector(location.deployment)
-        await connector.run(
-            location=location,
-            command=[
-                f'if [ command -v curl ]; then curl -L -o "{filepath}" "{url}"; '
-                f'else wget -O "{filepath}" "{url}"; fi'
-            ],
+        command = [
+            f'if command -v curl; then curl -L -o "{filepath}" "{url}"; '
+            f'else wget -O "{filepath}" "{url}"; fi'
+        ]
+        result, status = await connector.run(
+            location=location, command=command, capture_output=True
         )
+        _check_status(command, location, result, status)
     return StreamFlowPath(filepath, context=context, location=location)
 
 
