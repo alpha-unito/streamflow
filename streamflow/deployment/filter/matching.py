@@ -1,5 +1,5 @@
 import logging
-from collections.abc import MutableMapping, MutableSequence, MutableSet
+from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 
 from streamflow.core.deployment import BindingFilter, Target
@@ -10,6 +10,55 @@ from streamflow.core.exception import (
 from streamflow.core.workflow import Job
 from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken, ListToken, ObjectToken
+
+
+class ConjunctionExpression:
+    def __init__(
+        self,
+        deployment_name: str,
+        service: str | None,
+        additional_predicates: MutableMapping[str, str],
+    ) -> None:
+        self.deployment: str = deployment_name
+        self.service: str | None = service
+        self.additional_predicates: MutableMapping[str, str] = additional_predicates
+
+    def eval(
+        self, filter_name: str, deployment_name: str, service: str | None, job: Job
+    ) -> bool:
+        if deployment_name != self.deployment:
+            return False
+        if self.service is not None and self.service != service:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Filter {filter_name} on job {job.name} is filtering on "
+                    f"the {deployment_name} deployment, but no match was found "
+                    f"for the {service} service."
+                )
+            return False
+        for input_name, match in self.additional_predicates.items():
+            if input_name not in job.inputs.keys():
+                raise ValueError(f"Job {job.name} has no input '{input_name}'.")
+            if isinstance(job.inputs[input_name], (FileToken, ListToken, ObjectToken)):
+                raise WorkflowDefinitionException(
+                    f"Filter {filter_name} on port {input_name} cannot be of type 'file', 'list', or 'object'. "
+                    f"These types are not supported for matching."
+                )
+            if not isinstance(job.inputs[input_name].value, str):
+                logger.warning(
+                    f"Filter {filter_name} on job {job.name} is processing port {input_name}, "
+                    f"but the value is not a string. "
+                    f"It will be implicitly cast to a string for matching."
+                )
+            if match != str(job.inputs[input_name].value):
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Filter {filter_name} on the port {input_name} of the job {job.name} "
+                        f"did not match {match}. "
+                        f"The deployment {deployment_name} is discarded."
+                    )
+                return False
+        return True
 
 
 class MatchingBindingFilter(BindingFilter):
@@ -24,28 +73,31 @@ class MatchingBindingFilter(BindingFilter):
         ],
     ):
         super().__init__(name)
-        self.deployments_match: MutableMapping[str, MutableMapping[str, str]] = {}
-        self.deployments_services: MutableMapping[str, MutableSet[str]] = {}
+        self.conditions: MutableSequence[ConjunctionExpression] = []
         for deployments in filters:
             # Retrieve deployment
             target = deployments["target"]
             deployment = target if isinstance(target, str) else target["deployment"]
-            self.deployments_match.setdefault(deployment, {})
-            self.deployments_services.setdefault(deployment, set())
-            if isinstance(target, MutableMapping) and "service" in target:
-                self.deployments_services[deployment].add(target["service"])
-            # Retrieve job
-            for job in deployments["job"]:
-                if job["port"] in self.deployments_match[deployment]:
-                    raise ValueError("Duplicate input")
-                self.deployments_match[deployment][job["port"]] = job["match"]
+            service = (
+                target["service"]
+                if isinstance(target, MutableMapping) and "service" in target
+                else None
+            )
+            self.conditions.append(
+                ConjunctionExpression(
+                    deployment_name=deployment,
+                    service=service,
+                    additional_predicates={
+                        job["port"]: job["match"] for job in deployments["job"]
+                    },
+                )
+            )
 
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
     ) -> MutableSequence[Target]:
-        filtered_targets = []
         target_deployments = {t.deployment.name for t in targets}
-        filter_deployments = self.deployments_match.keys()
+        filter_deployments = {c.deployment for c in self.conditions}
         if target_deployments - filter_deployments:
             logger.warning(
                 f"Filter {self.name} on job {job.name} discards the following deployments because "
@@ -57,50 +109,23 @@ class MatchingBindingFilter(BindingFilter):
                 f"any target deployment. Please check for potential typos in the filter: "
                 f"{filter_deployments - target_deployments}"
             )
-
+        filtered_targets = set()
         for target in targets:
-            if (
-                services := self.deployments_services.get(target.deployment.name, [])
-            ) and target.service not in services:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Filter {self.name} on job {job.name} is filtering on "
-                        f"the {target.deployment.name} deployment, but no match was found "
-                        f"for the {target.service} service."
-                    )
-                continue
-            for input_name, match in self.deployments_match.get(
-                target.deployment.name, {}
-            ).items():
-                if input_name not in job.inputs:
-                    raise ValueError(f"Job {job.name} has no input '{input_name}'.")
-                if isinstance(
-                    job.inputs[input_name], (FileToken, ListToken, ObjectToken)
+            for condition in self.conditions:
+                # Disjunction expression. The target is added if at least one condition is satisfied
+                if condition.eval(
+                    filter_name=self.name,
+                    deployment_name=target.deployment.name,
+                    service=target.service,
+                    job=job,
                 ):
-                    raise WorkflowDefinitionException(
-                        f"Filter {self.name} on port {input_name} cannot be of type 'file', 'list', or 'object'. "
-                        f"These types are not supported for matching."
-                    )
-                if not isinstance(job.inputs[input_name].value, str):
-                    logger.warning(
-                        f"Filter {self.name} on job {job.name} is processing port {input_name}, "
-                        f"but the value is not a string. "
-                        f"It will be implicitly cast to a string for matching."
-                    )
-                if match == str(job.inputs[input_name].value):
-                    filtered_targets.append(target)
-                elif logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Filter {self.name} on the port {input_name} of the job {job.name} "
-                        f"did not match {match}. "
-                        f"The deployment {target.deployment.name} is discarded."
-                    )
-
+                    filtered_targets.add(target)
+                    break
         if len(filtered_targets) == 0:
             raise WorkflowExecutionException(
                 f"Filter {self.name} did not find any matching targets for job {job.name} with the provided inputs."
             )
-        return filtered_targets
+        return list(filtered_targets)
 
     @classmethod
     def get_schema(cls) -> str:
