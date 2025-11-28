@@ -268,9 +268,13 @@ class Target(PersistableEntity):
             workdir
             or self.deployment.workdir
             or (
-                os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow")
+                os.path.join(
+                    os.path.realpath(tempfile.gettempdir()),
+                    utils.get_local_username(),
+                    "streamflow",
+                )
                 if deployment.type == "local"
-                else posixpath.join("/tmp", "streamflow")  # nosec
+                else posixpath.join("/tmp", "${USER}", "streamflow")
             )
         )
 
