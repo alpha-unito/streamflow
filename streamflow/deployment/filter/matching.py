@@ -13,25 +13,27 @@ from streamflow.workflow.token import FileToken, ListToken, ObjectToken
 
 
 class MatchingRule:
+    __slots__ = ("deployment", "filter", "predicates", "service")
+
     def __init__(
         self,
-        deployment_name: str,
-        service: str | None,
+        deployment: str,
+        filter_: str,
         predicates: MutableMapping[str, str],
+        service: str | None,
     ) -> None:
-        self.deployment: str = deployment_name
-        self.service: str | None = service
+        self.deployment: str = deployment
+        self.filter: str = filter_
         self.predicates: MutableMapping[str, str] = predicates
+        self.service: str | None = service
 
-    def eval(
-        self, filter_name: str, deployment_name: str, service: str | None, job: Job
-    ) -> bool:
+    def eval(self, deployment_name: str, service: str | None, job: Job) -> bool:
         if deployment_name != self.deployment:
             return False
         if self.service is not None and self.service != service:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
-                    f"Filter {filter_name} on job {job.name} is filtering on "
+                    f"Filter {self.filter} on job {job.name} is filtering on "
                     f"the {deployment_name} deployment, but no match was found "
                     f"for the {service} service."
                 )
@@ -41,19 +43,19 @@ class MatchingRule:
                 raise ValueError(f"Job {job.name} has no input '{input_name}'.")
             if isinstance(job.inputs[input_name], (FileToken, ListToken, ObjectToken)):
                 raise WorkflowDefinitionException(
-                    f"Filter {filter_name} on port {input_name} cannot be of type 'file', 'list', or 'object'. "
+                    f"Filter {self.filter} on port {input_name} cannot be of type 'file', 'list', or 'object'. "
                     f"These types are not supported for matching."
                 )
             if not isinstance(job.inputs[input_name].value, str):
                 logger.warning(
-                    f"Filter {filter_name} on job {job.name} is processing port {input_name}, "
+                    f"Filter {self.filter} on job {job.name} is processing port {input_name}, "
                     f"but the value is not a string. "
                     f"It will be implicitly cast to a string for matching."
                 )
             if match != str(job.inputs[input_name].value):
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Filter {filter_name} on the port {input_name} of the job {job.name} "
+                        f"Filter {self.filter} on the port {input_name} of the job {job.name} "
                         f"did not match {match}. "
                         f"The deployment {deployment_name} is discarded."
                     )
@@ -62,6 +64,8 @@ class MatchingRule:
 
 
 class MatchingBindingFilter(BindingFilter):
+    __slots__ = ("match_rules", "name")
+
     def __init__(
         self,
         name: str,
@@ -85,11 +89,12 @@ class MatchingBindingFilter(BindingFilter):
             )
             self.match_rules.append(
                 MatchingRule(
-                    deployment_name=deployment,
-                    service=service,
+                    deployment=deployment,
+                    filter_=self.name,
                     predicates={
                         job["port"]: job["match"] for job in deployments["job"]
                     },
+                    service=service,
                 )
             )
 
@@ -111,16 +116,15 @@ class MatchingBindingFilter(BindingFilter):
             )
         filtered_targets = set()
         for target in targets:
-            for match_rule in self.match_rules:
-                # The target is added if at least one match rule is satisfied
-                if match_rule.eval(
-                    filter_name=self.name,
+            if any(
+                match_rule.eval(
                     deployment_name=target.deployment.name,
                     service=target.service,
                     job=job,
-                ):
-                    filtered_targets.add(target)
-                    break
+                )
+                for match_rule in self.match_rules
+            ):
+                filtered_targets.add(target)
         if len(filtered_targets) == 0:
             raise WorkflowExecutionException(
                 f"Filter {self.name} did not find any matching targets for job {job.name} with the provided inputs."

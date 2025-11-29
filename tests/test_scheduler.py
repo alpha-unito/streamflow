@@ -44,13 +44,13 @@ async def _notify_status_and_test(
 
 def _prepare_connector(
     context: StreamFlowContext,
-    location_memory: Callable[float, float] | None = None,
+    location_memory: Callable[[float], float] | None = None,
     num_jobs: int = 1,
 ) -> tuple[CWLHardwareRequirement, Target]:
     # Inject custom hardware to manipulate available resources
     hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     conn = cast(
-        type[ParameterizableHardwareConnector],
+        ParameterizableHardwareConnector,
         context.deployment_manager.get_connector("custom-hardware"),
     )
     conn.set_hardware(
