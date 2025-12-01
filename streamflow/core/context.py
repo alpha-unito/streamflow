@@ -35,19 +35,19 @@ class StreamFlowContext:
     ):
         self.config: MutableMapping[str, Any] = config
         self.checkpoint_manager: CheckpointManager = checkpoint_manager_class(
-            context=self, **config.get("checkpoint_manager", {}).get("config", {})
+            context=self, **config.get("checkpointManager", {}).get("config", {})
         )
         self.database: Database = database_class(
             context=self, **config.get("database", {}).get("config", {})
         )
         self.data_manager: DataManager = data_manager_class(
-            context=self, **config.get("data_manager", {}).get("config", {})
+            context=self, **config.get("dataManager", {}).get("config", {})
         )
         self.deployment_manager: DeploymentManager = deployment_manager_class(
-            context=self, **config.get("deployment_manager", {}).get("config", {})
+            context=self, **config.get("deploymentManager", {}).get("config", {})
         )
         self.failure_manager: FailureManager = failure_manager_class(
-            context=self, **config.get("failure_manager", {}).get("config", {})
+            context=self, **config.get("failureManager", {}).get("config", {})
         )
         self.process_executor: ProcessPoolExecutor = ProcessPoolExecutor()
         self.scheduler: Scheduler = scheduler_class(

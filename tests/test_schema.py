@@ -1,10 +1,15 @@
 import hashlib
+from typing import cast
 
 from pytest import raises
 
 from streamflow.config.schema import SfSchema
 from streamflow.config.validator import SfValidator
 from streamflow.core.exception import WorkflowDefinitionException
+from streamflow.main import build_context
+from streamflow.persistence import SqliteDatabase
+from streamflow.recovery import DefaultCheckpointManager, DefaultFailureManager
+from streamflow.scheduling import DefaultScheduler
 
 
 def test_cwl_workflow():
@@ -267,3 +272,54 @@ def test_workflow_fail_unsupported_type():
     }
     with raises(WorkflowDefinitionException):
         SfValidator().validate(config)
+
+
+def test_sf_context():
+    assert set(SfSchema().get_config("v1.0").contents["properties"].keys()) == {
+        "bindingFilters",
+        "checkpointManager",
+        "dataManager",
+        "database",
+        "deploymentManager",
+        "deployments",
+        "failureManager",
+        "models",
+        "scheduling",
+        "version",
+        "workflows",
+    }
+    config = {
+        "checkpointManager": {
+            "type": "default",
+            "config": {"checkpoint_dir": "/home/resilient_volume"},
+        },
+        "database": {"type": "default", "config": {"connection": ":memory:"}},
+        "dataManager": {"type": "default", "config": {}},
+        "deploymentManager": {"type": "default", "config": {}},
+        "failureManager": {
+            "type": "default",
+            "config": {"max_retries": 10, "retry_delay": 61},
+        },
+        "scheduler": {"type": "default", "config": {"retry_delay": 101}},
+    }
+    context = build_context(config)
+    assert (
+        cast(DefaultCheckpointManager, context.checkpoint_manager).checkpoint_dir
+        == config["checkpointManager"]["config"]["checkpoint_dir"]
+    )
+    assert (
+        cast(SqliteDatabase, context.database).connection.connection
+        == config["database"]["config"]["connection"]
+    )
+    assert (
+        cast(DefaultFailureManager, context.failure_manager).retry_delay
+        == config["failureManager"]["config"]["retry_delay"]
+    )
+    assert (
+        cast(DefaultFailureManager, context.failure_manager).max_retries
+        == config["failureManager"]["config"]["max_retries"]
+    )
+    assert (
+        cast(DefaultScheduler, context.scheduler).retry_interval
+        == config["scheduler"]["config"]["retry_delay"]
+    )
