@@ -529,23 +529,29 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     workflow = CWLWorkflow(
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
+    ports = [workflow.create_port() for _ in range(2)]
+    port_name = utils.random_name()
     job_port = workflow.create_port(JobPort)
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
 
-    step = get_full_instantiation(
-        cls_=LoopValueFromTransformer,
-        name=utils.random_name() + "-loop-value-from-transformer",
-        processor=_create_cwl_token_processor(port.name, workflow),
-        port_name=port.name,
-        expression_lib=True,
-        full_js=True,
-        value_from="$(1 + 1 == 0)",
-        job_port=job_port,
-        workflow=workflow,
+    step = cast(
+        LoopValueFromTransformer,
+        get_full_instantiation(
+            cls_=LoopValueFromTransformer,
+            name=utils.random_name() + "-loop-value-from-transformer",
+            processor=_create_cwl_token_processor(port_name, workflow),
+            port_name=port_name,
+            expression_lib=True,
+            full_js=True,
+            value_from="$(1 + 1 == 0)",
+            job_port=job_port,
+            workflow=workflow,
+        ),
     )
+    step.add_loop_input_port(port_name, ports[0])
+    step.add_loop_source_port(port_name, ports[1])
     workflow.steps[step.name] = step
     await save_load_and_test(step, context)
 
