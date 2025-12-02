@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import errno
+import json
 import logging
 import os
 import shutil
@@ -14,6 +16,7 @@ import psutil
 
 from streamflow.core import utils
 from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import FS_TYPES_TO_SKIP, BaseConnector
 from streamflow.log_handler import logger
@@ -26,8 +29,15 @@ def _local_copy(src: str, dst: str, read_only: bool) -> None:
         try:
             os.symlink(src, dst, target_is_directory=os.path.isdir(src))
         except OSError as e:
-            if not e.errno == errno.EEXIST:
-                raise
+            if e.errno != errno.EEXIST:
+                if sys.platform == "win32" and e.errno == errno.EINVAL:
+                    if logger.isEnabledFor(logging.WARNING):
+                        logger.warning(
+                            f"Unable to create a symbolic link from {src} to {dst}: {e.strerror}"
+                        )
+                    shutil.copy(src, dst)
+                else:
+                    raise
     else:
         if os.path.isdir(src):
             os.makedirs(dst, exist_ok=True)
@@ -117,6 +127,33 @@ class LocalConnector(BaseConnector):
             )
 
     async def deploy(self, external: bool) -> None:
+        if sys.platform == "win32":
+            # Check if PowerShell is installed
+            if not shutil.which("pwsh"):
+                raise WorkflowExecutionException(
+                    "StreamFlow requires Windows PowerShell version 7.1 or higher"
+                )
+            # Check PowerShell version
+            stdout, returncode = await utils.run_in_subprocess(
+                location=ExecutionLocation(name="pscheck", deployment=self.deployment_name, local=True),
+                command=[
+                    "pwsh",
+                    "-nologo",
+                    "-Command",
+                    "'$PSVersionTable.PSVersion | ConvertTo-Json'"
+                ],
+                capture_output=True,
+                timeout=None,
+            )
+            if returncode != 0:
+                raise WorkflowExecutionException(
+                    f"Failed to retrieve PowerShell version: [{returncode}]: {stdout}"
+                )
+            result = json.loads(stdout)
+            if result["Major"] < 7 or (result["Major"] == 7 and result["Minor"] < 1):
+                raise WorkflowExecutionException(
+                    "StreamFlow requires Windows PowerShell version 7.1 or higher"
+                )
         os.makedirs(
             os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow"),
             exist_ok=True,
@@ -150,6 +187,7 @@ class LocalConnector(BaseConnector):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
+        # Create command
         command = utils.create_command(
             self.__class__.__name__,
             command,
@@ -167,17 +205,24 @@ class LocalConnector(BaseConnector):
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        command = utils.encode_command(command, self._get_shell())
-        return await utils.run_in_subprocess(
-            location=location,
-            command=[
-                self._get_shell(),
-                "/C" if sys.platform == "win32" else "-c",
-                f"'{command}'",
-            ],
-            capture_output=capture_output,
-            timeout=timeout,
-        )
+        # Run command
+        if sys.platform == "win32":
+            command = base64.b64encode(command.encode("utf-16-le")).decode("utf-8")
+            return await utils.run_in_subprocess(
+                location=location,
+                command=["pwsh", "-nologo", "-encodedCommand", command,
+                         ],
+                capture_output=capture_output,
+                timeout=timeout,
+            )
+        else:
+            return await utils.run_in_subprocess(
+                location=location,
+                command=["sh", "-c", f"'{utils.encode_command(command)}'",
+                ],
+                capture_output=capture_output,
+                timeout=timeout,
+            )
 
     @classmethod
     def get_schema(cls) -> str:
