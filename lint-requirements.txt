@@ -1,5 +1,5 @@
 black==25.11.0
 codespell==2.4.1
-flake8-bugbear==25.10.21
+flake8-bugbear==25.11.29
 isort==7.0.0
 pyupgrade==3.21.2
