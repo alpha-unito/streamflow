@@ -481,7 +481,13 @@ class ValueFromTransformer(ManyToOneTransformer):
         }
 
     @recoverable
-    async def _eval(self, job: Job, token_value: Any) -> Token:
+    async def _eval(self, job: Job, context: MutableMapping[str, str]) -> Token:
+        token_value = utils.eval_expression(
+            expression=self.value_from,
+            context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib,
+        )
         token = await build_token(
             job=job,
             token_value=token_value,
@@ -504,17 +510,9 @@ class ValueFromTransformer(ManyToOneTransformer):
             )
         context = utils.build_context(new_inputs)
         context |= {"self": context["inputs"].get(output_name)}
-        token_value = utils.eval_expression(
-            expression=self.value_from,
-            context=context,
-            full_js=self.full_js,
-            expression_lib=self.expression_lib,
-        )
         job_token = await self.get_input_port("__job__").get(self.name)
         inputs["__job__"] = job_token
-        return {
-            output_name: await self._eval(job=job_token.value, token_value=token_value)
-        }
+        return {output_name: await self._eval(job=job_token.value, context=context)}
 
 
 class LoopValueFromTransformer(ValueFromTransformer):
@@ -609,16 +607,10 @@ class LoopValueFromTransformer(ValueFromTransformer):
         context = cast(dict[str, Any], utils.build_context(loop_inputs)) | {
             "self": get_token_value(self_token)
         }
-        token_value = utils.eval_expression(
-            expression=self.value_from,
-            context=context,
-            full_js=self.full_js,
-            expression_lib=self.expression_lib,
-        )
         job_token = await self.get_input_port("__job__").get(self.name)
         inputs["__job__"] = job_token
         return {
             self.get_output_name(): await self._eval(
-                job=job_token.value, token_value=token_value
+                job=job_token.value, context=context
             )
         }
