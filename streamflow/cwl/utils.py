@@ -491,10 +491,11 @@ async def create_remote_directory(
     path: str,
     relpath: str,
 ):
-    tasks = []
+    creation_tasks, registration_tasks = [], []
     for location in locations:
-        path = StreamFlowPath(path, context=context, location=location)
-        if not await path.exists():
+        if not await (
+            path := StreamFlowPath(path, context=context, location=location)
+        ).exists():
             if logger.isEnabledFor(logging.INFO):
                 logger.info(
                     "Creating {path} {location}".format(
@@ -506,17 +507,24 @@ async def create_remote_directory(
                         ),
                     )
                 )
-            tasks.append(
+            creation_tasks.append(
                 asyncio.create_task(path.mkdir(mode=0o777, parents=True, exist_ok=True))
             )
-            await _register_path(
-                context=context,
-                connector=context.deployment_manager.get_connector(location.deployment),
-                location=location,
-                path=str(path),
-                relpath=relpath,
+            registration_tasks.append(
+                asyncio.create_task(
+                    _register_path(
+                        context=context,
+                        connector=context.deployment_manager.get_connector(
+                            location.deployment
+                        ),
+                        location=location,
+                        path=str(path),
+                        relpath=relpath,
+                    )
+                )
             )
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*creation_tasks)
+    await asyncio.gather(*registration_tasks)
 
 
 def eval_expression(
@@ -1246,9 +1254,11 @@ async def write_remote_file(
     path: str,
     relpath: str,
 ):
+    writing_tasks, registration_tasks = [], []
     for location in locations:
-        path = StreamFlowPath(path, context=context, location=location)
-        if not await path.exists():
+        if not await (
+            path := StreamFlowPath(path, context=context, location=location)
+        ).exists():
             if logger.isEnabledFor(logging.INFO):
                 logger.info(
                     "Creating {path} {location}".format(
@@ -1260,11 +1270,19 @@ async def write_remote_file(
                         ),
                     )
                 )
-            await path.write_text(content)
-            await _register_path(
-                context=context,
-                connector=context.deployment_manager.get_connector(location.deployment),
-                location=location,
-                path=str(path),
-                relpath=relpath,
+            writing_tasks.append(asyncio.create_task(path.write_text(content)))
+            registration_tasks.append(
+                asyncio.create_task(
+                    _register_path(
+                        context=context,
+                        connector=context.deployment_manager.get_connector(
+                            location.deployment
+                        ),
+                        location=location,
+                        path=str(path),
+                        relpath=relpath,
+                    )
+                )
             )
+    await asyncio.gather(*writing_tasks)
+    await asyncio.gather(*registration_tasks)

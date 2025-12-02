@@ -1,12 +1,15 @@
 import itertools
 import os
 import posixpath
+import tempfile
+from collections.abc import MutableSequence
 from typing import cast
 
 import pytest
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
+from streamflow.cwl import utils as cwl_utils
 from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.step import CWLExecuteStep, CWLInputInjectorStep, CWLScheduleStep
@@ -202,3 +205,42 @@ async def test_initial_workdir(
     finally:
         if path:
             await path.rmtree()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "curr_deployment,file_type",
+    itertools.product(("local", "docker"), ("file", "directory")),
+)
+async def test_creating_file(
+    chosen_deployment_types: MutableSequence[str],
+    context: StreamFlowContext,
+    curr_deployment: str,
+    file_type: str,
+) -> None:
+    """Test the creation of files and their registration in the data manager."""
+    if curr_deployment not in chosen_deployment_types:
+        pytest.skip(f"Deployment {curr_deployment} was not activated")
+    location = await get_location(context, curr_deployment)
+    basename = utils.random_name()
+    path = os.path.join(tempfile.gettempdir(), basename)
+    match file_type:
+        case "file":
+            await cwl_utils.write_remote_file(
+                context=context,
+                locations=[location],
+                content="Hello",
+                path=path,
+                relpath=basename,
+            )
+        case "directory":
+            await cwl_utils.create_remote_directory(
+                context=context, locations=[location], path=path, relpath=basename
+            )
+        case _:
+            raise ValueError(f"Unsupported file type: {file_type}")
+    src_location = await context.data_manager.get_source_location(
+        path, location.deployment
+    )
+    assert src_location is not None
+    assert src_location.path == path
