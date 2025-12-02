@@ -1,7 +1,7 @@
+import asyncio
 import itertools
 import os
 import posixpath
-import tempfile
 from collections.abc import MutableSequence
 from typing import cast
 
@@ -9,6 +9,7 @@ import pytest
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import DataType
 from streamflow.cwl import utils as cwl_utils
 from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.hardware import CWLHardwareRequirement
@@ -208,39 +209,55 @@ async def test_initial_workdir(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "curr_deployment,file_type",
-    itertools.product(("local", "docker"), ("file", "directory")),
-)
+@pytest.mark.parametrize("file_type", ("file", "directory"))
 async def test_creating_file(
     chosen_deployment_types: MutableSequence[str],
     context: StreamFlowContext,
-    curr_deployment: str,
     file_type: str,
 ) -> None:
     """Test the creation of files and their registration in the data manager."""
-    if curr_deployment not in chosen_deployment_types:
-        pytest.skip(f"Deployment {curr_deployment} was not activated")
-    location = await get_location(context, curr_deployment)
+    deployments = ["local", "docker"]
+    for deployment in deployments:
+        if deployment not in chosen_deployment_types:
+            pytest.skip(f"Deployment {deployment} was not activated")
+    locations = await asyncio.gather(
+        *(
+            asyncio.create_task(get_location(context, deployment))
+            for deployment in deployments
+        )
+    )
     basename = utils.random_name()
-    path = os.path.join(tempfile.gettempdir(), basename)
+    path = os.path.join("/tmp", basename)
     match file_type:
         case "file":
             await cwl_utils.write_remote_file(
                 context=context,
-                locations=[location],
+                locations=locations,
                 content="Hello",
                 path=path,
                 relpath=basename,
             )
         case "directory":
             await cwl_utils.create_remote_directory(
-                context=context, locations=[location], path=path, relpath=basename
+                context=context, locations=locations, path=path, relpath=basename
             )
         case _:
             raise ValueError(f"Unsupported file type: {file_type}")
-    src_location = await context.data_manager.get_source_location(
-        path, location.deployment
-    )
-    assert src_location is not None
-    assert src_location.path == path
+    real_paths = []
+    for location in locations:
+        src_location = await context.data_manager.get_source_location(
+            path, location.deployment
+        )
+        assert src_location is not None
+        real_paths.append(
+            await StreamFlowPath(path, context=context, location=location).resolve()
+        )
+        assert src_location.path == str(real_paths[-1])
+    assert len(
+        context.data_manager.get_data_locations(path=path, data_type=DataType.PRIMARY)
+    ) == len(deployments)
+    assert len(
+        context.data_manager.get_data_locations(
+            path=path, data_type=DataType.SYMBOLIC_LINK
+        )
+    ) == len([p for p in real_paths if str(p) != path])
