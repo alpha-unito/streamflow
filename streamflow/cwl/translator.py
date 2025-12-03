@@ -1418,7 +1418,7 @@ def _process_loop_transformers(
     loop_input_ports: MutableMapping[str, Port],
     transformers: MutableMapping[str, LoopValueFromTransformer],
     input_dependencies: MutableMapping[str, set[str]],
-    schedule_steps: MutableMapping[str, ScheduleStep] | None = None,
+    schedule_steps: MutableMapping[str, ScheduleStep],
 ) -> MutableMapping[str, Port]:
     new_input_ports = {}
     for input_name, token_transformer in transformers.items():
@@ -2425,18 +2425,6 @@ class CWLTranslator:
             list(input_dependencies.keys()),
         )
         input_ports |= default_ports
-        # Get loop if present
-        if (loop := _get_loop(cwl_element, requirements)) is not None:
-            # Create loop conditional step
-            if loop["when"] is not None:
-                _create_loop_condition(
-                    condition=loop["when"],
-                    expression_lib=expression_lib,
-                    full_js=full_js,
-                    input_ports=input_ports,
-                    step_name=step_name,
-                    workflow=workflow,
-                )
         # If there are scatter inputs
         if scatter_inputs:
             # Retrieve scatter method (default to dotproduct)
@@ -2538,7 +2526,7 @@ class CWLTranslator:
                         "-".join(output_port_names), size_port
                     )
 
-        # Process inputs again to attach ports to transformers
+        # Process inputs again to attach ports to value-from transformers
         input_ports = _process_transformers(
             step_name=step_name,
             input_ports=input_ports,
@@ -2548,6 +2536,19 @@ class CWLTranslator:
                 k: _get_schedule_step(v) for k, v in value_from_transformers.items()
             },
         )
+
+        # Get loop if present
+        if (loop := _get_loop(cwl_element, requirements)) is not None:
+            # Create loop conditional step
+            if loop["when"] is not None:
+                _create_loop_condition(
+                    condition=loop["when"],
+                    expression_lib=expression_lib,
+                    full_js=full_js,
+                    input_ports=input_ports,
+                    step_name=step_name,
+                    workflow=workflow,
+                )
 
         # Save input ports in the global map
         self.input_ports |= input_ports

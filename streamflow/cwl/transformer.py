@@ -13,7 +13,6 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import TokenProcessor
-from streamflow.core.recovery import recoverable
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Job, Port, Status, Token
 from streamflow.cwl import utils
@@ -480,7 +479,6 @@ class ValueFromTransformer(ManyToOneTransformer):
             "job_port": job_port.persistent_id,
         }
 
-    @recoverable
     async def _eval(self, job: Job, context: MutableMapping[str, str]) -> Token:
         token_value = utils.eval_expression(
             expression=self.value_from,
