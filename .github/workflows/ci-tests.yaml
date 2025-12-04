@@ -55,7 +55,7 @@ jobs:
             on: "ubuntu-24.04"
             python: "3.14"
             version: "v1.3"
-          - on: "macos-13"
+          - on: "macos-15-intel"
             python: "3.14"
             commit: "3356210e764b0d01ed162b23f8c3488022621c7e"
             exclude: "docker_entrypoint,modify_file_content"
@@ -237,7 +237,7 @@ jobs:
         on: [ "ubuntu-24.04"]
         python: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
         include:
-          - on: "macos-13"
+          - on: "macos-15-intel"
             python: "3.14"
     runs-on: ${{ matrix.on }}
     env:
