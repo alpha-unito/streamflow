@@ -52,6 +52,8 @@ def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
             return "alpine-kubernetes"
         case "parameterizable_hardware":
             return "custom-hardware"
+        case "aiotar":
+            return "aiotar"
         case "singularity":
             return "alpine-singularity"
         case "slurm":
@@ -80,6 +82,9 @@ async def get_deployment_config(
                     "test-fs-volatile",
                 ),
             )
+
+        case "aiotar":
+            return get_aiotar_deployment_config()
         case "docker":
             return get_docker_deployment_config()
         case "docker-compose":
@@ -202,6 +207,21 @@ async def get_location(
     return next(iter(locations.values())).location
 
 
+def get_aiotar_deployment_config():
+    workdir = os.path.join(
+        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
+    )
+    os.makedirs(workdir, exist_ok=True)
+    return DeploymentConfig(
+        name="aiotar",
+        type="aiotar",
+        config={"transferBufferSize": 2**16},
+        external=False,
+        lazy=False,
+        workdir=workdir,
+    )
+
+
 def get_parameterizable_hardware_deployment_config():
     workdir = os.path.join(
         os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
@@ -224,6 +244,7 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
             | "docker"
             | "docker-wrapper"
             | "parameterizable_hardware"
+            | "aiotar"
             | "singularity"
             | "ssh"
             | "local-fs-volatile"

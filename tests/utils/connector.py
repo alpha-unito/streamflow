@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import os
+import tarfile
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, AsyncContextManager, cast
 
@@ -11,13 +14,118 @@ from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector import LocalConnector, SSHConnector
+from streamflow.deployment.connector.base import BaseConnector
 from streamflow.deployment.connector.ssh import (
     SSHConfig,
     SSHContext,
     get_param_from_file,
     parse_hostname,
 )
+from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.log_handler import logger
+
+
+def get_path(command: MutableSequence[str]) -> str:
+    match command[0]:
+        case "tee":
+            return command[1]
+        case "tar":
+            if command[1] == "chf" and len(command) == 6:
+                return str(os.path.join(*command[-2:]))
+            else:
+                raise NotImplementedError(command)
+        case _:
+            raise NotImplementedError(command)
+    raise Exception(f"No path found in {command}")
+
+
+class TarStreamReaderWrapper(StreamReaderWrapper):
+    def __init__(self, stream: Any):
+        super().__init__(stream)
+
+    async def close(self) -> None:
+        self.stream.close()
+
+    async def read(self, size: int | None = None):
+        return self.stream.read(size)
+
+
+class TarStreamWriterWrapper(StreamWriterWrapper):
+    async def close(self) -> None:
+        self.stream.close()
+
+    async def write(self, data: Any) -> None:
+        self.stream.write(data)
+
+
+class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
+    def __init__(
+        self,
+        fileobj: Any,
+        mode: str,
+    ):
+        super().__init__()
+        self.fileobj: Any = fileobj
+        self.stream: StreamWrapper | None = None
+        self.mode: str = mode
+
+    async def __aenter__(self) -> StreamWriterWrapper:
+        if self.mode == "w":
+            self.stream = TarStreamWriterWrapper(self.fileobj)
+        else:
+            buffer = io.BytesIO()
+            with tarfile.open(
+                fileobj=buffer, mode="w|", format=tarfile.PAX_FORMAT
+            ) as tar:
+                tar.add(self.fileobj.name, arcname=os.path.basename(self.fileobj.name))
+            buffer.seek(0)
+            self.stream = TarStreamReaderWrapper(buffer)
+        return self.stream
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.stream:
+            await self.stream.close()
+        self.fileobj.close()
+
+
+class TarConnector(BaseConnector):
+
+    async def deploy(self, external: bool) -> None:
+        pass
+
+    async def undeploy(self, external: bool) -> None:
+        pass
+
+    @classmethod
+    def get_schema(cls) -> str:
+        pass
+
+    async def get_available_locations(
+        self, service: str | None = None
+    ) -> MutableMapping[str, AvailableLocation]:
+        return {
+            "aiotar": AvailableLocation(
+                name="aiotar",
+                deployment=self.deployment_name,
+                service=service,
+                hostname="localhost",
+                local=False,
+                slots=1,
+                hardware=None,
+            )
+        }
+
+    async def get_stream_reader(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> AsyncContextManager[StreamWrapper]:
+        path = get_path(command)
+        return TarStreamWrapperContextManager(fileobj=open(path, "rb"), mode="r")
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> AsyncContextManager[StreamWrapper]:
+        path = get_path(command)
+        return TarStreamWrapperContextManager(fileobj=open(path, "wb"), mode="w")
 
 
 class FailureConnectorException(Exception):

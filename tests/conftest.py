@@ -16,7 +16,11 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
+from tests.utils.connector import (
+    FailureConnector,
+    ParameterizableHardwareConnector,
+    TarConnector,
+)
 from tests.utils.deployment import ReverseTargetsBindingFilter, get_deployment_config
 
 
@@ -52,6 +56,7 @@ def pytest_configure(config):
         {
             "failure": FailureConnector,
             "parameterizable_hardware": ParameterizableHardwareConnector,
+            "aiotar": TarConnector,
         }
     )
     streamflow.deployment.filter.binding_filter_classes.update(
@@ -151,7 +156,11 @@ async def context(
             "path": os.getcwd(),
         },
     )
-    for deployment_t in (*chosen_deployment_types, "parameterizable_hardware"):
+    for deployment_t in (
+        *chosen_deployment_types,
+        "parameterizable_hardware",
+        "aiotar",
+    ):
         config = await get_deployment_config(_context, deployment_t)
         await _context.deployment_manager.deploy(config)
     yield _context
