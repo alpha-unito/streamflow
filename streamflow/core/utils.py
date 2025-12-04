@@ -7,6 +7,7 @@ import importlib
 import itertools
 import os
 import posixpath
+import pwd
 import shlex
 import uuid
 from collections.abc import Iterable, MutableMapping, MutableSequence
@@ -230,6 +231,10 @@ async def get_local_to_remote_destination(
     else:
         # Keep current dst
         return dst
+
+
+def get_local_username() -> str:
+    return pwd.getpwuid(os.getuid()).pw_name
 
 
 def get_option(

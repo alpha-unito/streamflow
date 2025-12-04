@@ -21,7 +21,6 @@ from streamflow.core.deployment import (
     Target,
     WrapsConfig,
 )
-from streamflow.core.utils import random_name
 from streamflow.core.workflow import Job
 from streamflow.deployment import DefaultDeploymentManager
 from tests.utils.data import get_data_path
@@ -75,8 +74,9 @@ async def get_deployment_config(
                 name="local-fs-volatile",
                 workdir=os.path.join(
                     os.path.realpath(tempfile.gettempdir()),
+                    utils.get_local_username(),
                     "streamflow-test",
-                    random_name(),
+                    utils.random_name(),
                     "test-fs-volatile",
                 ),
             )
@@ -108,7 +108,7 @@ def get_docker_compose_deployment_config():
             "files": [
                 str(get_data_path("deployment", "docker-compose", "docker-compose.yml"))
             ],
-            "projectName": random_name(),
+            "projectName": utils.random_name(),
         },
         external=False,
         lazy=False,
@@ -179,7 +179,10 @@ def get_local_deployment_config(
     name: str | None = None, workdir: str | None = None
 ) -> DeploymentConfig:
     workdir = workdir or os.path.join(
-        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
+        os.path.realpath(tempfile.gettempdir()),
+        utils.get_local_username(),
+        "streamflow-test",
+        utils.random_name(),
     )
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
@@ -204,7 +207,10 @@ async def get_location(
 
 def get_parameterizable_hardware_deployment_config():
     workdir = os.path.join(
-        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
+        os.path.realpath(tempfile.gettempdir()),
+        utils.get_local_username(),
+        "streamflow-test",
+        utils.random_name(),
     )
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
@@ -255,7 +261,7 @@ async def get_slurm_deployment_config(_context: StreamFlowContext):
         type="docker-compose",
         config={
             "files": [str(get_data_path("deployment", "slurm", "docker-compose.yml"))],
-            "projectName": random_name(),
+            "projectName": utils.random_name(),
         },
         external=False,
     )
