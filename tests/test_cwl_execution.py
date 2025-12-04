@@ -215,7 +215,7 @@ async def test_creating_file(
     context: StreamFlowContext,
     file_type: str,
 ) -> None:
-    """Test the creation of files and their registration in the data manager."""
+    """Test the creation of files and their registration in the `DataManager`."""
     deployments = ["local", "docker"]
     for deployment in deployments:
         if deployment not in chosen_deployment_types:
@@ -249,10 +249,12 @@ async def test_creating_file(
             path, location.deployment
         )
         assert src_location is not None
-        real_paths.append(
-            await StreamFlowPath(path, context=context, location=location).resolve()
-        )
-        assert src_location.path == str(real_paths[-1])
+        real_path = await StreamFlowPath(
+            path, context=context, location=location
+        ).resolve()
+        assert real_path is not None
+        real_paths.append(str(real_path))
+        assert src_location.path == real_paths[-1]
     assert len(
         context.data_manager.get_data_locations(path=path, data_type=DataType.PRIMARY)
     ) == len(deployments)
@@ -260,4 +262,4 @@ async def test_creating_file(
         context.data_manager.get_data_locations(
             path=path, data_type=DataType.SYMBOLIC_LINK
         )
-    ) == len([p for p in real_paths if str(p) != path])
+    ) == len([p for p in real_paths if p != path])
