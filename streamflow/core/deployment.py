@@ -67,6 +67,12 @@ class ExecutionLocation:
 
 
 class BindingFilter(SchemaEntity):
+
+    __slots__ = "name"
+
+    def __init__(self, name: str) -> None:
+        self.name: str = name
+
     @abstractmethod
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
