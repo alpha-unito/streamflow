@@ -140,6 +140,75 @@ async def _process_file_token(
     return new_token_value
 
 
+async def build_literal_token(
+    token_value: Any,
+    inputs: MutableMapping[str, Any],
+    cwl_version: str,
+    streamflow_context: StreamFlowContext,
+    recoverable: bool = False,
+) -> Token:
+    match token_value:
+        case MutableSequence():
+            return ListToken(
+                tag=get_tag(inputs.values()),
+                value=await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            build_literal_token(
+                                token_value=v,
+                                inputs=inputs,
+                                cwl_version=cwl_version,
+                                streamflow_context=streamflow_context,
+                                recoverable=recoverable,
+                            )
+                        )
+                        for v in token_value
+                    )
+                ),
+            )
+        case MutableMapping():
+            if get_token_class(token_value) in ["File", "Directory"]:
+                return CWLFileToken(
+                    tag=get_tag(inputs.values()),
+                    value=token_value,
+                    recoverable=recoverable,
+                )
+            else:
+                return ObjectToken(
+                    tag=get_tag(inputs.values()),
+                    value=dict(
+                        zip(
+                            token_value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        build_literal_token(
+                                            token_value=v,
+                                            inputs=inputs,
+                                            cwl_version=cwl_version,
+                                            streamflow_context=streamflow_context,
+                                            recoverable=recoverable,
+                                        )
+                                    )
+                                    for v in token_value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    ),
+                )
+        case Token():
+            token = token_value.retag(tag=get_tag(inputs.values()))
+            token.recoverable = recoverable
+            return token
+        case _:
+            return Token(
+                tag=get_tag(inputs.values()),
+                value=token_value,
+                recoverable=recoverable,
+            )
+
+
 async def build_token(
     job: Job,
     token_value: Any,
