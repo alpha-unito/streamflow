@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -326,7 +327,7 @@ class DefaultDataManager(DataManager):
         dst_connector = self.context.deployment_manager.get_connector(
             next(iter(dst_locations)).deployment
         )
-        # Create destination folder
+        # Create destination folder (if it is not registered)
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -334,7 +335,18 @@ class DefaultDataManager(DataManager):
                         dst_path, context=self.context, location=location
                     ).parent.mkdir(mode=0o777, parents=True, exist_ok=True)
                 )
-                for location in dst_locations
+                for location in [
+                    location
+                    for location in dst_locations
+                    if len(
+                        self.get_data_locations(
+                            path=os.path.dirname(dst_path),
+                            deployment=location.deployment,
+                            location_name=location.name,
+                        )
+                    )
+                    == 0
+                ]
             )
         )
         # Follow symlink for source path
