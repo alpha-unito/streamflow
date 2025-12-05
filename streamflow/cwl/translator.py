@@ -1418,7 +1418,6 @@ def _process_loop_transformers(
     loop_input_ports: MutableMapping[str, Port],
     transformers: MutableMapping[str, LoopValueFromTransformer],
     input_dependencies: MutableMapping[str, set[str]],
-    schedule_steps: MutableMapping[str, ScheduleStep],
 ) -> MutableMapping[str, Port]:
     new_input_ports = {}
     for input_name, token_transformer in transformers.items():
@@ -1428,10 +1427,6 @@ def _process_loop_transformers(
                 token_transformer.add_loop_input_port(
                     posixpath.relpath(dep_name, step_name), input_ports[dep_name]
                 )
-                if schedule_step := schedule_steps.get(input_name):
-                    schedule_step.add_input_port(
-                        posixpath.relpath(dep_name, step_name), input_ports[dep_name]
-                    )
         if input_name in loop_input_ports:
             token_transformer.add_loop_source_port(
                 posixpath.relpath(input_name, step_name), loop_input_ports[input_name]
@@ -1450,10 +1445,8 @@ def _process_transformers(
     input_ports: MutableMapping[str, Port],
     transformers: MutableMapping[str, Transformer],
     input_dependencies: MutableMapping[str, set[str]],
-    schedule_steps: MutableMapping[str, ScheduleStep] | None = None,
 ) -> MutableMapping[str, Port]:
     new_input_ports = {}
-    schedule_steps = schedule_steps or {}
     for input_name, token_transformer in transformers.items():
         # If transformer has true dependencies, use them
         if not (dependencies := input_dependencies[input_name]):
@@ -1473,10 +1466,6 @@ def _process_transformers(
                 token_transformer.add_input_port(
                     posixpath.relpath(dep_name, step_name), input_ports[dep_name]
                 )
-                if schedule_step := schedule_steps.get(input_name):
-                    schedule_step.add_input_port(
-                        posixpath.relpath(dep_name, step_name), input_ports[dep_name]
-                    )
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
     return cast(dict[str, Port], input_ports) | new_input_ports
@@ -2532,9 +2521,6 @@ class CWLTranslator:
             input_ports=input_ports,
             transformers=value_from_transformers,
             input_dependencies=input_dependencies,
-            schedule_steps={
-                k: _get_schedule_step(v) for k, v in value_from_transformers.items()
-            },
         )
 
         # Get loop if present
@@ -2792,10 +2778,6 @@ class CWLTranslator:
                 loop_input_ports=loop_input_ports,
                 transformers=loop_value_from_transformers,
                 input_dependencies=loop_input_dependencies,
-                schedule_steps={
-                    k: _get_schedule_step(v)
-                    for k, v in loop_value_from_transformers.items()
-                },
             )
             # Connect loop outputs to loop inputs
             for global_name in input_ports:
@@ -2875,22 +2857,6 @@ class CWLTranslator:
                 raise WorkflowDefinitionException(
                     "Workflow step contains valueFrom but StepInputExpressionRequirement not in requirements"
                 )
-            # Retrieve the DeployStep for the port target
-            binding_config = get_binding_config(
-                global_name, "port", self.workflow_config
-            )
-            target = binding_config.targets[0]
-            deploy_step = self._get_deploy_step(target.deployment, workflow)
-            # Create a schedule step and connect it to the local DeployStep
-            schedule_step = workflow.create_step(
-                cls=ScheduleStep,
-                name=posixpath.join(
-                    global_name + inner_steps_prefix + "-value-from", "__schedule__"
-                ),
-                job_prefix=f"{global_name}-value-from",
-                connector_ports={target.deployment.name: deploy_step.get_output_port()},
-                binding_config=binding_config,
-            )
             # Create a ValueFromTransformer
             value_from_transformers[global_name] = workflow.create_step(
                 cls=value_from_transformer_cls,
@@ -2908,7 +2874,6 @@ class CWLTranslator:
                 expression_lib=expression_lib,
                 full_js=full_js,
                 value_from=element_input.valueFrom,
-                job_port=schedule_step.get_output_port(),
             )
             value_from_transformers[global_name].add_output_port(
                 port_name, workflow.create_port()

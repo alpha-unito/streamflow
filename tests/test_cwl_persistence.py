@@ -503,7 +503,6 @@ async def test_value_from_transformer(context: StreamFlowContext):
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
-    job_port = workflow.create_port(JobPort)
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
@@ -516,7 +515,6 @@ async def test_value_from_transformer(context: StreamFlowContext):
         expression_lib=True,
         full_js=True,
         value_from="$(1 + 1)",
-        job_port=job_port,
         workflow=workflow,
     )
     workflow.steps[step.name] = step
@@ -531,7 +529,6 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     )
     ports = [workflow.create_port() for _ in range(2)]
     port_name = utils.random_name()
-    job_port = workflow.create_port(JobPort)
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
@@ -546,7 +543,6 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
             expression_lib=True,
             full_js=True,
             value_from="$(1 + 1 == 0)",
-            job_port=job_port,
             workflow=workflow,
         ),
     )
