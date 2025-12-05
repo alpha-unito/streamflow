@@ -140,11 +140,12 @@ async def _process_file_token(
     return new_token_value
 
 
-async def build_literal_token(
-    token_value: Any,
-    inputs: MutableMapping[str, Any],
+async def build_token(
     cwl_version: str,
+    inputs: MutableMapping[str, Any],
     streamflow_context: StreamFlowContext,
+    token_value: Any,
+    job: Job | None = None,
     recoverable: bool = False,
 ) -> Token:
     match token_value:
@@ -154,12 +155,13 @@ async def build_literal_token(
                 value=await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            build_literal_token(
+                            build_token(
                                 token_value=v,
-                                inputs=inputs,
                                 cwl_version=cwl_version,
                                 streamflow_context=streamflow_context,
                                 recoverable=recoverable,
+                                job=job,
+                                inputs=inputs,
                             )
                         )
                         for v in token_value
@@ -170,7 +172,16 @@ async def build_literal_token(
             if get_token_class(token_value) in ["File", "Directory"]:
                 return CWLFileToken(
                     tag=get_tag(inputs.values()),
-                    value=token_value,
+                    value=(
+                        token_value
+                        if job is None
+                        else await _process_file_token(
+                            job=job,
+                            token_value=token_value,
+                            cwl_version=cwl_version,
+                            streamflow_context=streamflow_context,
+                        )
+                    ),
                     recoverable=recoverable,
                 )
             else:
@@ -182,12 +193,13 @@ async def build_literal_token(
                             await asyncio.gather(
                                 *(
                                     asyncio.create_task(
-                                        build_literal_token(
+                                        build_token(
                                             token_value=v,
-                                            inputs=inputs,
                                             cwl_version=cwl_version,
                                             streamflow_context=streamflow_context,
                                             recoverable=recoverable,
+                                            job=job,
+                                            inputs=inputs,
                                         )
                                     )
                                     for v in token_value.values()
@@ -204,80 +216,6 @@ async def build_literal_token(
         case _:
             return Token(
                 tag=get_tag(inputs.values()),
-                value=token_value,
-                recoverable=recoverable,
-            )
-
-
-async def build_token(
-    job: Job,
-    token_value: Any,
-    cwl_version: str,
-    streamflow_context: StreamFlowContext,
-    recoverable: bool = False,
-) -> Token:
-    match token_value:
-        case MutableSequence():
-            return ListToken(
-                tag=get_tag(job.inputs.values()),
-                value=await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            build_token(
-                                job=job,
-                                token_value=v,
-                                cwl_version=cwl_version,
-                                streamflow_context=streamflow_context,
-                                recoverable=recoverable,
-                            )
-                        )
-                        for v in token_value
-                    )
-                ),
-            )
-        case MutableMapping():
-            if get_token_class(token_value) in ["File", "Directory"]:
-                return CWLFileToken(
-                    tag=get_tag(job.inputs.values()),
-                    value=await _process_file_token(
-                        job=job,
-                        token_value=token_value,
-                        cwl_version=cwl_version,
-                        streamflow_context=streamflow_context,
-                    ),
-                    recoverable=recoverable,
-                )
-            else:
-                return ObjectToken(
-                    tag=get_tag(job.inputs.values()),
-                    value=dict(
-                        zip(
-                            token_value.keys(),
-                            await asyncio.gather(
-                                *(
-                                    asyncio.create_task(
-                                        build_token(
-                                            job=job,
-                                            token_value=v,
-                                            cwl_version=cwl_version,
-                                            streamflow_context=streamflow_context,
-                                            recoverable=recoverable,
-                                        )
-                                    )
-                                    for v in token_value.values()
-                                )
-                            ),
-                            strict=True,
-                        )
-                    ),
-                )
-        case Token():
-            token = token_value.retag(tag=get_tag(job.inputs.values()))
-            token.recoverable = recoverable
-            return token
-        case _:
-            return Token(
-                tag=get_tag(job.inputs.values()),
                 value=token_value,
                 recoverable=recoverable,
             )
@@ -622,6 +560,7 @@ class CWLInputInjectorStep(InputInjectorStep):
     async def process_input(self, job: Job, token_value: Any) -> Token:
         return await build_token(
             job=job,
+            inputs=job.inputs,
             token_value=token_value,
             cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
             streamflow_context=self.workflow.context,

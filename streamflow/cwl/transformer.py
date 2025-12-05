@@ -16,7 +16,7 @@ from streamflow.core.processor import TokenProcessor
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Port, Token
 from streamflow.cwl import utils
-from streamflow.cwl.step import build_literal_token
+from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.token import ListToken, TerminationToken
 from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
@@ -481,16 +481,16 @@ class ValueFromTransformer(ManyToOneTransformer):
         context = utils.build_context(new_inputs)
         context |= {"self": context["inputs"].get(output_name)}
         return {
-            output_name: await build_literal_token(
+            output_name: await build_token(
                 token_value=utils.eval_expression(
                     expression=self.value_from,
                     context=context,
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
                 ),
-                inputs=inputs,
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 streamflow_context=self.workflow.context,
+                inputs=inputs,
             )
         }
 
@@ -580,15 +580,15 @@ class LoopValueFromTransformer(ValueFromTransformer):
             "self": get_token_value(self_token)
         }
         return {
-            self.get_output_name(): await build_literal_token(
+            self.get_output_name(): await build_token(
                 token_value=utils.eval_expression(
                     expression=self.value_from,
                     context=context,
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
                 ),
-                inputs=inputs,
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 streamflow_context=self.workflow.context,
+                inputs=inputs,
             )
         }
