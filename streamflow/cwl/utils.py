@@ -80,6 +80,36 @@ async def _check_glob_path(
             )
 
 
+async def _create_remote_directory(
+    context: StreamFlowContext,
+    location: ExecutionLocation,
+    path: str,
+    relpath: str,
+) -> None:
+    if not await (
+        path := StreamFlowPath(path, context=context, location=location)
+    ).exists():
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Creating {path} {location}".format(
+                    path=str(path),
+                    location=(
+                        "on local file-system"
+                        if location.local
+                        else f"on location {location}"
+                    ),
+                )
+            )
+        await path.mkdir(mode=0o777, parents=True, exist_ok=True)
+        await _register_path(
+            context=context,
+            connector=context.deployment_manager.get_connector(location.deployment),
+            location=location,
+            path=str(path),
+            relpath=relpath,
+        )
+
+
 async def _get_contents(
     path: StreamFlowPath,
     size: int,
@@ -294,6 +324,37 @@ async def _register_path(
     return None
 
 
+async def _write_remote_file(
+    context: StreamFlowContext,
+    location: ExecutionLocation,
+    content: str,
+    path: str,
+    relpath: str,
+) -> None:
+    if not await (
+        path := StreamFlowPath(path, context=context, location=location)
+    ).exists():
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Creating {path} {location}".format(
+                    path=str(path),
+                    location=(
+                        "on local file-system"
+                        if location.local
+                        else f"on location {location}"
+                    ),
+                )
+            )
+        await path.write_text(content)
+        await _register_path(
+            context=context,
+            connector=context.deployment_manager.get_connector(location.deployment),
+            location=location,
+            path=str(path),
+            relpath=relpath,
+        )
+
+
 def build_context(
     inputs: MutableMapping[str, Token],
     output_directory: str | None = None,
@@ -490,33 +551,17 @@ async def create_remote_directory(
     locations: MutableSequence[ExecutionLocation],
     path: str,
     relpath: str,
-):
-    tasks = []
-    for location in locations:
-        path = StreamFlowPath(path, context=context, location=location)
-        if not await path.exists():
-            if logger.isEnabledFor(logging.INFO):
-                logger.info(
-                    "Creating {path} {location}".format(
-                        path=str(path),
-                        location=(
-                            "on local file-system"
-                            if location.local
-                            else f"on location {location}"
-                        ),
-                    )
+) -> None:
+    await asyncio.gather(
+        *(
+            asyncio.create_task(
+                _create_remote_directory(
+                    context=context, location=location, path=path, relpath=relpath
                 )
-            tasks.append(
-                asyncio.create_task(path.mkdir(mode=0o777, parents=True, exist_ok=True))
             )
-            await _register_path(
-                context=context,
-                connector=context.deployment_manager.get_connector(location.deployment),
-                location=location,
-                path=str(path),
-                relpath=relpath,
-            )
-    await asyncio.gather(*tasks)
+            for location in locations
+        )
+    )
 
 
 def eval_expression(
@@ -1246,25 +1291,17 @@ async def write_remote_file(
     path: str,
     relpath: str,
 ):
-    for location in locations:
-        path = StreamFlowPath(path, context=context, location=location)
-        if not await path.exists():
-            if logger.isEnabledFor(logging.INFO):
-                logger.info(
-                    "Creating {path} {location}".format(
-                        path=str(path),
-                        location=(
-                            "on local file-system"
-                            if location.local
-                            else f"on location {location}"
-                        ),
-                    )
+    await asyncio.gather(
+        *(
+            asyncio.create_task(
+                _write_remote_file(
+                    context=context,
+                    location=location,
+                    content=content,
+                    path=path,
+                    relpath=relpath,
                 )
-            await path.write_text(content)
-            await _register_path(
-                context=context,
-                connector=context.deployment_manager.get_connector(location.deployment),
-                location=location,
-                path=str(path),
-                relpath=relpath,
             )
+            for location in locations
+        )
+    )
