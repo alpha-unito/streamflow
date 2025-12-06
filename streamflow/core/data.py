@@ -4,13 +4,11 @@ import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import MutableSequence
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, AnyStr, Generic, Protocol, TypeVar
 
 from streamflow.core.context import SchemaEntity
 
 if TYPE_CHECKING:
-    from typing import Any
-
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.deployment import ExecutionLocation
 
@@ -112,15 +110,24 @@ class DataManager(SchemaEntity):
     ) -> None: ...
 
 
+T = TypeVar("T", bytes, str)
+
+
+class Stream(Protocol[T], Generic[T]):
+    async def close(self) -> None: ...
+    async def read(self, size: int | None = None) -> T: ...
+    async def write(self, data: T) -> None: ...
+
+
 class StreamWrapper(ABC):
-    def __init__(self, stream: Any):
-        self.stream: Any = stream
+    def __init__(self, stream: Stream):
+        self.stream: Stream = stream
 
     @abstractmethod
     async def close(self) -> None: ...
 
     @abstractmethod
-    async def read(self, size: int | None = None): ...
+    async def read(self, size: int | None = None) -> AnyStr: ...
 
     @abstractmethod
-    async def write(self, data: Any): ...
+    async def write(self, data: AnyStr): ...

@@ -165,7 +165,7 @@ class DefaultDeploymentManager(DeploymentManager):
         self.dependency_graph[deployment_name].add(deployment_name)
 
     def get_connector(self, deployment_name: str) -> Connector | None:
-        return self.deployments_map.get(deployment_name, None)
+        return self.deployments_map.get(deployment_name)
 
     @classmethod
     def get_schema(cls) -> str:

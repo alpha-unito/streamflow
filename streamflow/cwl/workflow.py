@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import MutableMapping, MutableSet
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, AsyncContextManager, cast
 
 from rdflib import Graph
@@ -26,7 +27,12 @@ class CWLOutputPathContextManager(AsyncContextManager[StreamFlowPath]):
     async def __aenter__(self):
         return self.path
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ):
         # Notify that the operation has been completed
         if self.event is not None:
             self.event.set()

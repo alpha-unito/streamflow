@@ -7,7 +7,7 @@ from collections.abc import Iterable, MutableSequence, MutableSet
 from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import RecoveryPolicy
+from streamflow.core.recovery import RecoveryPolicy, TokenAvailability
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
@@ -16,7 +16,6 @@ from streamflow.recovery.utils import (
     DirectGraph,
     GraphMapper,
     ProvenanceGraph,
-    TokenAvailability,
     create_graph_mapper,
 )
 from streamflow.workflow.executor import StreamFlowExecutor

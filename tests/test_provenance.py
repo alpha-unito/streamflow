@@ -39,7 +39,7 @@ from tests.utils.workflow import (
 
 
 @pytest.mark.asyncio
-async def test_scatter_step(context: StreamFlowContext):
+async def test_scatter_step(context: StreamFlowContext) -> None:
     """Test token provenance for ScatterStep"""
     workflow, (in_port, out_port) = await create_workflow(context)
     token_list = [ListToken([Token("a"), Token("b"), Token("c")])]
@@ -78,7 +78,7 @@ async def test_scatter_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_deploy_step(context: StreamFlowContext):
+async def test_deploy_step(context: StreamFlowContext) -> None:
     """Test token provenance for DeployStep"""
     workflow, _ = await create_workflow(context, num_port=0)
     step = create_deploy_step(workflow)
@@ -96,7 +96,7 @@ async def test_deploy_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_schedule_step(context: StreamFlowContext):
+async def test_schedule_step(context: StreamFlowContext) -> None:
     """Test token provenance for ScheduleStep"""
     workflow, _ = await create_workflow(context, num_port=0)
     deploy_step = create_deploy_step(workflow)
@@ -125,7 +125,7 @@ async def test_schedule_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_gather_step(context: StreamFlowContext):
+async def test_gather_step(context: StreamFlowContext) -> None:
     """Test token provenance for GatherStep"""
     workflow, (in_port, out_port, size_port) = await create_workflow(
         context, num_port=3
@@ -155,7 +155,7 @@ async def test_gather_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_gather_step_no_size(context: StreamFlowContext):
+async def test_gather_step_no_size(context: StreamFlowContext) -> None:
     """Test token provenance for GatherStep without size token"""
     workflow, (in_port, out_port, size_port) = await create_workflow(
         context, num_port=3
@@ -175,7 +175,7 @@ async def test_gather_step_no_size(context: StreamFlowContext):
         token_list=token_list,
     )
     assert len(out_port.token_list) == 2
-    size_token = cast(GatherStep, gather_step).size_map[base_tag]
+    size_token = gather_step.size_map[base_tag]
     await verify_dependency_tokens(
         token=out_port.token_list[0],
         port=out_port,
@@ -185,7 +185,7 @@ async def test_gather_step_no_size(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_combinator_step_dot_product(context: StreamFlowContext):
+async def test_combinator_step_dot_product(context: StreamFlowContext) -> None:
     """Test token provenance for DotProductCombinator"""
     workflow, (in_port, out_port, in_port_2, out_port_2) = await create_workflow(
         context, num_port=4
@@ -233,7 +233,7 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_combinator_step_cartesian_product(context: StreamFlowContext):
+async def test_combinator_step_cartesian_product(context: StreamFlowContext) -> None:
     """Test token provenance for CartesianProductCombinator"""
     workflow, (in_port, out_port, in_port_2, out_port_2) = await create_workflow(
         context, num_port=4
@@ -284,7 +284,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_loop_combinator_step(context: StreamFlowContext):
+async def test_loop_combinator_step(context: StreamFlowContext) -> None:
     """Test token provenance for LoopCombinator"""
     workflow, (in_port, out_port, in_port_2, out_port_2) = await create_workflow(
         context, num_port=4
@@ -330,7 +330,7 @@ async def test_loop_combinator_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_loop_termination_combinator(context: StreamFlowContext):
+async def test_loop_termination_combinator(context: StreamFlowContext) -> None:
     """Test token provenance for LoopTerminationCombinator"""
     workflow, (in_port, out_port) = await create_workflow(context, num_port=2)
     step_name = utils.random_name()

@@ -2,7 +2,7 @@ import asyncio
 import itertools
 import os
 import posixpath
-from collections.abc import MutableSequence
+from collections.abc import Iterable
 from typing import cast
 
 import pytest
@@ -211,7 +211,7 @@ async def test_initial_workdir(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("file_type", ("file", "directory"))
 async def test_creating_file(
-    chosen_deployment_types: MutableSequence[str],
+    chosen_deployment_types: Iterable[str],
     context: StreamFlowContext,
     file_type: str,
 ) -> None:

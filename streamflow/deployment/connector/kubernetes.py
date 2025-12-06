@@ -13,6 +13,7 @@ from importlib.resources import files
 from math import ceil, floor
 from pathlib import Path
 from shutil import which
+from types import TracebackType
 from typing import Any, AsyncContextManager, cast
 
 import yaml
@@ -37,12 +38,12 @@ from streamflow.core.exception import (
 )
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
-from streamflow.deployment.aiotarstream import BaseStreamWrapper
 from streamflow.deployment.connector.base import (
     BaseConnector,
     copy_remote_to_remote,
     copy_same_connector,
 )
+from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -143,7 +144,12 @@ class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]
         self.response = KubernetesResponseWrapper(await response.__aenter__())
         return self.response
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ):
         if self.response:
             await self.response.close()
 

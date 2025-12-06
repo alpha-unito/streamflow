@@ -10,7 +10,7 @@ import inspect
 
 __all__ = ["cached", "cachedmethod"]
 
-from contextlib import AbstractContextManager
+from contextlib import AbstractAsyncContextManager, suppress
 from typing import Any
 
 import cachetools
@@ -20,7 +20,7 @@ import cachetools
 def cached(
     cache: cachetools.Cache,
     key=cachetools.keys.hashkey,
-    lock: AbstractContextManager[Any, bool | None] | None = None,
+    lock: AbstractAsyncContextManager[Any, bool | None] | None = None,
 ):
     """
     Decorator to wrap a function or a coroutine with a memoizing callable
@@ -42,26 +42,20 @@ def cached(
 
                 async def wrapper(*args, **kwargs):
                     k = key(*args, **kwargs)
-                    try:
+                    with suppress(KeyError):
                         return cache[k]
-                    except KeyError:
-                        pass  # key not found
                     v = await func(*args, **kwargs)
-                    try:
+                    with suppress(ValueError):
                         cache[k] = v
-                    except ValueError:
-                        pass  # value too large
                     return v
 
             else:
 
                 async def wrapper(*args, **kwargs):
                     k = key(*args, **kwargs)
-                    try:
+                    with suppress(KeyError):
                         async with lock:
                             return cache[k]
-                    except KeyError:
-                        pass  # key not found
                     v = await func(*args, **kwargs)
                     # in case of a race, prefer the item already in the cache
                     try:
@@ -96,15 +90,11 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     if c is None:
                         return await method(self, *args, **kwargs)
                     k = key(*args, **kwargs)
-                    try:
+                    with suppress(KeyError):
                         return c[k]
-                    except KeyError:
-                        pass  # key not found
                     v = await method(self, *args, **kwargs)
-                    try:
+                    with suppress(ValueError):
                         c[k] = v
-                    except ValueError:
-                        pass  # value too large
                     return v
 
             else:
@@ -114,11 +104,9 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     if c is None:
                         return await method(self, *args, **kwargs)
                     k = key(*args, **kwargs)
-                    try:
+                    with suppress(KeyError):
                         async with lock(self):
                             return c[k]
-                    except KeyError:
-                        pass  # key not found
                     v = await method(self, *args, **kwargs)
                     # in case of a race, prefer the item already in the cache
                     try:

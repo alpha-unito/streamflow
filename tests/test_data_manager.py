@@ -59,7 +59,7 @@ def dst_connector(context, dst_location) -> Connector:
 @pytest.mark.asyncio
 async def test_data_locations(
     context, src_connector, src_location, dst_connector, dst_location
-):
+) -> None:
     """Test the existence of data locations after the transfer data"""
     src_path = StreamFlowPath(
         tempfile.gettempdir() if src_location.local else "/tmp",
@@ -159,7 +159,7 @@ async def test_invalidate_location(
     src_connector: Connector,
     src_location: ExecutionLocation,
     depth: str,
-):
+) -> None:
     """Test the invalidation of a location"""
     src_path = StreamFlowPath(
         tempfile.gettempdir() if src_location.local else "/tmp",

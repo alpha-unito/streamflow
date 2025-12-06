@@ -14,10 +14,11 @@ from asyncssh import SSHClient, SSHClientConnection
 from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware
-from streamflow.deployment.connector import LocalConnector, SSHConnector
 from streamflow.deployment.connector.base import BaseConnector
+from streamflow.deployment.connector.local import LocalConnector
 from streamflow.deployment.connector.ssh import (
     SSHConfig,
+    SSHConnector,
     SSHContext,
     get_param_from_file,
     parse_hostname,
@@ -252,7 +253,7 @@ class FailureConnector(Connector):
         self,
         location: ExecutionLocation,
         command: MutableSequence[str],
-        environment: MutableMapping[str, str] = None,
+        environment: MutableMapping[str, str] | None = None,
         workdir: str | None = None,
         stdin: int | str | None = None,
         stdout: int | str = asyncio.subprocess.STDOUT,
@@ -284,7 +285,7 @@ class ParameterizableHardwareConnector(LocalConnector):
         super().__init__(deployment_name, config_dir, transferBufferSize)
         self.hardware = None
 
-    def set_hardware(self, hardware: Hardware):
+    def set_hardware(self, hardware: Hardware) -> None:
         self.hardware = hardware
 
     async def get_available_locations(
@@ -321,7 +322,7 @@ class SSHChannelErrorContext(SSHContext):
             return None
         (hostname, port) = parse_hostname(config.hostname)
 
-        def get_client_factory():
+        def get_client_factory() -> SSHChannelErrorClient:
             return SSHChannelErrorClient(config.connector)
 
         return await asyncssh.connect(
