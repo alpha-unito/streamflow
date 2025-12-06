@@ -5,12 +5,13 @@ import logging
 import os
 import posixpath
 import urllib.parse
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Mapping, MutableMapping, MutableSequence, Sequence
 from pathlib import Path, PurePosixPath
-from typing import Any, cast, get_args
+from typing import Any, cast
 
 import cwl_utils.parser
 import cwl_utils.parser.utils
+import cwl_utils.types
 from schema_salad.exceptions import ValidationException
 
 from streamflow.config.config import WorkflowConfig
@@ -33,7 +34,7 @@ from streamflow.core.processor import (
     UnionCommandOutputProcessor,
     UnionTokenProcessor,
 )
-from streamflow.core.utils import random_name
+from streamflow.core.utils import flatten_list, random_name
 from streamflow.core.workflow import (
     CommandTokenProcessor,
     Port,
@@ -60,7 +61,6 @@ from streamflow.cwl.processor import (
 )
 from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
 from streamflow.cwl.requirement.docker.translator import (
-    CWLDockerTranslator,
     CWLDockerTranslatorConfig,
 )
 from streamflow.cwl.step import (
@@ -127,17 +127,17 @@ def _adjust_default_ports(
     transformer_prefix: str,
     dependent_ports: MutableSequence[str] | None = None,
 ) -> None:
-    dependent_ports = dependent_ports or {}
+    dependent_ports = dependent_ports or []
     if filtered_ports := {
         port_name: port
         for port_name, port in input_ports.items()
         if port_name not in default_ports.keys() and port_name not in dependent_ports
     }:
         for default_name in default_ports.keys():
-            transformer = workflow.steps.get(
+            transformer = workflow.steps[
                 posixpath.join(step_name, default_name)
                 + f"-{transformer_prefix}-default-transformer"
-            )
+            ]
             for port_name, port in filtered_ports.items():
                 transformer.add_input_port(
                     (
@@ -184,8 +184,9 @@ def _create_command(
             for a in (cwl_element.arguments or [])
         ],
         success_codes=cwl_element.successCodes,
-        failure_codes=(cwl_element.permanentFailCodes or []).extend(
-            cwl_element.permanentFailCodes or []
+        failure_codes=(
+            (cwl_element.permanentFailCodes or [])
+            + (cwl_element.temporaryFailCodes or [])
         )
         or None,
         is_shell_command=is_shell_command,
@@ -231,9 +232,7 @@ def _create_command_output_processor(
         | cwl_utils.parser.InputSchema
         | cwl_utils.parser.OutputSchema
         | MutableSequence[
-            str,
-            cwl_utils.parser.OutputSchema,
-            cwl_utils.parser.InputSchema,
+            str | cwl_utils.parser.OutputSchema | cwl_utils.parser.InputSchema,
         ]
     ),
     cwl_element: (
@@ -248,7 +247,7 @@ def _create_command_output_processor(
     single: bool = True,
 ) -> CommandOutputProcessor:
     # Array type: -> single is False
-    if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
+    if isinstance(port_type, cwl_utils.parser.ArraySchema):
         return _create_command_output_processor(
             port_name=port_name,
             workflow=workflow,
@@ -262,7 +261,7 @@ def _create_command_output_processor(
             single=False,
         )
     # Enum type: -> create command output processor
-    elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
+    elif isinstance(port_type, cwl_utils.parser.EnumSchema):
         # Process InlineJavascriptRequirement
         requirements = context["hints"] | context["requirements"]
         expression_lib, full_js = _process_javascript_requirement(requirements)
@@ -308,7 +307,7 @@ def _create_command_output_processor(
                 optional=optional,
             )
     # Record type: -> ObjectCommandOutputProcessor
-    elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
+    elif isinstance(port_type, cwl_utils.parser.RecordSchema):
         # Process InlineJavascriptRequirement
         requirements = context["hints"] | context["requirements"]
         expression_lib, full_js = _process_javascript_requirement(requirements)
@@ -316,6 +315,7 @@ def _create_command_output_processor(
         if (type_name := getattr(port_type, "name", port_name)).startswith("_:"):
             type_name = port_name
         record_name_prefix = utils.get_name(posixpath.sep, posixpath.sep, type_name)
+        output_binding = _get_output_binding(cwl_element)
         return CWLObjectCommandOutputProcessor(
             name=port_name,
             workflow=workflow,
@@ -341,11 +341,7 @@ def _create_command_output_processor(
             },
             expression_lib=expression_lib,
             full_js=full_js,
-            output_eval=(
-                cwl_element.outputBinding.outputEval
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
+            output_eval=output_binding.outputEval if output_binding else None,
             single=single,
         )
     elif isinstance(port_type, MutableSequence):
@@ -421,7 +417,7 @@ def _create_command_output_processor(
             else:
                 return processors[0]
     # Complex type -> Extract from schema definitions and propagate
-    elif "#" in port_type:
+    elif isinstance(port_type, str) and "#" in port_type:
         return _create_command_output_processor(
             port_name=port_name,
             workflow=workflow,
@@ -461,7 +457,7 @@ def _get_command_token_processor(
         if token_type == "int"  # nosec
         else "double" if token_type == "float" else token_type  # nosec
     )
-    if isinstance(binding, get_args(cwl_utils.parser.CommandLineBinding)):
+    if isinstance(binding, cwl_utils.parser.CommandLineBinding):
         return CWLCommandTokenProcessor(
             name=input_name,
             processor=processor,
@@ -481,7 +477,7 @@ def _get_command_token_processor(
             expression=binding,
             token_type=(
                 token_type.save()
-                if isinstance(token_type, get_args(cwl_utils.parser.Saveable))
+                if isinstance(token_type, cwl_utils.parser.Saveable)
                 else token_type
             ),
         )
@@ -494,10 +490,10 @@ def _get_command_token_processor_from_input(
     is_shell_command: bool = False,
     schema_def_types: MutableMapping[str, Any] | None = None,
 ) -> CommandTokenProcessor:
-    processor = None
+    processor: CommandTokenProcessor | None = None
     command_line_binding = cwl_element.inputBinding
     # Array type: -> CWLMapCommandToken
-    if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
+    if isinstance(port_type, cwl_utils.parser.ArraySchema):
         processor = CWLMapCommandTokenProcessor(
             name=input_name,
             processor=_get_command_token_processor_from_input(
@@ -509,7 +505,7 @@ def _get_command_token_processor_from_input(
             ),
         )
     # Enum type: -> substitute the type with string and reprocess
-    elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
+    elif isinstance(port_type, cwl_utils.parser.EnumSchema):
         return _get_command_token_processor_from_input(
             cwl_element=cwl_element,
             port_type="string",
@@ -518,12 +514,12 @@ def _get_command_token_processor_from_input(
             schema_def_types=schema_def_types,
         )
     # Object type: -> CWLObjectCommandToken
-    elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
+    elif isinstance(port_type, cwl_utils.parser.RecordSchema):
         if (type_name := getattr(port_type, "name", input_name)).startswith("_:"):
             type_name = input_name
         record_name_prefix = utils.get_name(posixpath.sep, posixpath.sep, type_name)
         processors = {}
-        for el in port_type.fields:
+        for el in port_type.fields or []:
             key = utils.get_name("", record_name_prefix, el.name)
             processors[key] = _get_command_token_processor_from_input(
                 cwl_element=el,
@@ -634,6 +630,7 @@ def _create_list_merger(
         input_port_name = _get_source_name(input_port_name)
         combinator.add_input_port(input_port_name, port)
         combinator.combinator.add_item(input_port_name)
+    transformer: Transformer
     match pick_value:
         case "first_non_null":
             combinator.add_output_port(output_port_name, workflow.create_port())
@@ -775,14 +772,14 @@ def _create_nested_size_tag(
 def _create_residual_combinator(
     workflow: Workflow,
     step_name: str,
-    inner_combinator: Combinator,
+    inner_combinator: Combinator | None,
     inner_inputs: MutableSequence[str],
     input_ports: MutableMapping[str, Port],
 ) -> Combinator:
     dot_product_combinator = DotProductCombinator(
         workflow=workflow, name=step_name + "-dot-product-combinator"
     )
-    if inner_combinator:
+    if inner_combinator is not None:
         dot_product_combinator.add_combinator(
             inner_combinator, inner_combinator.get_items(recursive=True)
         )
@@ -798,10 +795,17 @@ def _create_residual_combinator(
 def _create_token_processor(
     port_name: str,
     workflow: CWLWorkflow,
-    port_type: Any,
+    port_type: (
+        cwl_utils.parser.utils.InputTypeSchemas
+        | cwl_utils.parser.utils.OutputTypeSchemas
+        | None
+    ),
     cwl_element: (
-        cwl_utils.parser.InputParameter
-        | cwl_utils.parser.OutputParameter
+        cwl_utils.parser.CommandInputParameter
+        | cwl_utils.parser.WorkflowInputParameter
+        | cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.ExpressionToolOutputParameter
+        | cwl_utils.parser.WorkflowOutputParameter
         | cwl_utils.parser.WorkflowStepInput
     ),
     cwl_name_prefix: str,
@@ -813,7 +817,7 @@ def _create_token_processor(
     only_propagate_secondary_files: bool = True,
 ) -> TokenProcessor:
     # Array type: -> MapTokenProcessor
-    if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
+    if isinstance(port_type, cwl_utils.parser.ArraySchema):
         return _create_token_processor_optional(
             processor=MapTokenProcessor(
                 name=port_name,
@@ -834,7 +838,7 @@ def _create_token_processor(
             optional=optional,
         )
     # Enum type: -> create output processor
-    elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
+    elif isinstance(port_type, cwl_utils.parser.EnumSchema):
         # Process InlineJavascriptRequirement
         requirements = context["hints"] | context["requirements"]
         expression_lib, full_js = _process_javascript_requirement(requirements)
@@ -860,7 +864,7 @@ def _create_token_processor(
             full_js=full_js,
         )
     # Record type: -> ObjectTokenProcessor
-    elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
+    elif isinstance(port_type, cwl_utils.parser.RecordSchema):
         if (type_name := getattr(port_type, "name", port_name)).startswith("_:"):
             type_name = cwl_name_prefix
         record_name_prefix = utils.get_name(posixpath.sep, posixpath.sep, type_name)
@@ -885,7 +889,7 @@ def _create_token_processor(
                         force_deep_listing=force_deep_listing,
                         only_propagate_secondary_files=only_propagate_secondary_files,
                     )
-                    for port_type in port_type.fields
+                    for port_type in port_type.fields or []
                 },
             ),
             optional=optional,
@@ -966,7 +970,7 @@ def _create_token_processor(
             else:
                 return processors[0]
     # Complex type -> Extract from schema definitions and propagate
-    elif "#" in port_type:
+    elif isinstance(port_type, str) and "#" in port_type:
         return _create_token_processor(
             port_name=port_name,
             workflow=workflow,
@@ -980,7 +984,7 @@ def _create_token_processor(
             only_propagate_secondary_files=only_propagate_secondary_files,
         )
     # Simple type -> Create typed processor
-    else:
+    elif isinstance(port_type, str):
         return _create_token_processor_optional(
             processor=_create_token_processor_base(
                 port_name=port_name,
@@ -994,15 +998,22 @@ def _create_token_processor(
             ),
             optional=optional,
         )
+    else:
+        raise WorkflowDefinitionException(
+            f"Unexpected type {port_type} for port {port_name}"
+        )
 
 
 def _create_token_processor_base(
     port_name: str,
     workflow: CWLWorkflow,
-    port_type: Any,
+    port_type: str | MutableSequence[str],
     cwl_element: (
-        cwl_utils.parser.InputParameter
-        | cwl_utils.parser.OutputParameter
+        cwl_utils.parser.CommandInputParameter
+        | cwl_utils.parser.WorkflowInputParameter
+        | cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.ExpressionToolOutputParameter
+        | cwl_utils.parser.WorkflowOutputParameter
         | cwl_utils.parser.WorkflowStepInput
     ),
     context: MutableMapping[str, Any],
@@ -1081,7 +1092,9 @@ def _create_token_transformer(
     name: str,
     port_name: str,
     workflow: CWLWorkflow,
-    cwl_element: cwl_utils.parser.InputParameter,
+    cwl_element: (
+        cwl_utils.parser.CommandInputParameter | cwl_utils.parser.WorkflowInputParameter
+    ),
     cwl_name_prefix: str,
     schema_def_types: MutableMapping[str, Any],
     context: MutableMapping[str, Any],
@@ -1158,45 +1171,82 @@ def _get_hardware_requirement(
 
 def _get_load_contents(
     port_description: (
-        cwl_utils.parser.InputParameter
-        | cwl_utils.parser.OutputParameter
+        cwl_utils.parser.CommandInputParameter
+        | cwl_utils.parser.WorkflowInputParameter
+        | cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.ExpressionToolOutputParameter
+        | cwl_utils.parser.OutputRecordField
+        | cwl_utils.parser.WorkflowOutputParameter
         | cwl_utils.parser.WorkflowStepInput
     ),
     only_input: bool = False,
 ) -> bool | None:
-    if getattr(port_description, "loadContents", None) is not None:
+    if (
+        isinstance(port_description, cwl_utils.parser.LoadContents)
+        and port_description.loadContents is not None
+    ):
         return port_description.loadContents
     elif (
-        getattr(port_description, "inputBinding", None)
-        and port_description.inputBinding.loadContents is not None
+        isinstance(
+            port_description,
+            cwl_utils.parser.CommandInputParameter
+            | cwl_utils.parser.WorkflowInputParameter,
+        )
+        and (input_binding := port_description.inputBinding) is not None
+        and not isinstance(input_binding, cwl_utils.parser.cwl_v1_0.InputBinding)
+        and input_binding.loadContents is not None
     ):
-        return port_description.inputBinding.loadContents
+        return input_binding.loadContents
     elif (
-        getattr(port_description, "outputBinding", None)
-        and port_description.outputBinding.loadContents is not None
+        (
+            isinstance(
+                port_description,
+                cwl_utils.parser.CommandOutputParameter
+                | cwl_utils.parser.OutputRecordField
+                | cwl_utils.parser.ExpressionToolOutputParameter,
+            )
+        )
+        and (output_binding := _get_output_binding(port_description)) is not None
+        and output_binding.loadContents is not None
         and not only_input
     ):
-        return port_description.outputBinding.loadContents
+        return output_binding.loadContents
     else:
         return None
 
 
 def _get_load_listing(
     port_description: (
-        cwl_utils.parser.InputParameter
-        | cwl_utils.parser.OutputParameter
+        cwl_utils.parser.CommandInputParameter
+        | cwl_utils.parser.WorkflowInputParameter
+        | cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.ExpressionToolOutputParameter
+        | cwl_utils.parser.OutputRecordField
+        | cwl_utils.parser.WorkflowOutputParameter
         | cwl_utils.parser.WorkflowStepInput
     ),
     context: MutableMapping[str, Any],
 ) -> LoadListing:
     requirements = context["hints"] | context["requirements"]
-    if getattr(port_description, "loadListing", None):
+    if (
+        isinstance(port_description, cwl_utils.parser.LoadContents)
+        and port_description.loadListing is not None
+    ):
         return LoadListing[port_description.loadListing]
     elif (
-        getattr(port_description, "outputBinding", None)
-        and getattr(port_description.outputBinding, "loadListing", None) is not None
+        (
+            isinstance(
+                port_description,
+                cwl_utils.parser.CommandOutputParameter
+                | cwl_utils.parser.OutputRecordField
+                | cwl_utils.parser.ExpressionToolOutputParameter,
+            )
+        )
+        and (output_binding := _get_output_binding(port_description)) is not None
+        and not isinstance(output_binding, cwl_utils.parser.cwl_v1_0.OutputBinding)
+        and output_binding.loadListing is not None
     ):
-        return LoadListing[port_description.outputBinding.loadListing]
+        return LoadListing[output_binding.loadListing]
     elif (
         "LoadListingRequirement" in requirements
         and requirements["LoadListingRequirement"].loadListing
@@ -1218,9 +1268,7 @@ def _get_loop(
         return {
             "loop": loop.loop,
             "outputMethod": (
-                loop.outputMethod == "all_iterations"
-                if loop.outputMethod == "all"
-                else "last_iteration"
+                "all_iterations" if loop.outputMethod == "all" else "last_iteration"
             ),
             "when": loop.loopWhen,
         }
@@ -1232,6 +1280,26 @@ def _get_loop(
         }
     else:
         return None
+
+
+def _get_output_binding(
+    cwl_element: (
+        cwl_utils.parser.CommandOutputParameter
+        | cwl_utils.parser.OutputRecordField
+        | cwl_utils.parser.ExpressionToolOutputParameter
+    ),
+) -> cwl_utils.parser.CommandOutputBinding:
+    return (
+        cwl_element.outputBinding
+        if isinstance(
+            cwl_element,
+            cwl_utils.parser.CommandOutputParameter
+            | cwl_utils.parser.CommandOutputRecordField
+            | cwl_utils.parser.cwl_v1_0.OutputRecordField
+            | cwl_utils.parser.cwl_v1_0.ExpressionToolOutputParameter,
+        )
+        else None
+    )
 
 
 def _get_path(element_id: str) -> str:
@@ -1261,24 +1329,33 @@ def _get_schema_def_types(
 
 
 def _get_secondary_files(
-    cwl_element, default_required: bool
+    cwl_element: (
+        str
+        | cwl_utils.parser.SecondaryFileSchema
+        | Sequence[str | cwl_utils.parser.SecondaryFileSchema]
+        | None
+    ),
+    default_required: bool,
 ) -> MutableSequence[SecondaryFile]:
-    if not cwl_element:
+    if cwl_element is None:
         return []
-    secondary_files = []
-    for sf in cwl_element:
-        if isinstance(sf, str):
-            secondary_files.append(SecondaryFile(pattern=sf, required=default_required))
-        elif isinstance(sf, get_args(cwl_utils.parser.SecondaryFileSchema)):
-            secondary_files.append(
-                SecondaryFile(
-                    pattern=sf.pattern,
-                    required=(
-                        sf.required if sf.required is not None else default_required
-                    ),
-                )
+    elif isinstance(cwl_element, str):
+        return [SecondaryFile(pattern=cwl_element, required=default_required)]
+    elif isinstance(cwl_element, cwl_utils.parser.SecondaryFileSchema):
+        return [
+            SecondaryFile(
+                pattern=cwl_element.pattern,
+                required=(
+                    cwl_element.required
+                    if cwl_element.required is not None
+                    else default_required
+                ),
             )
-    return secondary_files
+        ]
+    else:
+        return flatten_list(
+            [_get_secondary_files(sf, default_required) for sf in cwl_element]
+        )
 
 
 def _inject_value(value: Any):
@@ -1289,51 +1366,51 @@ def _inject_value(value: Any):
             return value
         else:
             return {k: _inject_value(v) for k, v in value.items()}
-    elif isinstance(value, get_args(cwl_utils.parser.File)):
-        dict_value = {"class": value.class_}
+    elif isinstance(value, cwl_utils.parser.File):
+        file_dict = cwl_utils.types.CWLFileType(**{"class": "File"})
         if value.basename is not None:
-            dict_value["basename"] = value.basename
+            file_dict["basename"] = value.basename
         if value.checksum is not None:
-            dict_value["checksum"] = value.checksum
+            file_dict["checksum"] = value.checksum
         if value.contents is not None:
-            dict_value["contents"] = value.contents
+            file_dict["contents"] = value.contents
         if value.dirname is not None:
-            dict_value["dirname"] = value.dirname
+            file_dict["dirname"] = value.dirname
         if value.format is not None:
-            dict_value["format"] = value.format
+            file_dict["format"] = value.format
         if value.location is not None:
-            dict_value["location"] = value.location
+            file_dict["location"] = value.location
         if value.nameext is not None:
-            dict_value["nameext"] = value.nameext
+            file_dict["nameext"] = value.nameext
         if value.nameroot is not None:
-            dict_value["nameroot"] = value.nameroot
+            file_dict["nameroot"] = value.nameroot
         if value.path is not None:
-            dict_value["path"] = value.path
+            file_dict["path"] = value.path
         if value.secondaryFiles is not None:
-            dict_value["secondaryFiles"] = [
+            file_dict["secondaryFiles"] = [
                 _inject_value(sf) for sf in value.secondaryFiles
             ]
         if value.size is not None:
-            dict_value["size"] = value.size
-        return dict_value
-    elif isinstance(value, get_args(cwl_utils.parser.Directory)):
-        dict_value = {"class": value.class_}
+            file_dict["size"] = value.size
+        return file_dict
+    elif isinstance(value, cwl_utils.parser.Directory):
+        directory_dict = cwl_utils.types.CWLDirectoryType(**{"class": "Directory"})
         if value.basename is not None:
-            dict_value["basename"] = value.basename
+            directory_dict["basename"] = value.basename
         if value.listing is not None:
-            dict_value["listing"] = [_inject_value(sf) for sf in value.listing]
+            directory_dict["listing"] = [_inject_value(sf) for sf in value.listing]
         if value.location is not None:
-            dict_value["location"] = value.location
+            directory_dict["location"] = value.location
         if value.path is not None:
-            dict_value["path"] = value.path
-        return dict_value
-    elif isinstance(value, get_args(cwl_utils.parser.Dirent)):
-        dict_value = {"entry": value.entry}
+            directory_dict["path"] = value.path
+        return directory_dict
+    elif isinstance(value, cwl_utils.parser.Dirent):
+        dirent_dict = cwl_utils.types.DirentType(entry=value.entry)
         if value.entryname is not None:
-            dict_value["entryname"] = value.entryname
+            dirent_dict["entryname"] = value.entryname
         if value.writable is not None:
-            dict_value["writable"] = value.writable
-        return dict_value
+            dirent_dict["writable"] = value.writable
+        return dirent_dict
     else:
         return value
 
@@ -1344,9 +1421,7 @@ def _is_optional_port(
         | cwl_utils.parser.InputSchema
         | cwl_utils.parser.OutputSchema
         | MutableSequence[
-            str,
-            cwl_utils.parser.OutputSchema,
-            cwl_utils.parser.InputSchema,
+            str | cwl_utils.parser.OutputSchema | cwl_utils.parser.InputSchema
         ]
     ),
 ) -> bool:
@@ -1374,9 +1449,9 @@ def _process_docker_image(
 ) -> str:
     # Retrieve image
     if docker_requirement.dockerPull is not None:
-        return cast(str, docker_requirement.dockerPull)
+        return docker_requirement.dockerPull
     elif docker_requirement.dockerImageId is not None:
-        return cast(str, docker_requirement.dockerImageId)
+        return docker_requirement.dockerImageId
     else:
         raise WorkflowDefinitionException(
             "DockerRequirements without `dockerPull` or `dockerImageId` are not supported yet"
@@ -1401,13 +1476,10 @@ def _process_docker_requirement(
             f"Container type `{config.type}` not supported"
         )
     translator_type = cwl_docker_translator_classes[config.type]
-    translator = cast(
-        CWLDockerTranslator,
-        translator_type(
-            config_dir=config_dir,
-            wrapper=(config.wrapper if target.deployment.type != "local" else False),
-            **config.config,
-        ),
+    translator = translator_type(
+        config_dir=config_dir,
+        wrapper=(config.wrapper if target.deployment.type != "local" else False),
+        **config.config,
     )
     return translator.get_target(
         image=_process_docker_image(docker_requirement=docker_requirement),
@@ -1462,7 +1534,7 @@ def _process_loop_transformers(
 def _process_transformers(
     step_name: str,
     input_ports: MutableMapping[str, Port],
-    transformers: MutableMapping[str, Transformer],
+    transformers: Mapping[str, Transformer],
     input_dependencies: MutableMapping[str, set[str]],
 ) -> MutableMapping[str, Port]:
     new_input_ports = {}
@@ -1518,9 +1590,7 @@ def create_command_output_processor_base(
     requirements = context["hints"] | context["requirements"]
     expression_lib, full_js = _process_javascript_requirement(requirements)
     # Create OutputProcessor
-    if isinstance(
-        cwl_element, get_args(cwl_utils.parser.ExpressionToolOutputParameter)
-    ):
+    if isinstance(cwl_element, cwl_utils.parser.ExpressionToolOutputParameter):
         return CWLExpressionToolOutputProcessor(
             name=port_name,
             workflow=workflow,
@@ -1538,19 +1608,11 @@ def create_command_output_processor_base(
             expression_lib=expression_lib,
             file_format=getattr(cwl_element, "format", None),
             full_js=full_js,
-            glob=(
-                cwl_element.outputBinding.glob
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
+            glob=output_binding.glob if output_binding else None,
             load_contents=_get_load_contents(cwl_element),
             load_listing=_get_load_listing(cwl_element, context),
             optional=optional,
-            output_eval=(
-                cwl_element.outputBinding.outputEval
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
+            output_eval=output_binding.outputEval if output_binding else None,
             secondary_files=_get_secondary_files(
                 cwl_element=getattr(cwl_element, "secondaryFiles", None),
                 default_required=False,
@@ -1566,19 +1628,11 @@ def create_command_output_processor_base(
             token_type=port_type[0] if len(port_type) == 1 else port_type,
             expression_lib=expression_lib,
             full_js=full_js,
-            glob=(
-                cwl_element.outputBinding.glob
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
+            glob=output_binding.glob if output_binding else None,
             load_contents=_get_load_contents(cwl_element),
             load_listing=_get_load_listing(cwl_element, context),
             optional=optional,
-            output_eval=(
-                cwl_element.outputBinding.outputEval
-                if getattr(cwl_element, "outputBinding", None)
-                else None
-            ),
+            output_eval=output_binding.outputEval if output_binding else None,
             single=single,
         )
 
@@ -1615,7 +1669,7 @@ class CWLTranslator:
         self.deployment_map: MutableMapping[str, DeployStep] = {}
         self.gather_map: MutableMapping[str, str] = {}
         self.input_ports: MutableMapping[str, Port] = {}
-        self.output_ports: MutableMapping[str, str | Port] = {}
+        self.output_ports: MutableMapping[str, Port] = {}
         self.scatter: MutableMapping[str, Any] = {}
         self.workflow_config: WorkflowConfig = workflow_config
 
@@ -1680,7 +1734,10 @@ class CWLTranslator:
         self,
         workflow: Workflow,
         cwl_element: cwl_utils.parser.Process,
-        element_input: cwl_utils.parser.InputParameter,
+        element_input: (
+            cwl_utils.parser.CommandInputParameter
+            | cwl_utils.parser.WorkflowInputParameter
+        ),
         global_name: str,
         port_name: str,
         default_ports: MutableMapping[str, Port],
@@ -1695,7 +1752,7 @@ class CWLTranslator:
             # Insert default port
             transformer_suffix = (
                 "-wf-default-transformer"
-                if isinstance(cwl_element, get_args(cwl_utils.parser.Workflow))
+                if isinstance(cwl_element, cwl_utils.parser.Workflow)
                 else "-cmd-default-transformer"
             )
             input_port = self._handle_default_port(
@@ -1757,9 +1814,9 @@ class CWLTranslator:
         self,
         workflow: Workflow,
         global_name: str,
-        port_name,
+        port_name: str,
         port: Port,
-        output_directory: str,
+        output_directory: str | None,
         value: Any,
     ) -> None:
         # Retrieve the DeployStep for the port target
@@ -1784,9 +1841,15 @@ class CWLTranslator:
             job_prefix=f"{global_name}-injector",
             connector_ports={target.deployment.name: deploy_step.get_output_port()},
             binding_config=binding_config,
-            input_directory=target.workdir or self.output_directory,
-            output_directory=target.workdir or self.output_directory,
-            tmp_directory=target.workdir or self.output_directory,
+            input_directory=(
+                target.workdir if target.workdir is not None else self.output_directory
+            ),
+            output_directory=(
+                target.workdir if target.workdir is not None else self.output_directory
+            ),
+            tmp_directory=(
+                target.workdir if target.workdir is not None else self.output_directory
+            ),
         )
         # Create a CWLInputInjector step to process the input
         injector_step = workflow.create_step(
@@ -1805,14 +1868,14 @@ class CWLTranslator:
         workflow.input_ports[port_name] = input_port.name
 
     def _inject_inputs(self, workflow: Workflow) -> None:
-        output_directory = None
-        if self.cwl_inputs:
-            # Compute output directory path
-            output_directory = os.path.dirname(self.cwl_inputs_path)
+        # Compute output directory path
+        output_directory = (
+            os.path.dirname(self.cwl_inputs_path) if self.cwl_inputs else None
+        )
         # Compute suffix
         default_suffix = (
             "-wf-default-transformer"
-            if isinstance(self.cwl_definition, get_args(cwl_utils.parser.Workflow))
+            if isinstance(self.cwl_definition, cwl_utils.parser.Workflow)
             else "-cmd-default-transformer"
         )
         # Process externally provided inputs
@@ -1846,6 +1909,7 @@ class CWLTranslator:
         cwl_element: (
             cwl_utils.parser.CommandLineTool
             | cwl_utils.parser.ExpressionTool
+            | cwl_utils.parser.Operation
             | cwl_utils.parser.Workflow
             | cwl_utils.parser.WorkflowStep
         ),
@@ -1866,19 +1930,23 @@ class CWLTranslator:
                     )
         for requirement in cwl_element.requirements or []:
             if requirement.class_ == "Loop":
-                if not isinstance(cwl_element, get_args(cwl_utils.parser.WorkflowStep)):
+                if not isinstance(cwl_element, cwl_utils.parser.WorkflowStep):
                     raise WorkflowDefinitionException(
                         "The `cwltool:Loop` clause is not compatible "
                         f"with the `{cwl_element.__class__.__name__}` class."
                     )
-                if (
-                    cast(cwl_utils.parser.ScatterWorkflowStep, cwl_element).scatter
-                    is not None
-                ):
+                if cwl_element.scatter is not None:
                     raise WorkflowDefinitionException(
                         "The `cwltool:Loop` clause is not compatible with the `scatter` directive."
                     )
-                if cwl_element.when is not None:
+                if (
+                    not isinstance(
+                        cwl_element,
+                        cwl_utils.parser.cwl_v1_0.WorkflowStep
+                        | cwl_utils.parser.cwl_v1_1.WorkflowStep,
+                    )
+                    and cwl_element.when is not None
+                ):
                     raise WorkflowDefinitionException(
                         "The `cwltool:Loop` clause is not compatible with the `when` directive."
                     )
@@ -1897,7 +1965,7 @@ class CWLTranslator:
                             requirement.class_
                         ] = requirement
         # Dispatch element
-        if isinstance(cwl_element, get_args(cwl_utils.parser.Workflow)):
+        if isinstance(cwl_element, cwl_utils.parser.Workflow):
             self._translate_workflow(
                 workflow=workflow,
                 cwl_element=cwl_element,
@@ -1905,7 +1973,7 @@ class CWLTranslator:
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix,
             )
-        elif isinstance(cwl_element, get_args(cwl_utils.parser.WorkflowStep)):
+        elif isinstance(cwl_element, cwl_utils.parser.WorkflowStep):
             self._translate_workflow_step(
                 workflow=workflow,
                 cwl_element=cwl_element,
@@ -1913,7 +1981,7 @@ class CWLTranslator:
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix,
             )
-        elif isinstance(cwl_element, get_args(cwl_utils.parser.CommandLineTool)):
+        elif isinstance(cwl_element, cwl_utils.parser.CommandLineTool):
             self._translate_command_line_tool(
                 workflow=workflow,
                 cwl_element=cwl_element,
@@ -1921,7 +1989,7 @@ class CWLTranslator:
                 name_prefix=name_prefix,
                 cwl_name_prefix=cwl_name_prefix,
             )
-        elif isinstance(cwl_element, get_args(cwl_utils.parser.ExpressionTool)):
+        elif isinstance(cwl_element, cwl_utils.parser.ExpressionTool):
             self._translate_command_line_tool(
                 workflow=workflow,
                 cwl_element=cwl_element,
@@ -1943,7 +2011,7 @@ class CWLTranslator:
         context: MutableMapping[str, Any],
         name_prefix: str,
         cwl_name_prefix: str,
-    ):
+    ) -> None:
         context["elements"][cwl_element.id] = cwl_element
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating {cwl_element.__class__.__name__} {name_prefix}")
@@ -2049,7 +2117,7 @@ class CWLTranslator:
             )
             # Add the output port as an input of the schedule step
             schedule_step.add_input_port(port_name, token_transformer.get_output_port())
-            if isinstance(cwl_element, get_args(cwl_utils.parser.CommandLineTool)):
+            if isinstance(cwl_element, cwl_utils.parser.CommandLineTool):
                 # Create a TransferStep
                 transfer_step = workflow.create_step(
                     cls=CWLTransferStep,
@@ -2062,7 +2130,7 @@ class CWLTranslator:
                 transfer_step.add_output_port(port_name, workflow.create_port())
                 # Connect the transfer step with the ExecuteStep
                 step.add_input_port(port_name, transfer_step.get_output_port(port_name))
-            elif isinstance(cwl_element, get_args(cwl_utils.parser.ExpressionTool)):
+            elif isinstance(cwl_element, cwl_utils.parser.ExpressionTool):
                 # Connect the token transformer step with the ExecuteStep
                 step.add_input_port(port_name, token_transformer.get_output_port())
             # Store input port and token transformer
@@ -2098,12 +2166,11 @@ class CWLTranslator:
                 port_target = None
             # In CWL <= v1.2, ExpressionTool output is never type-checked
             if isinstance(
-                cwl_element, get_args(cwl_utils.parser.ExpressionTool)
-            ) and context["version"] in [
-                "v1.0",
-                "v1.1",
-                "v1.2",
-            ]:
+                cwl_element,
+                cwl_utils.parser.cwl_v1_0.ExpressionTool
+                | cwl_utils.parser.cwl_v1_1.ExpressionTool
+                | cwl_utils.parser.cwl_v1_2.ExpressionTool,
+            ):
                 if isinstance(element_output.type_, MutableSequence):
                     port_type = element_output.type_
                     if "null" not in port_type:
@@ -2152,7 +2219,7 @@ class CWLTranslator:
                 port=output_port,
                 output_processor=output_processor,
             )
-        if isinstance(cwl_element, get_args(cwl_utils.parser.CommandLineTool)):
+        if isinstance(cwl_element, cwl_utils.parser.CommandLineTool):
             # Process command
             step.command = _create_command(
                 cwl_element=cwl_element,
@@ -2164,7 +2231,7 @@ class CWLTranslator:
             # Process ToolTimeLimit
             if "ToolTimeLimit" in requirements:
                 step.command.time_limit = requirements["ToolTimeLimit"].timelimit
-        elif isinstance(cwl_element, get_args(cwl_utils.parser.ExpressionTool)):
+        elif isinstance(cwl_element, cwl_utils.parser.ExpressionTool):
             step.command = CWLExpressionCommand(step, cwl_element.expression)
         # Add JS requirements
         step.command.expression_lib = expression_lib
@@ -2240,11 +2307,7 @@ class CWLTranslator:
                         full_js=full_js,
                         expression_lib=expression_lib,
                     ),
-                    resolve_dependencies(
-                        expression=secondary_file.required,
-                        full_js=full_js,
-                        expression_lib=expression_lib,
-                    ),
+                    secondary_file.required,
                 )
             input_dependencies[global_name] = set.union(
                 {global_name}, {posixpath.join(step_name, d) for d in local_deps}
@@ -2267,7 +2330,11 @@ class CWLTranslator:
             link_merge = element_output.linkMerge
             pick_value = (
                 None
-                if context["version"] in ["v1.0", "v1.1"]
+                if isinstance(
+                    element_output,
+                    cwl_utils.parser.cwl_v1_0.WorkflowOutputParameter
+                    | cwl_utils.parser.cwl_v1_1.WorkflowOutputParameter,
+                )
                 else element_output.pickValue
             )
             # If outputSource element is a list, the output element can depend on multiple ports
@@ -2370,7 +2437,7 @@ class CWLTranslator:
         # Extract JavaScript requirements
         expression_lib, full_js = _process_javascript_requirement(requirements)
         # Find scatter elements
-        if isinstance(cwl_element, get_args(cwl_utils.parser.ScatterWorkflowStep)):
+        if isinstance(cwl_element, cwl_utils.parser.ScatterWorkflowStep):
             if isinstance(cwl_element.scatter, str):
                 scatter_inputs = [
                     utils.get_name(step_name, cwl_step_name, cwl_element.scatter)
@@ -2398,7 +2465,7 @@ class CWLTranslator:
             context=context,
         )
         # If the inner command is a workflow, check if `SubworkflowFeatureRequirement` is defined
-        if isinstance(cwl_element, get_args(cwl_utils.parser.Workflow)):
+        if isinstance(cwl_element, cwl_utils.parser.Workflow):
             if "SubworkflowFeatureRequirement" not in requirements:
                 raise WorkflowDefinitionException(
                     "Workflow contains embedded workflow but "
@@ -2447,10 +2514,7 @@ class CWLTranslator:
         # If there are scatter inputs
         if scatter_inputs:
             # Retrieve scatter method (default to dotproduct)
-            scatter_method = (
-                cast(cwl_utils.parser.ScatterWorkflowStep, cwl_element).scatterMethod
-                or "dotproduct"
-            )
+            scatter_method = cwl_element.scatterMethod or "dotproduct"
             # If any scatter input is null, propagate an empty array on the output ports
             empty_scatter_conditional_step = workflow.create_step(
                 cls=CWLEmptyScatterConditionalStep,
@@ -2569,10 +2633,16 @@ class CWLTranslator:
         # Save input ports in the global map
         self.input_ports |= input_ports
         # Process condition
-        conditional_step = None
         cwl_condition = (
-            None if context["version"] in ["v1.0", "v1.1"] else cwl_element.when
+            None
+            if isinstance(
+                cwl_element,
+                cwl_utils.parser.cwl_v1_0.WorkflowStep
+                | cwl_utils.parser.cwl_v1_1.WorkflowStep,
+            )
+            else cwl_element.when
         )
+        conditional_step: CWLConditionalStep | None
         if cwl_condition is not None:
             if loop is not None:
                 # Create loop conditional step
@@ -2604,6 +2674,8 @@ class CWLTranslator:
                     conditional_step.add_output_port(
                         port_name, self.input_ports[global_name]
                     )
+        else:
+            conditional_step = None
         # Process outputs
         external_output_ports = {}
         internal_output_ports = {}
@@ -2618,12 +2690,7 @@ class CWLTranslator:
             # If there are scatter inputs
             if scatter_inputs:
                 # Retrieve scatter method (default to dotproduct)
-                scatter_method = (
-                    cast(
-                        cwl_utils.parser.ScatterWorkflowStep, cwl_element
-                    ).scatterMethod
-                    or "dotproduct"
-                )
+                scatter_method = cwl_element.scatterMethod or "dotproduct"
                 # Perform a gather on the outputs
                 if scatter_method == "nested_crossproduct":
                     gather_steps = []
@@ -2696,8 +2763,8 @@ class CWLTranslator:
                     port_name, external_output_ports[global_name]
                 )
             # Add skip ports if there is a condition without a loop
-            if cwl_condition and loop is None:
-                cast(CWLConditionalStep, conditional_step).add_skip_port(
+            if conditional_step is not None and loop is None:
+                conditional_step.add_skip_port(
                     port_name, internal_output_ports[global_name]
                 )
         # Process loop outputs
@@ -2858,7 +2925,7 @@ class CWLTranslator:
         context: MutableMapping[str, Any],
         element_id: str,
         element_input: cwl_utils.parser.WorkflowStepInput,
-        element_source: str,
+        element_source: str | Sequence[str] | None,
         name_prefix: str,
         cwl_name_prefix: str,
         requirements: MutableMapping[str, Any],
@@ -2928,13 +2995,36 @@ class CWLTranslator:
             link_merge = element_input.linkMerge
             pick_value = (
                 None
-                if context["version"] in ["v1.0", "v1.1"]
-                else cast(
-                    cwl_utils.parser.cwl_v1_2.WorkflowStepInput, element_input
-                ).pickValue
+                if isinstance(
+                    element_input,
+                    cwl_utils.parser.cwl_v1_0.WorkflowStepInput
+                    | cwl_utils.parser.cwl_v1_1.WorkflowStepInput,
+                )
+                else element_input.pickValue
             )
-            # If source element is a list, the input element can depend on multiple ports
-            if isinstance(element_source, MutableSequence):
+            # If source element is a string, the input element depends on a single output port
+
+            if isinstance(element_source, str):
+                source_name = utils.get_name(
+                    name_prefix, cwl_name_prefix, element_source
+                )
+                source_port = self._get_source_port(workflow, source_name)
+                # If there is a default value, construct a default port block
+                if element_input.default is not None:
+                    # Insert default port
+                    source_port = self._handle_default_port(
+                        global_name=global_name,
+                        port_name=port_name,
+                        transformer_suffix=inner_steps_prefix
+                        + "-step-default-transformer",
+                        port=source_port,
+                        workflow=workflow,
+                        value=element_input.default,
+                    )
+                # Add source port to the list of input ports for the current step
+                input_ports[global_name] = source_port
+            # Otherwise, the input element can depend on multiple ports
+            else:
                 # If the list contains only one element and no `linkMerge` or `pickValue`
                 # are specified, treat it as a singleton
                 if (
@@ -2988,26 +3078,6 @@ class CWLTranslator:
                     )
                     # Add ListMergeCombinator output port to the list of input ports for the current step
                     input_ports[global_name] = list_merger.get_output_port()
-            # Otherwise, the input element depends on a single output port
-            else:
-                source_name = utils.get_name(
-                    name_prefix, cwl_name_prefix, cast(str, element_source)
-                )
-                source_port = self._get_source_port(workflow, source_name)
-                # If there is a default value, construct a default port block
-                if element_input.default is not None:
-                    # Insert default port
-                    source_port = self._handle_default_port(
-                        global_name=global_name,
-                        port_name=port_name,
-                        transformer_suffix=inner_steps_prefix
-                        + "-step-default-transformer",
-                        port=source_port,
-                        workflow=workflow,
-                        value=element_input.default,
-                    )
-                # Add source port to the list of input ports for the current step
-                input_ports[global_name] = source_port
         # Otherwise, search for default values
         elif element_input.default is not None:
             default_ports[global_name] = self._handle_default_port(
@@ -3053,13 +3123,13 @@ class CWLTranslator:
             relpath=os.path.basename(path),
         )
         if self.cwl_inputs:
-            path = self.cwl_inputs_path
+            inputs_path = self.cwl_inputs_path
             self.context.data_manager.register_path(
                 location=ExecutionLocation(
                     deployment=deployment_name, local=True, name="__LOCAL__"
                 ),
-                path=path,
-                relpath=os.path.basename(path),
+                path=inputs_path,
+                relpath=os.path.basename(cast(str, inputs_path)),
             )
         # Build workflow graph
         self._recursive_translate(

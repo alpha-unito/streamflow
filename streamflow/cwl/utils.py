@@ -14,6 +14,7 @@ from typing import Any, cast
 import cwl_utils.expression
 import cwl_utils.parser
 import cwl_utils.parser.utils
+import cwl_utils.types
 from cwl_utils.parser.cwl_v1_2_utils import CONTENT_LIMIT
 from typing_extensions import Self
 
@@ -133,7 +134,7 @@ async def _get_listing(
     dirpath: StreamFlowPath,
     load_contents: bool,
     recursive: bool,
-) -> MutableSequence[MutableMapping[str, Any]]:
+) -> MutableSequence[cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType]:
     listing_tokens = {}
     for location in locations:
         loc_path = StreamFlowPath(dirpath, context=context, location=location)
@@ -183,37 +184,42 @@ async def _process_secondary_file(
     connector: Connector,
     cwl_version: str,
     locations: MutableSequence[ExecutionLocation],
-    secondary_file: Any,
-    token_value: MutableMapping[str, Any],
+    secondary_file: (
+        str | cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType | None
+    ),
+    token_value: cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType,
     from_expression: bool,
-    existing_sf: MutableMapping[str, Any],
+    existing_sf: MutableMapping[
+        str, cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType
+    ],
     load_contents: bool,
     load_listing: LoadListing | None,
     only_retrieve_from_token: bool,
-) -> MutableMapping[str, Any] | None:
+) -> cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType | None:
     match secondary_file:
         # If value is None, simply return None
         case None:
             return None
         # If value is a dictionary, simply append it to the list
         case MutableMapping():
-            filepath = get_path_from_token(secondary_file)
-            for location in locations:
-                if await (
-                    path := StreamFlowPath(filepath, context=context, location=location)
-                ).exists():
-                    return await get_file_token(
-                        context=context,
-                        connector=connector,
-                        cwl_version=cwl_version,
-                        locations=locations,
-                        token_class=get_token_class(secondary_file),
-                        filepath=filepath,
-                        file_format=secondary_file.get("format"),
-                        basename=secondary_file.get("basename"),
-                        load_contents=load_contents,
-                        load_listing=load_listing,
-                    )
+            if cwl_utils.types.is_file_or_directory(secondary_file):
+                filepath = get_path_from_token(secondary_file)
+                for location in locations:
+                    if await StreamFlowPath(
+                        filepath, context=context, location=location
+                    ).exists():
+                        return await get_file_token(
+                            context=context,
+                            connector=connector,
+                            cwl_version=cwl_version,
+                            locations=locations,
+                            token_class=get_token_class(secondary_file),
+                            filepath=filepath,
+                            file_format=secondary_file.get("format"),
+                            basename=secondary_file.get("basename"),
+                            load_contents=load_contents,
+                            load_listing=load_listing,
+                        )
             return None
         # If value is a string
         case str():
@@ -362,10 +368,13 @@ def build_context(
     output_directory: str | None = None,
     tmp_directory: str | None = None,
     hardware: Hardware | None = None,
-) -> MutableMapping[str, Any]:
-    context = {"inputs": {}, "self": None, "runtime": {}}
-    for name, token in inputs.items():
-        context["inputs"][name] = get_token_value(token)
+    self: Token | None = None,
+) -> cwl_utils.types.CWLParameterContext:
+    context = cwl_utils.types.CWLParameterContext(
+        inputs={name: get_token_value(token) for name, token in inputs.items()},
+        self=get_token_value(self) if self is not None else None,
+        runtime=cwl_utils.types.CWLRuntimeParameterContext(),
+    )
     if output_directory:
         context["runtime"]["outdir"] = output_directory
     if tmp_directory:
@@ -524,7 +533,7 @@ async def build_token(
 async def build_token_value(
     context: StreamFlowContext,
     cwl_version: str,
-    js_context: MutableMapping[str, Any],
+    js_context: cwl_utils.types.CWLParameterContext,
     full_js: bool,
     expression_lib: MutableSequence[str] | None,
     secondary_files: MutableSequence[SecondaryFile] | None,
@@ -555,13 +564,13 @@ async def build_token_value(
                 )
             )
         return await asyncio.gather(*value_tasks)
-    elif isinstance(token_value, MutableMapping) and (
-        token_class := get_token_class(token_value)
-    ) in ["File", "Directory"]:
+    elif cwl_utils.types.is_file_or_directory(token_value):
         path_processor = get_path_processor(connector)
         # Process secondary files in token value
-        sf_map = {}
-        if "secondaryFiles" in token_value:
+        sf_map: MutableMapping[
+            str, cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType
+        ] = {}
+        if cwl_utils.types.is_file(token_value) and "secondaryFiles" in token_value:
             sf_tasks = []
             for sf in token_value.get("secondaryFiles", []):
                 sf_token_class = get_token_class(sf)
@@ -580,7 +589,7 @@ async def build_token_value(
                             file_format=sf.get("format"),
                             basename=sf.get("basename"),
                             contents=sf.get("contents"),
-                            is_literal=is_literal_file(sf_token_class, sf),
+                            is_literal=is_literal_file(sf),
                             load_contents=load_contents,
                             load_listing=load_listing,
                         )
@@ -590,14 +599,14 @@ async def build_token_value(
                 get_path_from_token(sf): sf for sf in await asyncio.gather(*sf_tasks)
             }
         # Get filepath
-        is_literal = is_literal_file(token_class, token_value)
+        is_literal = is_literal_file(token_value)
         if (filepath := get_path_from_token(token_value)) is not None:
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
                 cwl_version=cwl_version,
                 locations=locations,
-                token_class=token_class,
+                token_class=get_token_class(token_value),
                 filepath=filepath,
                 file_format=token_value.get("format"),
                 basename=token_value.get("basename"),
@@ -606,13 +615,13 @@ async def build_token_value(
                 load_listing=load_listing,
             )
         # If there is only a 'contents' field, propagate the parameter
-        elif "contents" in token_value:
+        elif cwl_utils.types.is_file(token_value) and "contents" in token_value:
             token_value = await get_file_token(
                 context=context,
                 connector=connector,
                 cwl_version=cwl_version,
                 locations=locations,
-                token_class=token_class,
+                token_class=get_token_class(token_value),
                 filepath=path_processor.join(
                     js_context["runtime"]["outdir"],
                     token_value.get("basename", random_name()),
@@ -624,7 +633,7 @@ async def build_token_value(
                 load_listing=load_listing,
             )
         # If there is only a 'listing' field, build a folder token and process all the listing entries recursively
-        elif "listing" in token_value:
+        elif cwl_utils.types.is_directory(token_value) and "listing" in token_value:
             filepath = js_context["runtime"]["outdir"]
             if "basename" in token_value:
                 filepath = path_processor.join(filepath, token_value["basename"])
@@ -660,7 +669,7 @@ async def build_token_value(
                 connector=connector,
                 cwl_version=cwl_version,
                 locations=locations,
-                token_class=token_class,
+                token_class=get_token_class(token_value),
                 filepath=filepath,
                 file_format=token_value.get("format"),
                 basename=token_value.get("basename"),
@@ -676,7 +685,7 @@ async def build_token_value(
                 cwl_version=cwl_version,
                 secondary_files=secondary_files,
                 sf_map=sf_map,
-                js_context=cast(dict[str, Any], js_context) | {"self": token_value},
+                js_context=js_context | {"self": token_value},
                 full_js=full_js,
                 expression_lib=expression_lib,
                 connector=connector,
@@ -711,7 +720,7 @@ async def create_remote_directory(
 
 def eval_expression(
     expression: Any,
-    context: MutableMapping[str, Any],
+    context: cwl_utils.types.CWLParameterContext,
     full_js: bool = False,
     expression_lib: MutableSequence[str] | None = None,
     timeout: int | None = None,
@@ -801,18 +810,21 @@ async def get_file_token(
     is_literal: bool = False,
     load_contents: bool = False,
     load_listing: LoadListing | None = None,
-) -> MutableMapping[str, Any]:
+) -> cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType:
     path_processor = get_path_processor(connector)
     basename = basename or path_processor.basename(filepath)
     file_location = "".join(["file://", urllib.parse.quote(filepath)])
-    token = {
-        "class": token_class,
-        "location": file_location,
-        "basename": basename,
-        "path": filepath,
-        "dirname": path_processor.dirname(filepath),
-    }
+    token: cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType
     if token_class == "File":  # nosec
+        token = cwl_utils.types.CWLFileType(
+            **{
+                "class": "File",
+                "location": file_location,
+                "basename": basename,
+                "path": filepath,
+                "dirname": path_processor.dirname(filepath),
+            }
+        )
         if file_format:
             token["format"] = file_format
         token["nameroot"], token["nameext"] = path_processor.splitext(basename)
@@ -839,25 +851,34 @@ async def get_file_token(
                 raise WorkflowExecutionException(f"File {filepath} does not exist")
         if contents and not load_contents:
             token["contents"] = contents
-    elif (
-        token_class == "Directory"  # nosec
-        and load_listing != LoadListing.no_listing
-        and not is_literal
-    ):
-        for location in locations:
-            if await (
-                path := StreamFlowPath(filepath, context=context, location=location)
-            ).exists():
-                token["listing"] = await _get_listing(
-                    context=context,
-                    connector=connector,
-                    cwl_version=cwl_version,
-                    locations=locations,
-                    dirpath=path,
-                    load_contents=load_contents,
-                    recursive=load_listing == LoadListing.deep_listing,
-                )
-                break
+    elif token_class == "Directory":  # nosec
+        token = cwl_utils.types.CWLDirectoryType(
+            **{
+                "class": "Directory",
+                "location": file_location,
+                "basename": basename,
+                "path": filepath,
+            }
+        )
+        if load_listing != LoadListing.no_listing and not is_literal:
+            for location in locations:
+                if await (
+                    path := StreamFlowPath(filepath, context=context, location=location)
+                ).exists():
+                    token["listing"] = await _get_listing(
+                        context=context,
+                        connector=connector,
+                        cwl_version=cwl_version,
+                        locations=locations,
+                        dirpath=path,
+                        load_contents=load_contents,
+                        recursive=load_listing == LoadListing.deep_listing,
+                    )
+                    break
+    else:
+        raise WorkflowExecutionException(
+            f"Received token with class {token_class}: expected `File` or `Directory`"
+        )
     return token
 
 
@@ -878,7 +899,9 @@ def get_name(
     )
 
 
-def get_path_from_token(token_value: MutableMapping[str, Any]) -> str | None:
+def get_path_from_token(
+    token_value: cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType,
+) -> str | None:
     location = token_value.get("location", token_value.get("path"))
     if location and "://" in location:
         scheme = urllib.parse.urlsplit(location).scheme
@@ -921,17 +944,18 @@ def is_expression(expression: Any) -> bool:
 
 
 def is_literal_file(
-    file_class: str, file_value: MutableMapping[str, Any], job_name: str | None = None
+    file_value: cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType,
+    job_name: str | None = None,
 ) -> bool:
     if not ("path" in file_value or "location" in file_value):
         job_msg = f"Job {job_name} cannot process the file. " if job_name else ""
-        if file_class == "File" and ("contents" not in file_value):
+        if cwl_utils.types.is_file(file_value) and ("contents" not in file_value):
             # The file can have the `contents` field without the `basename` field
             # but cannot have the `basename` field without the `contents` field
             raise WorkflowDefinitionException(
                 f"{job_msg}Anonymous file object must have 'contents' and 'basename' fields."
             )
-        if file_class == "Directory" and (
+        if cwl_utils.types.is_directory(file_value) and (
             "listing" not in file_value or "basename" not in file_value
         ):
             raise WorkflowDefinitionException(
@@ -973,7 +997,7 @@ def process_embedded_tool(
             )
             inner_cwl_name_prefix = (
                 step_name
-                if context["version"] == "v1.0"
+                if isinstance(cwl_element, cwl_utils.parser.cwl_v1_0.WorkflowStep)
                 else posixpath.join(cwl_step_name, "run")
             )
         else:
@@ -1010,7 +1034,7 @@ async def process_secondary_files(
     cwl_version: str,
     secondary_files: MutableSequence[SecondaryFile],
     sf_map: MutableMapping[str, Any],
-    js_context: MutableMapping[str, Any],
+    js_context: cwl_utils.types.CWLParameterContext,
     full_js: bool,
     expression_lib: MutableSequence[str] | None,
     connector: Connector,
@@ -1115,7 +1139,13 @@ async def register_data(
     connector: Connector,
     locations: MutableSequence[ExecutionLocation],
     base_path: str | None,
-    token_value: MutableSequence[MutableMapping[str, Any]] | MutableMapping[str, Any],
+    token_value: (
+        cwl_utils.types.CWLFileType
+        | cwl_utils.types.CWLDirectoryType
+        | MutableSequence[
+            cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType
+        ]
+    ),
 ) -> None:
     # If `token_value` is a list, process every item independently
     if isinstance(token_value, MutableSequence):
@@ -1128,7 +1158,7 @@ async def register_data(
             )
         )
     # Otherwise, if token value is a dictionary and it refers to a File or a Directory, register the path
-    elif get_token_class(token_value) in ["File", "Directory"]:
+    elif cwl_utils.types.is_file_or_directory(token_value):
         path_processor = get_path_processor(connector)
         # Extract paths from token
         paths = []
@@ -1147,7 +1177,9 @@ async def register_data(
         elif "secondaryFiles" in token_value:
             paths.extend(
                 sf_path
-                for sf in token_value["secondaryFiles"]
+                for sf in cast(cwl_utils.types.CWLFileType, token_value)[
+                    "secondaryFiles"
+                ]
                 if (sf_path := get_path_from_token(sf))
             )
         # Register paths to the `DataManager`
@@ -1262,7 +1294,9 @@ def resolve_dependencies(
     """
     if is_expression(expression):
         context_key = context_key or "inputs"
-        context: MutableMapping[str, Any] = {"inputs": {}, "self": {}, "runtime": {}}
+        context = cwl_utils.types.CWLParameterContext(
+            inputs={}, self=None, runtime=cwl_utils.types.CWLRuntimeParameterContext()
+        )
         engine = DependencyResolver(context_key)
         cwl_utils.expression.interpolate(
             expression,
@@ -1371,14 +1405,14 @@ async def update_file_token(
     connector: Connector,
     cwl_version: str,
     location: ExecutionLocation,
-    token_value: MutableMapping[str, Any],
+    token_value: cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType,
     load_contents: bool | None,
     load_listing: LoadListing | None = None,
-) -> MutableMapping[str, Any]:
+) -> cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType:
     if path := get_path_from_token(token_value):
         filepath = StreamFlowPath(path, context=context, location=location)
         # Process contents
-        if get_token_class(token_value) == "File" and load_contents is not None:
+        if cwl_utils.types.is_file(token_value) and load_contents is not None:
             if load_contents and "contents" not in token_value:
                 token_value |= {
                     "contents": await _get_contents(
@@ -1388,17 +1422,15 @@ async def update_file_token(
                     )
                 }
             elif not load_contents and "contents" in token_value:
-                token_value = {
-                    k: token_value[k] for k in token_value if k != "contents"
-                }
+                token_value = token_value.copy()
+                token_value.pop("contents")
         # Process listings
-        if get_token_class(token_value) == "Directory" and load_listing is not None:
+        if cwl_utils.types.is_directory(token_value) and load_listing is not None:
             # If load listing is set to `no_listing`, remove the listing entries in present
             if load_listing == LoadListing.no_listing:
                 if "listing" in token_value:
-                    token_value = {
-                        k: token_value[k] for k in token_value if k != "listing"
-                    }
+                    token_value = token_value.copy()
+                    token_value.pop("listing")
             # If listing is not present or if the token needs a deep listing, process directory contents
             elif (
                 "listing" not in token_value or load_listing == LoadListing.deep_listing
@@ -1416,12 +1448,17 @@ async def update_file_token(
                 }
             # If load listing is set to `shallow_listing`, remove the deep listing entries if present
             elif load_listing == LoadListing.shallow_listing:
-                token_value |= {
-                    "listing": [
-                        {k: v[k] for k in v if k != "listing"}
-                        for v in token_value["listing"]
-                    ]
-                }
+                listing: MutableSequence[
+                    cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType
+                ] = []
+                for v in token_value["listing"]:
+                    if cwl_utils.types.is_directory(v) and "listing" in v:
+                        v = v.copy()
+                        v.pop("listing")
+                        listing.append(v)
+                    else:
+                        listing.append(v)
+                token_value["listing"] = listing
     return token_value
 
 

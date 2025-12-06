@@ -5,7 +5,7 @@ import os
 import posixpath
 import random
 import tempfile
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Iterable, MutableMapping
 from pathlib import PurePosixPath
 from typing import Any, cast
 
@@ -22,7 +22,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.utils import compare_tags
-from streamflow.core.workflow import Token
+from streamflow.core.workflow import Token, Workflow
 from streamflow.cwl.runner import main
 from streamflow.cwl.step import CWLTransferStep
 from streamflow.cwl.token import CWLFileToken
@@ -65,7 +65,7 @@ def _get_streamflow_config() -> MutableMapping[str, Any]:
     }
 
 
-def _get_workflow_config(streamflow_config) -> WorkflowConfig:
+def _get_workflow_config(streamflow_config: MutableMapping[str, Any]) -> WorkflowConfig:
     SfValidator().validate(streamflow_config)
     return WorkflowConfig(
         list(streamflow_config["workflows"].keys())[0], streamflow_config
@@ -78,7 +78,7 @@ def _get_workflow_config(streamflow_config) -> WorkflowConfig:
     itertools.product(("File", "Directory"), ("literal", "concrete")),
 )
 async def test_inject_remote_input(
-    chosen_deployment_types: MutableSequence[str],
+    chosen_deployment_types: Iterable[str],
     context: StreamFlowContext,
     file_kind: str,
     file_type: str,
@@ -268,6 +268,7 @@ async def test_inject_remote_input(
         JobPort,
         injector_schedule_step.get_output_port("__job__"),
     ).get_job(port_name)
+    assert job is not None
 
     # Check output tokens of input injector step
     output_tokens = input_injector_step.get_output_port(port_name).token_list
@@ -374,7 +375,7 @@ async def test_gather_order(context: StreamFlowContext) -> None:
     value_type = "primitive"
     output_name = "test_out"
     workflow, (input_port, output_port) = await create_workflow(
-        context, type_="default", num_port=2
+        context, type_=Workflow, num_port=2
     )
     translator = RecoveryTranslator(workflow)
     translator.deployment_configs = {

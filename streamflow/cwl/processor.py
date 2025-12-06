@@ -93,7 +93,7 @@ def _check_token_type(
 
 
 async def _fill_context(
-    context: MutableMapping[str, Any],
+    context: cwl_utils.types.CWLParameterContext,
     command_output: asyncio.Future[CommandOutput],
     output_eval: str,
     full_js: bool,
@@ -253,7 +253,10 @@ class CWLTokenProcessor(TokenProcessor):
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
                 )
-                # Process secondary files
+                # Process secondary
+                sf_map: MutableMapping[
+                    str, cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType
+                ]
                 if token_value.get("secondaryFiles"):
                     initial_paths = [
                         utils.get_path_from_token(sf)
@@ -284,7 +287,7 @@ class CWLTokenProcessor(TokenProcessor):
                 else:
                     sf_map = {}
                 if self.secondary_files:
-                    sf_context = cast(dict[str, Any], context) | {"self": token_value}
+                    sf_context = context | {"self": token_value}
                     await utils.process_secondary_files(
                         context=self.workflow.context,
                         cwl_version=cwl_workflow.cwl_version,
@@ -333,7 +336,7 @@ class CWLTokenProcessor(TokenProcessor):
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
         # Process file token
-        if utils.get_token_class(token.value) in ["File", "Directory"]:
+        if cwl_utils.types.is_file_or_directory(token.value):
             token = token.update(await self._process_file_token(inputs, token.value))
         # Check type
         _check_token_type(
@@ -408,11 +411,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             full_js=row["full_js"],
             glob=row["glob"],
             load_contents=row["load_contents"],
-            load_listing=(
-                LoadListing(row["load_listing"])
-                if row["load_listing"] is not None
-                else None
-            ),
+            load_listing=LoadListing(row["load_listing"]),
             optional=row["optional"],
             output_eval=row["output_eval"],
             secondary_files=[
@@ -427,61 +426,56 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self,
         job: Job,
         connector: Connector | None,
-        context: MutableMapping[str, Any],
+        context: cwl_utils.types.CWLParameterContext,
         token_value: Any,
         recoverable: bool,
     ) -> Token:
         match token_value:
             case MutableMapping():
-                match utils.get_token_class(token_value):
-                    case "File" | "Directory":
-                        connector = self._get_connector(connector, job)
-                        locations = await self._get_locations(connector, job)
-                        # Register path
-                        await utils.register_data(
-                            context=self.workflow.context,
-                            connector=connector,
-                            locations=locations,
-                            token_value=token_value,
-                            base_path=(
-                                self.target.workdir
-                                if self.target
-                                else job.output_directory
-                            ),
+                if cwl_utils.types.is_file_or_directory(token_value):
+                    connector = self._get_connector(connector, job)
+                    locations = await self._get_locations(connector, job)
+                    # Register path
+                    await utils.register_data(
+                        context=self.workflow.context,
+                        connector=connector,
+                        locations=locations,
+                        token_value=token_value,
+                        base_path=(
+                            self.target.workdir if self.target else job.output_directory
+                        ),
+                    )
+                    # Process file format
+                    if cwl_utils.types.is_file(token_value) and self.file_format:
+                        context |= {"self": token_value}
+                        token_value["format"] = utils.eval_expression(
+                            expression=self.file_format,
+                            context=context,
+                            full_js=self.full_js,
+                            expression_lib=self.expression_lib,
                         )
-                        # Process file format
-                        if self.file_format:
-                            context |= {"self": token_value}
-                            token_value["format"] = utils.eval_expression(
-                                expression=self.file_format,
-                                context=context,
-                                full_js=self.full_js,
-                                expression_lib=self.expression_lib,
+                    return CWLFileToken(
+                        value=token_value,
+                        tag=get_tag(job.inputs.values()),
+                        recoverable=recoverable,
+                    )
+                else:
+                    token_tasks = {
+                        k: asyncio.create_task(
+                            self._build_token(job, connector, context, v, recoverable)
+                        )
+                        for k, v in token_value.items()
+                    }
+                    return ObjectToken(
+                        value=dict(
+                            zip(
+                                token_tasks.keys(),
+                                await asyncio.gather(*token_tasks.values()),
+                                strict=True,
                             )
-                        return CWLFileToken(
-                            value=token_value,
-                            tag=get_tag(job.inputs.values()),
-                            recoverable=recoverable,
-                        )
-                    case _:
-                        token_tasks = {
-                            k: asyncio.create_task(
-                                self._build_token(
-                                    job, connector, context, v, recoverable
-                                )
-                            )
-                            for k, v in token_value.items()
-                        }
-                        return ObjectToken(
-                            value=dict(
-                                zip(
-                                    token_tasks.keys(),
-                                    await asyncio.gather(*token_tasks.values()),
-                                    strict=True,
-                                )
-                            ),
-                            tag=get_tag(job.inputs.values()),
-                        )
+                        ),
+                        tag=get_tag(job.inputs.values()),
+                    )
             case MutableSequence():
                 return ListToken(
                     value=await asyncio.gather(
@@ -508,7 +502,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None,
-        context: MutableMapping[str, Any],
+        context: cwl_utils.types.CWLParameterContext,
     ) -> MutableMapping[str, Any]:
         connector = self._get_connector(connector, job)
         locations = await self._get_locations(connector, job)

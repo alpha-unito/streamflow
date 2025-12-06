@@ -43,7 +43,7 @@ from tests.utils.workflow import (
         "nested_crossproduct",
     ],
 )
-async def test_combinator_step(context: StreamFlowContext, combinator_t: str):
+async def test_combinator_step(context: StreamFlowContext, combinator_t: str) -> None:
     """Test saving CombinatorStep on database and re-load it in a new Workflow"""
     workflow, (in_port, out_port, in_port_2, out_port_2) = await create_workflow(
         context, num_port=4
@@ -71,7 +71,7 @@ async def test_combinator_step(context: StreamFlowContext, combinator_t: str):
 
 
 @pytest.mark.asyncio
-async def test_deploy_step(context: StreamFlowContext):
+async def test_deploy_step(context: StreamFlowContext) -> None:
     """Test saving DeployStep on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
     step = create_deploy_step(workflow)
@@ -81,7 +81,7 @@ async def test_deploy_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_execute_step(context: StreamFlowContext):
+async def test_execute_step(context: StreamFlowContext) -> None:
     """Test saving ExecuteStep on database and re-load it in a new Workflow"""
     workflow, (job_port, in_port, out_port) = await create_workflow(context, num_port=3)
 
@@ -134,7 +134,7 @@ async def test_execute_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_gather_step(context: StreamFlowContext):
+async def test_gather_step(context: StreamFlowContext) -> None:
     """Test saving GatherStep on database and re-load it in a new Workflow"""
     workflow, (port,) = await create_workflow(context, num_port=1)
     await duplicate_and_test(
@@ -146,7 +146,7 @@ async def test_gather_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_scatter_step(context: StreamFlowContext):
+async def test_scatter_step(context: StreamFlowContext) -> None:
     """Test saving ScatterStep on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
     await duplicate_and_test(
@@ -155,7 +155,7 @@ async def test_scatter_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_schedule_step(context: StreamFlowContext):
+async def test_schedule_step(context: StreamFlowContext) -> None:
     """Test saving ScheduleStep on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
     deploy_step = create_deploy_step(workflow)
@@ -189,7 +189,7 @@ async def test_schedule_step(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("port_cls", [Port, JobPort, ConnectorPort])
-async def test_port(context: StreamFlowContext, port_cls: type[Port]):
+async def test_port(context: StreamFlowContext, port_cls: type[Port]) -> None:
     """Test saving Port on database and re-load it in a new Workflow"""
     workflow, ports = await create_workflow(context)
     port = workflow.create_port(port_cls)
@@ -210,7 +210,7 @@ async def test_port(context: StreamFlowContext, port_cls: type[Port]):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("copy_strategy", ["deep_copy", "copy", "manual_copy"])
-async def test_workflow(context: StreamFlowContext, copy_strategy: str):
+async def test_workflow(context: StreamFlowContext, copy_strategy: str) -> None:
     """Test saving Workflow on database and load its elements in a new Workflow"""
     workflow, (job_port, in_port, out_port) = await create_workflow(context, num_port=3)
 
