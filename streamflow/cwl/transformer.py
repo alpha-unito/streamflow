@@ -492,6 +492,7 @@ class ValueFromTransformer(ManyToOneTransformer):
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
                 ),
+                recoverable=True,
             )
         }
 
@@ -592,5 +593,6 @@ class LoopValueFromTransformer(ValueFromTransformer):
                     expression_lib=self.expression_lib,
                 ),
                 streamflow_context=self.workflow.context,
+                recoverable=True,
             )
         }
