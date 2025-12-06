@@ -335,18 +335,18 @@ class DefaultDataManager(DataManager):
                         dst_path, context=self.context, location=location
                     ).parent.mkdir(mode=0o777, parents=True, exist_ok=True)
                 )
-                for location in [
-                    location
-                    for location in dst_locations
+                for location in (
+                    loc
+                    for loc in dst_locations
                     if len(
                         self.get_data_locations(
                             path=os.path.dirname(dst_path),
-                            deployment=location.deployment,
-                            location_name=location.name,
+                            deployment=loc.deployment,
+                            location_name=loc.name,
                         )
                     )
                     == 0
-                ]
+                )
             )
         )
         # Follow symlink for source path
