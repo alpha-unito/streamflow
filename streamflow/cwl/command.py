@@ -8,11 +8,12 @@ import posixpath
 import shlex
 import time
 from asyncio.subprocess import STDOUT
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence, Sequence
 from decimal import Decimal
 from types import ModuleType
 from typing import Any, cast
 
+import cwl_utils.types
 from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
 from typing_extensions import Self
@@ -76,7 +77,7 @@ def _adjust_cwl_output(
                 for v in value
             ]
         case MutableMapping():
-            if utils.get_token_class(value) in ["File", "Directory"]:
+            if cwl_utils.types.is_file_or_directory(value):
                 if (path := utils.get_path_from_token(value)) is None:
                     raise WorkflowExecutionException(
                         f"Job {job_name} cannot retrieve output. "
@@ -118,7 +119,7 @@ def _adjust_input(
     match input_:
         case MutableMapping():
             # Process the input if it is a file or an object
-            if (token_class := utils.get_token_class(input_)) in ("File", "Directory"):
+            if cwl_utils.types.is_file_or_directory(input_):
                 if (path := utils.get_path_from_token(input_)) is None:
                     raise WorkflowExecutionException(
                         f"Job {job_name} cannot adjust the input. "
@@ -127,25 +128,30 @@ def _adjust_input(
                 elif path == src_path:
                     input_["path"] = dst_path
                     dirname, basename = path_processor.split(dst_path)
-                    input_["dirname"] = dirname
                     input_["basename"] = basename
                     input_["location"] = f"file://{dst_path}"
-                    if token_class == "File":  # nosec
+                    if cwl_utils.types.is_file(input_):  # nosec
+                        input_["dirname"] = dirname
                         nameroot, nameext = path_processor.splitext(basename)
                         input_["nameroot"] = nameroot
                         input_["nameext"] = nameext
-                    for ins in input_.get("listing", ()):
-                        _adjust_input(
-                            job_name,
-                            ins,
-                            path_processor,
-                            ins["path"],
-                            path_processor.join(
-                                dst_path, path_processor.basename(ins["path"])
-                            ),
-                        )
+                    else:
+                        for ins in input_.get("listing", ()):
+                            _adjust_input(
+                                job_name,
+                                ins,
+                                path_processor,
+                                ins["path"],
+                                path_processor.join(
+                                    dst_path, path_processor.basename(ins["path"])
+                                ),
+                            )
                     return True
-                elif src_path.startswith(path) and "listing" in input_:
+                elif (
+                    src_path.startswith(path)
+                    and cwl_utils.types.is_directory(input_)
+                    and "listing" in input_
+                ):
                     for inp in input_["listing"]:
                         if _adjust_input(
                             job_name, inp, path_processor, src_path, dst_path
@@ -273,7 +279,10 @@ def _get_value_for_command(token: Any, item_separator: str | None) -> Any:
                 return item_separator.join([_get_value_repr(v) for v in value])
             return value or None
         case MutableMapping():
-            if (path := utils.get_path_from_token(token)) is not None:
+            if (
+                cwl_utils.types.is_file_or_directory(token)
+                and (path := utils.get_path_from_token(token)) is not None
+            ):
                 return path
             else:
                 raise WorkflowExecutionException(
@@ -368,10 +377,7 @@ async def _prepare_work_dir(
         # If listing is a dictionary, it could be a File, a Directory, a Dirent or some other object
         case MutableMapping():
             # If it is a File or Directory element, put the corresponding file in the output directory
-            if (listing_class := utils.get_token_class(listing)) in [
-                "File",
-                "Directory",
-            ]:
+            if cwl_utils.types.is_file_or_directory(listing):
                 # If a compatible source location exists, simply transfer data
                 if (src_path := utils.get_path_from_token(listing)) is not None and (
                     selected_location := await _get_source_location(
@@ -399,7 +405,7 @@ async def _prepare_work_dir(
                         dst_path=dst_path,
                     )
                 # Otherwise create a File or a Directory in the remote path
-                elif is_literal_file(listing_class, listing, options.job.name):
+                elif is_literal_file(listing, options.job.name):
                     if dst_path is None:
                         dst_path = (
                             path_processor.join(base_path, listing["basename"])
@@ -410,7 +416,7 @@ async def _prepare_work_dir(
                         dst_path = path_processor.join(
                             dst_path, path_processor.basename(src_path)
                         )
-                    if listing_class == "Directory":
+                    if cwl_utils.types.is_directory(listing):
                         await utils.create_remote_directory(
                             context=context,
                             locations=locations,
@@ -439,7 +445,10 @@ async def _prepare_work_dir(
                             context=context,
                             locations=locations,
                             content=(
-                                listing["contents"] if "contents" in listing else ""
+                                listing["contents"]
+                                if cwl_utils.types.is_file(listing)
+                                and "contents" in listing
+                                else ""
                             ),
                             path=dst_path,
                             relpath=path_processor.relpath(dst_path, base_path),
@@ -450,7 +459,7 @@ async def _prepare_work_dir(
                         f"Impossible to copy the {src_path} file in the working directory: No data locations found"
                     )
                 # If `secondaryFiles` is present, recursively process secondary files
-                if "secondaryFiles" in listing:
+                if cwl_utils.types.is_file(listing) and "secondaryFiles" in listing:
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
@@ -601,12 +610,12 @@ class CWLCommand(TokenizedCommand):
         base_command: MutableSequence[str] | None = None,
         environment: MutableMapping[str, str] | None = None,
         expression_lib: MutableSequence[str] | None = None,
-        failure_codes: MutableSequence[int] | None = None,
+        failure_codes: Sequence[int] | None = None,
         full_js: bool = False,
         initial_work_dir: str | MutableSequence[Any] | None = None,
         inplace_update: bool = False,
         is_shell_command: bool = False,
-        success_codes: MutableSequence[int] | None = None,
+        success_codes: Sequence[int] | None = None,
         step_stderr: str | None = None,
         step_stdin: str | None = None,
         step_stdout: str | None = None,
@@ -706,7 +715,9 @@ class CWLCommand(TokenizedCommand):
         )
 
     def _get_executable_command(
-        self, context: MutableMapping[str, Any], inputs: MutableMapping[str, Token]
+        self,
+        context: cwl_utils.types.CWLParameterContext,
+        inputs: MutableMapping[str, Token],
     ) -> MutableSequence[str]:
         command = []
         options = CWLCommandOptions(
@@ -980,11 +991,11 @@ class CWLCommandOptions(CommandOptions):
 
     def __init__(
         self,
-        context: MutableMapping[str, Any],
+        context: cwl_utils.types.CWLParameterContext,
         expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
     ):
-        self.context: MutableMapping[str, Any] = context
+        self.context: cwl_utils.types.CWLParameterContext = context
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
 
@@ -1077,8 +1088,10 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
                 if isinstance(self.position, str) and not self.position.isnumeric():
                     position = utils.eval_expression(
                         expression=self.position,
-                        context=cast(dict[str, Any], options.context)
-                        | {"self": get_token_value(token) if token else None},
+                        context=options.context
+                        | cwl_utils.types.CWLParameterContext(
+                            self=get_token_value(token) if token else None
+                        ),
                         full_js=options.full_js,
                         expression_lib=options.expression_lib,
                     )
@@ -1212,8 +1225,7 @@ class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
                 "The `options` argument must be a `CWLCommandOptions` instance"
             )
         return CWLCommandOptions(
-            context=cast(dict[str, Any], options.context)
-            | {"inputs": {self.name: get_token_value(token)}},
+            context=options.context | {"inputs": {self.name: get_token_value(token)}},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
@@ -1229,8 +1241,7 @@ class CWLMapCommandTokenProcessor(MapCommandTokenProcessor):
             )
         value = get_token_value(token)
         return CWLCommandOptions(
-            context=cast(dict[str, Any], options.context)
-            | {"inputs": {self.name: value}, "self": value},
+            context=options.context | {"inputs": {self.name: value}, "self": value},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
@@ -1358,7 +1369,7 @@ class InitialWorkDirOptions:
     def __init__(
         self,
         absolute_initial_workdir_allowed: bool,
-        context: MutableMapping[str, Any],
+        context: cwl_utils.types.CWLParameterContext,
         expression_lib: MutableSequence[str] | None,
         inplace_update: bool,
         full_js: bool,
@@ -1366,7 +1377,7 @@ class InitialWorkDirOptions:
         step: Step,
     ):
         self.absolute_initial_workdir_allowed: bool = absolute_initial_workdir_allowed
-        self.context: MutableMapping[str, Any] = context
+        self.context: cwl_utils.types.CWLParameterContext = context
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.inplace_update: bool = inplace_update
         self.full_js: bool = full_js

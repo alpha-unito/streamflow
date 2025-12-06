@@ -12,7 +12,7 @@ import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Container, MutableMapping, MutableSequence
-from typing import Any, cast, get_args
+from typing import Any, cast
 from zipfile import ZipFile
 
 import cwl_utils.parser
@@ -217,13 +217,13 @@ def _process_cwl_type(
                 jsonld_param["valueRequired"] = "False"
             else:
                 _process_cwl_type(t, jsonld_param, cwl_param)
-    elif isinstance(cwl_type, get_args(cwl_utils.parser.ArraySchema)):
+    elif isinstance(cwl_type, cwl_utils.parser.ArraySchema):
         jsonld_param["multipleValues"] = "True"
         _process_cwl_type(cwl_type.items, jsonld_param, cwl_param)
-    elif isinstance(cwl_type, get_args(cwl_utils.parser.EnumSchema)):
+    elif isinstance(cwl_type, cwl_utils.parser.EnumSchema):
         jsonld_param["additionalType"] = "Text"
         jsonld_param["valuePattern"] = "|".join(cwl_type.symbols)
-    elif isinstance(cwl_type, get_args(cwl_utils.parser.RecordSchema)):
+    elif isinstance(cwl_type, cwl_utils.parser.RecordSchema):
         jsonld_param["additionalType"] = "PropertyValue"
         jsonld_param["multipleValues"] = "True"
 
@@ -1111,7 +1111,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             step_name=step_name,
             context={"version": version},
         )
-        if isinstance(embedded_tool, get_args(cwl_utils.parser.Workflow)):
+        if isinstance(embedded_tool, cwl_utils.parser.Workflow):
             work_example = self._get_workflow(
                 cwl_prefix=cwl_prefix,
                 prefix=step_name,
@@ -1423,7 +1423,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         self._add_params(cwl_prefix, posixpath.sep, main_entity, self.cwl_definition)
         # Add steps if present
         if (
-            isinstance(self.cwl_definition, get_args(cwl_utils.parser.Workflow))
+            isinstance(self.cwl_definition, cwl_utils.parser.Workflow)
             and len(self.cwl_definition.steps) > 0
         ):
             main_entity["step"] = []

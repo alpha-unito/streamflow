@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tempfile
-from collections.abc import MutableSequence
+from collections.abc import Iterable
 
 import pytest
 import pytest_asyncio
@@ -178,7 +178,7 @@ async def test_glob(
 
 @pytest.mark.asyncio
 async def test_mkdir_failure(
-    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+    chosen_deployment_types: Iterable[str], context: StreamFlowContext
 ) -> None:
     """Test on `mkdir` function failure"""
     if "docker" not in chosen_deployment_types:

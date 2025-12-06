@@ -810,8 +810,8 @@ wheels = [
 
 [[package]]
 name = "cwl-utils"
-version = "0.40"
-source = { registry = "https://pypi.org/simple" }
+version = "0.41"
+source = { git = "https://github.com/common-workflow-language/cwl-utils.git?rev=main#c39b6e6daba9cd681615417c8847888ec224647f" }
 dependencies = [
     { name = "cwl-upgrader" },
     { name = "packaging" },
@@ -819,10 +819,6 @@ dependencies = [
     { name = "requests" },
     { name = "ruamel-yaml" },
     { name = "schema-salad" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7f/00/80a18397dd81fc39ad5b61af227becebc9d537bcb679d14731023b0bee4a/cwl_utils-0.40.tar.gz", hash = "sha256:fb836fe71617e10cfefb74cfcb2ab7b4a6e36b36cebf2f04b3fb43e15bc74751", size = 365488, upload-time = "2025-09-09T20:53:57.952Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/4b/ccab2a5ca9e0b6553810b85c06387e60fc9443cec3c987e3a062705bd225/cwl_utils-0.40-py3-none-any.whl", hash = "sha256:f6688cd3b78b826af2aa5518b31d8d7ba784914d0a7a5784266c615093e1e94b", size = 437060, upload-time = "2025-09-09T20:53:56.035Z" },
 ]
 
 [[package]]
@@ -1813,11 +1809,11 @@ wheels = [
 
 [[package]]
 name = "narwhals"
-version = "2.13.0"
+version = "2.14.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/89/ea/f82ef99ced4d03c33bb314c9b84a08a0a86c448aaa11ffd6256b99538aa5/narwhals-2.13.0.tar.gz", hash = "sha256:ee94c97f4cf7cfeebbeca8d274784df8b3d7fd3f955ce418af998d405576fdd9", size = 594555, upload-time = "2025-12-01T13:54:05.329Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4a/84/897fe7b6406d436ef312e57e5a1a13b4a5e7e36d1844e8d934ce8880e3d3/narwhals-2.14.0.tar.gz", hash = "sha256:98be155c3599db4d5c211e565c3190c398c87e7bf5b3cdb157dece67641946e0", size = 600648, upload-time = "2025-12-16T11:29:13.458Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/87/0d/1861d1599571974b15b025e12b142d8e6b42ad66c8a07a89cb0fc21f1e03/narwhals-2.13.0-py3-none-any.whl", hash = "sha256:9b795523c179ca78204e3be53726da374168f906e38de2ff174c2363baaaf481", size = 426407, upload-time = "2025-12-01T13:54:03.861Z" },
+    { url = "https://files.pythonhosted.org/packages/79/3e/b8ecc67e178919671695f64374a7ba916cf0adbf86efedc6054f38b5b8ae/narwhals-2.14.0-py3-none-any.whl", hash = "sha256:b56796c9a00179bd757d15282c540024e1d5c910b19b8c9944d836566c030acf", size = 430788, upload-time = "2025-12-16T11:29:11.699Z" },
 ]
 
 [[package]]
@@ -3255,7 +3251,7 @@ requires-dist = [
     { name = "asyncssh", specifier = "==2.22.0" },
     { name = "bcrypt", specifier = "==5.0.0" },
     { name = "cachetools", specifier = "==6.2.6" },
-    { name = "cwl-utils", specifier = "==0.40" },
+    { name = "cwl-utils", git = "https://github.com/common-workflow-language/cwl-utils.git?rev=main" },
     { name = "importlib-metadata", specifier = "==8.7.1" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "jsonschema", specifier = "==4.26.0" },
@@ -3455,11 +3451,11 @@ wheels = [
 
 [[package]]
 name = "tzdata"
-version = "2025.2"
+version = "2025.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/95/32/1a225d6164441be760d75c2c42e2780dc0873fe382da3e98a2e1e48361e5/tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9", size = 196380, upload-time = "2025-03-23T13:54:43.652Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5e/a7/c202b344c5ca7daf398f3b8a477eeb205cf3b6f32e7ec3a6bac0629ca975/tzdata-2025.3.tar.gz", hash = "sha256:de39c2ca5dc7b0344f2eba86f49d614019d29f060fc4ebc8a417896a620b56a7", size = 196772, upload-time = "2025-12-13T17:45:35.667Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5c/23/c7abc0ca0a1526a0774eca151daeb8de62ec457e77262b66b359c3c7679e/tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8", size = 347839, upload-time = "2025-03-23T13:54:41.845Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/b0/003792df09decd6849a5e39c28b513c06e84436a54440380862b5aeff25d/tzdata-2025.3-py2.py3-none-any.whl", hash = "sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1", size = 348521, upload-time = "2025-12-13T17:45:33.889Z" },
 ]
 
 [[package]]

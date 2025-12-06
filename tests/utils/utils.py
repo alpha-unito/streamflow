@@ -241,7 +241,7 @@ async def duplicate_elements(
 
 
 async def inject_tokens(
-    token_list: MutableSequence[Token],
+    token_list: MutableSequence[T],
     in_port: Port,
     context: StreamFlowContext,
     save_input_token: bool = True,
@@ -275,9 +275,9 @@ async def verify_dependency_tokens(
     token: Token,
     port: Port,
     context: StreamFlowContext,
-    expected_depender: MutableSequence[Token] | None = None,
-    expected_dependee: MutableSequence[Token] | None = None,
-    alternative_expected_dependee: MutableSequence[Token] | None = None,
+    expected_depender: MutableSequence[T] | None = None,
+    expected_dependee: MutableSequence[T] | None = None,
+    alternative_expected_dependee: MutableSequence[T] | None = None,
 ) -> None:
     loading_context = DefaultDatabaseLoadingContext()
     expected_depender = expected_depender or []

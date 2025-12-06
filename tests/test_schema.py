@@ -8,9 +8,10 @@ from streamflow.config.schema import SfSchema
 from streamflow.config.validator import SfValidator
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.main import build_context
-from streamflow.persistence import SqliteDatabase
-from streamflow.recovery import DefaultCheckpointManager, DefaultFailureManager
-from streamflow.scheduling import DefaultScheduler
+from streamflow.persistence.sqlite import SqliteDatabase
+from streamflow.recovery.checkpoint_manager import DefaultCheckpointManager
+from streamflow.recovery.failure_manager import DefaultFailureManager
+from streamflow.scheduling.scheduler import DefaultScheduler
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager
 from tests.utils.utils import InjectPlugin

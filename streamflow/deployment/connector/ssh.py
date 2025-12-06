@@ -442,7 +442,7 @@ class SSHConnector(BaseConnector):
             dataTransferConnection
         )
         self.nodes: MutableMapping[str, SSHConfig] = {
-            n.hostname: n for n in [self._get_config(n) for n in nodes]
+            n.hostname: n for n in [self._get_config(n) for n in nodes] if n is not None
         }
         self.hardware: MutableMapping[str, Hardware] = {}
         self._cls_context: type[SSHContext] = SSHContext

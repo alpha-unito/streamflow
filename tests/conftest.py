@@ -175,7 +175,9 @@ def object_to_dict(obj: Any) -> MutableMapping[str, Any]:
     }
 
 
-def are_equals(elem1, elem2, obj_compared=None):
+def are_equals(
+    elem1: Any, elem2: Any, obj_compared: MutableSequence[Any] | None = None
+) -> bool:
     """
     The function return True if the elems are the same, otherwise False
     The param obj_compared is useful to break a circul reference inside the objects
@@ -191,7 +193,7 @@ def are_equals(elem1, elem2, obj_compared=None):
         return True
 
     if is_primitive_type(elem1):
-        return elem1 == elem2
+        return bool(elem1 == elem2)
 
     if isinstance(elem1, Collection) and not isinstance(elem1, dict):
         if len(elem1) != len(elem2):

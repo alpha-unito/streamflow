@@ -73,7 +73,9 @@ class MatchingBindingFilter(BindingFilter):
         filters: MutableSequence[
             MutableMapping[
                 str,
-                MutableMapping[str, str] | MutableSequence[MutableMapping[str, str]],
+                str
+                | MutableMapping[str, str]
+                | MutableSequence[MutableMapping[str, str]],
             ]
         ],
     ) -> None:
