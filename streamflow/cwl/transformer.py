@@ -482,15 +482,16 @@ class ValueFromTransformer(ManyToOneTransformer):
         context |= {"self": context["inputs"].get(output_name)}
         return {
             output_name: await build_token(
+                cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
+                inputs=inputs,
+                process_files=False,
+                streamflow_context=self.workflow.context,
                 token_value=utils.eval_expression(
                     expression=self.value_from,
                     context=context,
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
                 ),
-                cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
-                streamflow_context=self.workflow.context,
-                inputs=inputs,
             )
         }
 
@@ -581,14 +582,15 @@ class LoopValueFromTransformer(ValueFromTransformer):
         }
         return {
             self.get_output_name(): await build_token(
+                cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
+                inputs=inputs,
+                process_files=False,
                 token_value=utils.eval_expression(
                     expression=self.value_from,
                     context=context,
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
                 ),
-                cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 streamflow_context=self.workflow.context,
-                inputs=inputs,
             )
         }

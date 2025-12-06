@@ -320,7 +320,7 @@ async def test_value_from_transformer(context: StreamFlowContext):
     workflow, (in_port, out_port) = await create_workflow(context)
     port_name = "test"
     token_list = [Token(10)]
-    _ = await create_and_run_step(
+    await create_and_run_step(
         context=context,
         workflow=workflow,
         in_port=in_port,

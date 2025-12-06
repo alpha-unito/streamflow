@@ -2515,7 +2515,7 @@ class CWLTranslator:
                         "-".join(output_port_names), size_port
                     )
 
-        # Process inputs again to attach ports to value-from transformers
+        # Process inputs again to attach ports to `valueFrom` transformers
         input_ports = _process_transformers(
             step_name=step_name,
             input_ports=input_ports,
