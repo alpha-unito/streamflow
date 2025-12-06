@@ -18,6 +18,7 @@ from streamflow.core.exception import (
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import (
     CommandOutputProcessor,
+    NullTokenProcessor,
     ObjectCommandOutputProcessor,
     TokenProcessor,
 )
@@ -131,6 +132,22 @@ class CWLOutputJSONCommandOutput(CWLCommandOutput):
     pass
 
 
+class CWLNullTokenProcessor(NullTokenProcessor):
+    def __init__(self, name: str, workflow: CWLWorkflow, single: bool = False):
+        super().__init__(name, workflow)
+        self.single: bool = single
+
+    async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
+        if self.single and isinstance(token, ListToken):
+            if len(token.value) == 0:
+                token = Token(value=None, tag=token.tag)
+            else:
+                raise ProcessorTypeError(
+                    f"Expected {self.name} token of type empty list, got list with {len(token.value)} elements."
+                )
+        return await super().process(inputs, token)
+
+
 class CWLTokenProcessor(TokenProcessor):
     def __init__(
         self,
@@ -145,6 +162,7 @@ class CWLTokenProcessor(TokenProcessor):
         load_listing: LoadListing | None = None,
         only_propagate_secondary_files: bool = True,
         secondary_files: MutableSequence[SecondaryFile] | None = None,
+        single: bool = False,
         streamable: bool = False,
     ):
         super().__init__(name, workflow)
@@ -157,6 +175,7 @@ class CWLTokenProcessor(TokenProcessor):
         self.load_listing: LoadListing | None = load_listing
         self.only_propagate_secondary_files: bool = only_propagate_secondary_files
         self.secondary_files: MutableSequence[SecondaryFile] = secondary_files or []
+        self.single: bool = single
         self.streamable: bool = streamable
 
     @classmethod
@@ -332,6 +351,16 @@ class CWLTokenProcessor(TokenProcessor):
         }
 
     async def process(self, inputs: MutableMapping[str, Token], token: Token) -> Token:
+        if self.token_type != "Any" and isinstance(token, ListToken):
+            if self.single:
+                if len(token.value) == 0:
+                    token = Token(value=None, tag=token.tag)
+                elif len(token.value) == 1:
+                    token = token.value[0]
+                else:
+                    raise ProcessorTypeError(
+                        f"Expected {self.name} token of type {self.token_type}, got list."
+                    )
         # Process file token
         if utils.get_token_class(token.value) in ["File", "Directory"]:
             token = token.update(await self._process_file_token(inputs, token.value))

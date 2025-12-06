@@ -26,7 +26,6 @@ from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.processor import (
     CommandOutputProcessor,
     MapTokenProcessor,
-    NullTokenProcessor,
     ObjectTokenProcessor,
     PopCommandOutputProcessor,
     TokenProcessor,
@@ -55,6 +54,7 @@ from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
     CWLExpressionToolOutputProcessor,
+    CWLNullTokenProcessor,
     CWLObjectCommandOutputProcessor,
     CWLTokenProcessor,
 )
@@ -810,6 +810,7 @@ def _create_token_processor(
     default_required_sf: bool = True,
     force_deep_listing: bool = False,
     only_propagate_secondary_files: bool = True,
+    single: bool = True,
 ) -> TokenProcessor:
     # Array type: -> MapTokenProcessor
     if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
@@ -828,9 +829,11 @@ def _create_token_processor(
                     optional=optional,
                     force_deep_listing=force_deep_listing,
                     only_propagate_secondary_files=only_propagate_secondary_files,
+                    single=False,
                 ),
             ),
             optional=optional,
+            single=False,
         )
     # Enum type: -> create output processor
     elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
@@ -857,6 +860,7 @@ def _create_token_processor(
             ],
             expression_lib=expression_lib,
             full_js=full_js,
+            single=single,
         )
     # Record type: -> ObjectTokenProcessor
     elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
@@ -883,11 +887,13 @@ def _create_token_processor(
                         context=context,
                         force_deep_listing=force_deep_listing,
                         only_propagate_secondary_files=only_propagate_secondary_files,
+                        single=single,
                     )
                     for port_type in port_type.fields
                 },
             ),
             optional=optional,
+            single=single,
         )
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
@@ -905,6 +911,7 @@ def _create_token_processor(
                 optional=optional,
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
+                single=single,
             )
         # Any type (e.g. ['Any', Type]) -> Equivalent to Any
         elif "Any" in types:
@@ -919,6 +926,7 @@ def _create_token_processor(
                 optional=optional,
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
+                single=single,
             )
         # List of types: -> UnionOutputProcessor
         else:
@@ -938,6 +946,7 @@ def _create_token_processor(
                     optional=False,
                     force_deep_listing=force_deep_listing,
                     only_propagate_secondary_files=only_propagate_secondary_files,
+                    single=single,
                 )
                 for port_type in [t for t in types if not isinstance(t, str)]
             ]
@@ -952,10 +961,15 @@ def _create_token_processor(
                         default_required_sf=default_required_sf,
                         force_deep_listing=force_deep_listing,
                         only_propagate_secondary_files=only_propagate_secondary_files,
+                        single=single,
                     )
                 )
             if optional:
-                processors.append(NullTokenProcessor(name=port_name, workflow=workflow))
+                processors.append(
+                    CWLNullTokenProcessor(
+                        name=port_name, workflow=workflow, single=single
+                    )
+                )
             if len(processors) > 1:
                 return UnionTokenProcessor(
                     name=port_name,
@@ -977,6 +991,7 @@ def _create_token_processor(
             optional=optional,
             force_deep_listing=force_deep_listing,
             only_propagate_secondary_files=only_propagate_secondary_files,
+            single=single,
         )
     # Simple type -> Create typed processor
     else:
@@ -990,8 +1005,10 @@ def _create_token_processor(
                 default_required_sf=default_required_sf,
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
+                single=single,
             ),
             optional=optional,
+            single=single,
         )
 
 
@@ -1008,6 +1025,7 @@ def _create_token_processor_base(
     default_required_sf: bool = True,
     force_deep_listing: bool = False,
     only_propagate_secondary_files: bool = True,
+    single: bool = True,
 ) -> CWLTokenProcessor:
     if not isinstance(port_type, MutableSequence):
         port_type = [port_type]
@@ -1039,6 +1057,7 @@ def _create_token_processor_base(
                 default_required=default_required_sf,
             ),
             streamable=getattr(cwl_element, "streamable", None),
+            single=single,
         )
     else:
         return CWLTokenProcessor(
@@ -1053,20 +1072,22 @@ def _create_token_processor_base(
                 if force_deep_listing
                 else _get_load_listing(cwl_element, context)
             ),
+            single=single,
         )
 
 
 def _create_token_processor_optional(
-    processor: TokenProcessor, optional: bool
+    processor: TokenProcessor, optional: bool, single: bool
 ) -> TokenProcessor:
     return (
         UnionTokenProcessor(
             name=processor.name,
             workflow=processor.workflow,
             processors=[
-                NullTokenProcessor(
+                CWLNullTokenProcessor(
                     name=processor.name,
-                    workflow=processor.workflow,
+                    workflow=cast(CWLWorkflow, processor.workflow),
+                    single=single,
                 ),
                 processor,
             ],
