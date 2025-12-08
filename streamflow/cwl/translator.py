@@ -26,6 +26,7 @@ from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.processor import (
     CommandOutputProcessor,
     MapTokenProcessor,
+    NullTokenProcessor,
     ObjectTokenProcessor,
     PopCommandOutputProcessor,
     TokenProcessor,
@@ -53,7 +54,6 @@ from streamflow.cwl.command import (
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
-    CWLNullTokenProcessor,
     CWLObjectCommandOutputProcessor,
     CWLTokenProcessor,
 )
@@ -598,6 +598,7 @@ def _create_list_merger(
     output_port: Port | None = None,
     link_merge: str | None = None,
     pick_value: str | None = None,
+    single: bool = True,
 ) -> Step:
     output_port_name = _get_source_name(name)
     combinator = workflow.create_step(
@@ -639,7 +640,7 @@ def _create_list_merger(
         case "all_non_null":
             combinator.add_output_port(output_port_name, workflow.create_port())
             transformer = workflow.create_step(
-                cls=AllNonNullTransformer, name=name + "-transformer"
+                cls=AllNonNullTransformer, name=name + "-transformer", single=single
             )
             transformer.add_input_port(output_port_name, combinator.get_output_port())
             transformer.add_output_port(
@@ -792,7 +793,6 @@ def _create_token_processor(
     default_required_sf: bool = True,
     force_deep_listing: bool = False,
     only_propagate_secondary_files: bool = True,
-    single: bool = True,
 ) -> TokenProcessor:
     # Array type: -> MapTokenProcessor
     if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
@@ -811,11 +811,9 @@ def _create_token_processor(
                     optional=optional,
                     force_deep_listing=force_deep_listing,
                     only_propagate_secondary_files=only_propagate_secondary_files,
-                    single=False,
                 ),
             ),
             optional=optional,
-            single=False,
         )
     # Enum type: -> create output processor
     elif isinstance(port_type, get_args(cwl_utils.parser.EnumSchema)):
@@ -842,7 +840,6 @@ def _create_token_processor(
             ],
             expression_lib=expression_lib,
             full_js=full_js,
-            single=single,
         )
     # Record type: -> ObjectTokenProcessor
     elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
@@ -869,13 +866,11 @@ def _create_token_processor(
                         context=context,
                         force_deep_listing=force_deep_listing,
                         only_propagate_secondary_files=only_propagate_secondary_files,
-                        single=single,
                     )
                     for port_type in port_type.fields
                 },
             ),
             optional=optional,
-            single=single,
         )
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
@@ -893,7 +888,6 @@ def _create_token_processor(
                 optional=optional,
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
-                single=single,
             )
         # Any type (e.g. ['Any', Type]) -> Equivalent to Any
         elif "Any" in types:
@@ -908,7 +902,6 @@ def _create_token_processor(
                 optional=optional,
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
-                single=single,
             )
         # List of types: -> UnionOutputProcessor
         else:
@@ -928,7 +921,6 @@ def _create_token_processor(
                     optional=False,
                     force_deep_listing=force_deep_listing,
                     only_propagate_secondary_files=only_propagate_secondary_files,
-                    single=single,
                 )
                 for port_type in [t for t in types if not isinstance(t, str)]
             ]
@@ -943,15 +935,10 @@ def _create_token_processor(
                         default_required_sf=default_required_sf,
                         force_deep_listing=force_deep_listing,
                         only_propagate_secondary_files=only_propagate_secondary_files,
-                        single=single,
                     )
                 )
             if optional:
-                processors.append(
-                    CWLNullTokenProcessor(
-                        name=port_name, workflow=workflow, single=single
-                    )
-                )
+                processors.append(NullTokenProcessor(name=port_name, workflow=workflow))
             if len(processors) > 1:
                 return UnionTokenProcessor(
                     name=port_name,
@@ -973,7 +960,6 @@ def _create_token_processor(
             optional=optional,
             force_deep_listing=force_deep_listing,
             only_propagate_secondary_files=only_propagate_secondary_files,
-            single=single,
         )
     # Simple type -> Create typed processor
     else:
@@ -987,10 +973,8 @@ def _create_token_processor(
                 default_required_sf=default_required_sf,
                 force_deep_listing=force_deep_listing,
                 only_propagate_secondary_files=only_propagate_secondary_files,
-                single=single,
             ),
             optional=optional,
-            single=single,
         )
 
 
@@ -1007,7 +991,6 @@ def _create_token_processor_base(
     default_required_sf: bool = True,
     force_deep_listing: bool = False,
     only_propagate_secondary_files: bool = True,
-    single: bool = True,
 ) -> CWLTokenProcessor:
     if not isinstance(port_type, MutableSequence):
         port_type = [port_type]
@@ -1039,7 +1022,6 @@ def _create_token_processor_base(
                 default_required=default_required_sf,
             ),
             streamable=getattr(cwl_element, "streamable", None),
-            single=single,
         )
     else:
         return CWLTokenProcessor(
@@ -1054,23 +1036,18 @@ def _create_token_processor_base(
                 if force_deep_listing
                 else _get_load_listing(cwl_element, context)
             ),
-            single=single,
         )
 
 
 def _create_token_processor_optional(
-    processor: TokenProcessor, optional: bool, single: bool
+    processor: TokenProcessor, optional: bool
 ) -> TokenProcessor:
     return (
         UnionTokenProcessor(
             name=processor.name,
             workflow=processor.workflow,
             processors=[
-                CWLNullTokenProcessor(
-                    name=processor.name,
-                    workflow=cast(CWLWorkflow, processor.workflow),
-                    single=single,
-                ),
+                NullTokenProcessor(name=processor.name, workflow=processor.workflow),
                 processor,
             ],
         )
@@ -2312,6 +2289,9 @@ class CWLTranslator:
                         output_port=self._get_source_port(workflow, global_name),
                         link_merge=link_merge,
                         pick_value=pick_value,
+                        single=not isinstance(
+                            element_output.type_, get_args(cwl_utils.parser.ArraySchema)
+                        ),
                     )
             # Otherwise, the output element depends on a single output port
             else:
@@ -2328,6 +2308,9 @@ class CWLTranslator:
                         output_port=self._get_source_port(workflow, global_name),
                         link_merge=link_merge,
                         pick_value=pick_value,
+                        single=not isinstance(
+                            element_output.type_, get_args(cwl_utils.parser.ArraySchema)
+                        ),
                     )
                 else:
                     # If the output source is an input port, link the output to the input
@@ -3002,6 +2985,7 @@ class CWLTranslator:
                         ports=ports,
                         link_merge=link_merge,
                         pick_value=pick_value,
+                        single=False
                     )
                     # Add ListMergeCombinator output port to the list of input ports for the current step
                     input_ports[global_name] = list_merger.get_output_port()
