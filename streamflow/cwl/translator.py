@@ -598,7 +598,6 @@ def _create_list_merger(
     output_port: Port | None = None,
     link_merge: str | None = None,
     pick_value: str | None = None,
-    single: bool = True,
 ) -> Step:
     output_port_name = _get_source_name(name)
     combinator = workflow.create_step(
@@ -640,13 +639,26 @@ def _create_list_merger(
         case "all_non_null":
             combinator.add_output_port(output_port_name, workflow.create_port())
             transformer = workflow.create_step(
-                cls=AllNonNullTransformer, name=name + "-transformer", single=single
+                cls=AllNonNullTransformer, name=name + "-transformer"
             )
             transformer.add_input_port(output_port_name, combinator.get_output_port())
-            transformer.add_output_port(
-                output_port_name, output_port or workflow.create_port()
-            )
-            return transformer
+            if len(ports) == 1:
+                transformer.add_output_port(output_port_name, workflow.create_port())
+                list_to_element = workflow.create_step(
+                    cls=ListToElementTransformer, name=name + "-list-to-element"
+                )
+                list_to_element.add_input_port(
+                    output_port_name, transformer.get_output_port()
+                )
+                list_to_element.add_output_port(
+                    output_port_name, output_port or workflow.create_port()
+                )
+                return list_to_element
+            else:
+                transformer.add_output_port(
+                    output_port_name, output_port or workflow.create_port()
+                )
+                return transformer
         case _:
             if link_merge is None:
                 combinator.add_output_port(output_port_name, workflow.create_port())
@@ -2289,9 +2301,6 @@ class CWLTranslator:
                         output_port=self._get_source_port(workflow, global_name),
                         link_merge=link_merge,
                         pick_value=pick_value,
-                        single=not isinstance(
-                            element_output.type_, get_args(cwl_utils.parser.ArraySchema)
-                        ),
                     )
             # Otherwise, the output element depends on a single output port
             else:
@@ -2308,9 +2317,6 @@ class CWLTranslator:
                         output_port=self._get_source_port(workflow, global_name),
                         link_merge=link_merge,
                         pick_value=pick_value,
-                        single=not isinstance(
-                            element_output.type_, get_args(cwl_utils.parser.ArraySchema)
-                        ),
                     )
                 else:
                     # If the output source is an input port, link the output to the input
@@ -2985,7 +2991,6 @@ class CWLTranslator:
                         ports=ports,
                         link_merge=link_merge,
                         pick_value=pick_value,
-                        single=False
                     )
                     # Add ListMergeCombinator output port to the list of input ports for the current step
                     input_ports[global_name] = list_merger.get_output_port()
