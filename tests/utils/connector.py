@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import sys
 import tarfile
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, AsyncContextManager, cast
@@ -10,6 +11,7 @@ from typing import Any, AsyncContextManager, cast
 import asyncssh
 from asyncssh import SSHClient, SSHClientConnection
 
+from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware
@@ -77,7 +79,7 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
             with tarfile.open(
                 fileobj=buffer, mode="w|", format=tarfile.PAX_FORMAT
             ) as tar:
-                tar.add(self.fileobj.name, arcname=os.path.basename(self.fileobj.name))
+                tar.add(self.fileobj, arcname=os.path.basename(self.fileobj))
             buffer.seek(0)
             self.stream = TarStreamReaderWrapper(buffer)
         return self.stream
@@ -85,7 +87,8 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.stream:
             await self.stream.close()
-        self.fileobj.close()
+        if not isinstance(self.fileobj, str):
+            self.fileobj.close()
 
 
 class TarConnector(BaseConnector):
@@ -119,13 +122,55 @@ class TarConnector(BaseConnector):
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
         path = get_path(command)
-        return TarStreamWrapperContextManager(fileobj=open(path, "rb"), mode="r")
+        return TarStreamWrapperContextManager(fileobj=path, mode="r")
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
         path = get_path(command)
         return TarStreamWrapperContextManager(fileobj=open(path, "wb"), mode="w")
+
+    def _get_shell(self) -> str:
+        if sys.platform == "win32":
+            return "cmd"
+        elif sys.platform == "darwin":
+            return "bash"
+        else:
+            return "sh"
+
+    async def run(
+        self,
+        location: ExecutionLocation,
+        command: MutableSequence[str],
+        environment: MutableMapping[str, str] | None = None,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        capture_output: bool = False,
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[str, int] | None:
+        command = utils.create_command(
+            self.__class__.__name__,
+            command,
+            environment,
+            workdir,
+            stdin,
+            stdout,
+            stderr,
+        )
+        command = utils.encode_command(command, self._get_shell())
+        return await utils.run_in_subprocess(
+            location=location,
+            command=[
+                self._get_shell(),
+                "/C" if sys.platform == "win32" else "-c",
+                f"'{command}'",
+            ],
+            capture_output=capture_output,
+            timeout=timeout,
+        )
 
 
 class FailureConnectorException(Exception):

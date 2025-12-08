@@ -109,8 +109,13 @@ async def test_aaaa(context: StreamFlowContext) -> None:
         context=context,
         location=src_location,
     )
-    dst_path = src_path.parent
-    await src_path.write_text("StreamFlow")
+    dst_path = (src_path.parent / utils.random_name())
+    await dst_path.mkdir()
+    # await src_path.write_text("StreamFlow")
+    await src_path.mkdir(parents=True, exist_ok=True)
+    assert await src_path.exists()
+    await (src_path / "base").write_text("Streamflow")
+    await (src_path / "base1").symlink_to(src_path / "base")
     assert await src_path.exists()
 
     context.data_manager.register_path(
