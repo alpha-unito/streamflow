@@ -146,12 +146,15 @@ jobs:
             streamflow run /streamflow/project/streamflow.yml
   documentation:
     name: "Build Sphinx documentation"
+    strategy:
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: |
             docs/requirements.txt
@@ -162,7 +165,7 @@ jobs:
           python -m pip install .
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "c2b7f3b50bb5ec79e95645b67526af3c6c0b1b37111a1453626c2d98020b86a0"
+          CHECKSUM: "add67e640a15da202e6abe1307841a3a7dad08dfb8bfe941e4f21f2da2e8e968"
         run: |
           cd docs
           HASH="$(make checksum | tail -n1)"
