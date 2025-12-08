@@ -7,6 +7,6 @@ from streamflow.deployment.filter.matching import MatchingBindingFilter
 from streamflow.deployment.filter.shuffle import ShuffleBindingFilter
 
 binding_filter_classes: MutableMapping[str, type[BindingFilter]] = {
-    "shuffle": ShuffleBindingFilter,
     "matching": MatchingBindingFilter,
+    "shuffle": ShuffleBindingFilter,
 }

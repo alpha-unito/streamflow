@@ -1,5 +1,5 @@
 import logging
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence, MutableSet
 from importlib.resources import files
 
 from streamflow.core.deployment import BindingFilter, Target
@@ -7,6 +7,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
+from streamflow.core.utils import get_job_step_name
 from streamflow.core.workflow import Job
 from streamflow.log_handler import logger
 from streamflow.workflow.token import FileToken, ListToken, ObjectToken
@@ -27,14 +28,14 @@ class MatchingRule:
         self.predicates: MutableMapping[str, str] = predicates
         self.service: str | None = service
 
-    def eval(self, deployment_name: str, service: str | None, job: Job) -> bool:
-        if deployment_name != self.deployment:
+    def eval(self, job: Job, deployment: str, service: str | None = None) -> bool:
+        if deployment != self.deployment:
             return False
         if self.service is not None and self.service != service:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
                     f"Filter {self.filter} on job {job.name} is filtering on "
-                    f"the {deployment_name} deployment, but no match was found "
+                    f"the {deployment} deployment, but no match was found "
                     f"for the {service} service."
                 )
             return False
@@ -57,14 +58,14 @@ class MatchingRule:
                     logger.debug(
                         f"Filter {self.filter} on the port {input_name} of the job {job.name} "
                         f"did not match {match}. "
-                        f"The deployment {deployment_name} is discarded."
+                        f"The deployment {deployment} is discarded."
                     )
                 return False
         return True
 
 
 class MatchingBindingFilter(BindingFilter):
-    __slots__ = ("match_rules", "name")
+    __slots__ = ("matching_rules", "name", "_evaluated_steps")
 
     def __init__(
         self,
@@ -75,9 +76,9 @@ class MatchingBindingFilter(BindingFilter):
                 MutableMapping[str, str] | MutableSequence[MutableMapping[str, str]],
             ]
         ],
-    ):
+    ) -> None:
         super().__init__(name)
-        self.match_rules: MutableSequence[MatchingRule] = []
+        self.matching_rules: MutableSequence[MatchingRule] = []
         for deployments in filters:
             # Retrieve deployment
             target = deployments["target"]
@@ -87,7 +88,7 @@ class MatchingBindingFilter(BindingFilter):
                 if isinstance(target, MutableMapping) and "service" in target
                 else None
             )
-            self.match_rules.append(
+            self.matching_rules.append(
                 MatchingRule(
                     deployment=deployment,
                     filter_=self.name,
@@ -97,32 +98,35 @@ class MatchingBindingFilter(BindingFilter):
                     service=service,
                 )
             )
+        self._evaluated_steps: MutableSet[str] = set()
 
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
     ) -> MutableSequence[Target]:
-        target_deployments = {t.deployment.name for t in targets}
-        filter_deployments = {c.deployment for c in self.match_rules}
-        if target_deployments - filter_deployments:
-            logger.warning(
-                f"Filter {self.name} on job {job.name} discards the following deployments because "
-                f"no matching rules are defined: {target_deployments - filter_deployments}"
-            )
-        if filter_deployments - target_deployments:
-            logger.warning(
-                f"Filter {self.name} on job {job.name} contains filter deployments that do not match "
-                f"any target deployment. Please check for potential typos in the filter: "
-                f"{filter_deployments - target_deployments}"
-            )
+        if not (step_name := get_job_step_name(job.name)) in self._evaluated_steps:
+            self._evaluated_steps.add(step_name)
+            if (target_deployments := {t.deployment.name for t in targets}) - (
+                filter_deployments := {c.deployment for c in self.matching_rules}
+            ):
+                logger.warning(
+                    f"Filter {self.name} on job {job.name} discards the following deployments because "
+                    f"no matching rules are defined: {target_deployments - filter_deployments}"
+                )
+            if filter_deployments - target_deployments:
+                logger.warning(
+                    f"Filter {self.name} on job {job.name} contains filter deployments that do not match "
+                    f"any target deployment. Please check for potential typos in the filter: "
+                    f"{filter_deployments - target_deployments}"
+                )
         filtered_targets = set()
         for target in targets:
             if any(
-                match_rule.eval(
-                    deployment_name=target.deployment.name,
-                    service=target.service,
+                matching_rule.eval(
                     job=job,
+                    deployment=target.deployment.name,
+                    service=target.service,
                 )
-                for match_rule in self.match_rules
+                for matching_rule in self.matching_rules
             ):
                 filtered_targets.add(target)
         if len(filtered_targets) == 0:
