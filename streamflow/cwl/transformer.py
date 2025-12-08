@@ -24,18 +24,11 @@ from streamflow.workflow.utils import get_token_value
 
 
 class AllNonNullTransformer(OneToOneTransformer):
-    def __init__(self, name: str, workflow: CWLWorkflow, single: bool = False) -> None:
-        super().__init__(name, workflow)
-        self.single: bool = single
-
     def _transform(self, name: str, token: Token) -> Token:
         if isinstance(token, ListToken):
-            token = token.update(
+            return token.update(
                 [t for t in token.value if get_token_value(t) is not None]
             )
-            if self.single and len(token.value) == 1:
-                token = token.value[0]
-            return token
         else:
             raise WorkflowExecutionException(f"Invalid value for token {name}")
 
