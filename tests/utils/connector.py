@@ -61,23 +61,35 @@ class TarStreamWriterWrapper(StreamWriterWrapper):
 
 
 class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
-    def __init__(
-        self,
-        fileobj: Any,
-        mode: str,
-    ):
+    def __init__(self, fileobj: Any, mode: str, tar_format: str):
         super().__init__()
         self.fileobj: Any = fileobj
         self.stream: StreamWrapper | None = None
         self.mode: str = mode
+        # TODO: add type (in particular to test `sparse`)
+        # FORMATS:
+        # - gnu           GNU tar 1.13.x format.
+        # - oldgnu        GNU format as per tar <= 1.12.
+        # - pax, posix    POSIX 1003.1 - 2001 (pax) format.
+        # - ustar         POSIX 1003.1 - 1988 (ustar) format.
+        # - v7            Old V7 tar format.
+        match tar_format:
+            case "ustar" | "v7":
+                raise NotImplementedError(tar_format)
+            case "gnu" | "oldgnu":
+                self.tar_format: int = tarfile.GNU_FORMAT
+            case "pax" | "posix":
+                self.tar_format: int = tarfile.PAX_FORMAT
+            case _:
+                raise ValueError(f"Unknown format: {tar_format}")
 
-    async def __aenter__(self) -> StreamWriterWrapper:
+    async def __aenter__(self) -> StreamWrapper:
         if self.mode == "w":
             self.stream = TarStreamWriterWrapper(self.fileobj)
         else:
             buffer = io.BytesIO()
             with tarfile.open(
-                fileobj=buffer, mode="w|", format=tarfile.PAX_FORMAT
+                fileobj=buffer, mode="w|", format=self.tar_format  # tarfile.PAX_FORMAT
             ) as tar:
                 tar.add(self.fileobj, arcname=os.path.basename(self.fileobj))
             buffer.seek(0)
@@ -92,6 +104,20 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
 
 
 class TarConnector(BaseConnector):
+
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        tar_format: str,
+        transferBufferSize: int = 64,
+    ):
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            transferBufferSize=transferBufferSize,
+        )
+        self.tar_format: str = tar_format
 
     async def deploy(self, external: bool) -> None:
         pass
@@ -122,13 +148,17 @@ class TarConnector(BaseConnector):
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
         path = get_path(command)
-        return TarStreamWrapperContextManager(fileobj=path, mode="r")
+        return TarStreamWrapperContextManager(
+            fileobj=path, mode="r", tar_format=self.tar_format
+        )
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
         path = get_path(command)
-        return TarStreamWrapperContextManager(fileobj=open(path, "wb"), mode="w")
+        return TarStreamWrapperContextManager(
+            fileobj=open(path, "wb"), mode="w", tar_format=self.tar_format
+        )
 
     def _get_shell(self) -> str:
         if sys.platform == "win32":

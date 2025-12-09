@@ -32,6 +32,9 @@ async def _compare_remote_dirs(
     ).__anext__()
     assert len(src_files) == len(dst_files)
     for src_file, dst_file in zip(sorted(src_files), sorted(dst_files), strict=True):
+        a = await (src_path / src_file).checksum()
+        b = await (dst_path / dst_file).checksum()
+        assert a != b
         assert (
             await (src_path / src_file).checksum()
             == await (dst_path / dst_file).checksum()

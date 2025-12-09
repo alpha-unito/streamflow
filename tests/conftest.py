@@ -156,11 +156,7 @@ async def context(
             "path": os.getcwd(),
         },
     )
-    for deployment_t in (
-        *chosen_deployment_types,
-        "parameterizable_hardware",
-        "aiotar",
-    ):
+    for deployment_t in (*chosen_deployment_types, "parameterizable_hardware"):
         config = await get_deployment_config(_context, deployment_t)
         await _context.deployment_manager.deploy(config)
     yield _context
