@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import os
 import sys
 import tarfile
@@ -38,18 +37,16 @@ def get_path(command: MutableSequence[str]) -> str:
                 raise NotImplementedError(command)
         case _:
             raise NotImplementedError(command)
-    raise Exception(f"No path found in {command}")
 
 
 class TarStreamReaderWrapper(StreamReaderWrapper):
-    def __init__(self, stream: Any):
-        super().__init__(stream)
-
     async def close(self) -> None:
-        self.stream.close()
+        if self.stream:
+            os.close(self.stream)
+            self.stream = None
 
     async def read(self, size: int | None = None):
-        return self.stream.read(size)
+        return os.read(self.stream, size)
 
 
 class TarStreamWriterWrapper(StreamWriterWrapper):
@@ -87,13 +84,12 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
         if self.mode == "w":
             self.stream = TarStreamWriterWrapper(self.fileobj)
         else:
-            buffer = io.BytesIO()
-            with tarfile.open(
-                fileobj=buffer, mode="w|", format=self.tar_format  # tarfile.PAX_FORMAT
-            ) as tar:
-                tar.add(self.fileobj, arcname=os.path.basename(self.fileobj))
-            buffer.seek(0)
-            self.stream = TarStreamReaderWrapper(buffer)
+            read_fd, write_fd = os.pipe()
+            with os.fdopen(write_fd, "wb") as f:
+                # mode='w|' is essential for streaming (non-seekable)
+                with tarfile.open(fileobj=f, mode="w|") as tar:
+                    tar.add(self.fileobj, arcname=os.path.basename(self.fileobj))
+            self.stream = TarStreamReaderWrapper(read_fd)
         return self.stream
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

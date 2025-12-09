@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import os
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any
 
 import pytest
 
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.utils import contains_persistent_id
 from streamflow.core.workflow import Port, Step, Token, Workflow
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import (
     DefaultDatabaseLoadingContext,
@@ -93,6 +97,49 @@ def check_persistent_id(
     assert new_elem.persistent_id is not None
     assert original_elem.persistent_id != new_elem.persistent_id
     assert new_elem.workflow.persistent_id == new_workflow.persistent_id
+
+
+async def compare_remote_dirs(
+    context: StreamFlowContext,
+    src_location: ExecutionLocation,
+    src_path: StreamFlowPath,
+    dst_location: ExecutionLocation,
+    dst_path: StreamFlowPath,
+) -> None:
+    assert await dst_path.exists()
+
+    # The two directories must have the same order of elements
+    src_path, src_dirs, src_files = await src_path.walk(
+        follow_symlinks=True
+    ).__anext__()
+    dst_path, dst_dirs, dst_files = await dst_path.walk(
+        follow_symlinks=True
+    ).__anext__()
+    assert len(src_files) == len(dst_files)
+    for src_file, dst_file in zip(sorted(src_files), sorted(dst_files), strict=True):
+        a = await (src_path / src_file).checksum()
+        b = await (dst_path / dst_file).checksum()
+        assert a == b
+        assert (
+            await (src_path / src_file).checksum()
+            == await (dst_path / dst_file).checksum()
+        )
+    assert len(src_dirs) == len(dst_dirs)
+    tasks = []
+    for src_dir, dst_dir in zip(sorted(src_dirs), sorted(dst_dirs), strict=True):
+        assert os.path.basename(src_dir) == os.path.basename(dst_dir)
+        tasks.append(
+            asyncio.create_task(
+                compare_remote_dirs(
+                    context,
+                    src_location,
+                    src_path / src_dir,
+                    dst_location,
+                    dst_path / dst_dir,
+                )
+            )
+        )
+    await asyncio.gather(*tasks)
 
 
 async def create_and_run_step(

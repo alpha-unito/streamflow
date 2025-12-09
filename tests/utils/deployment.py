@@ -215,7 +215,7 @@ def get_aiotar_deployment_config():
     return DeploymentConfig(
         name="aiotar",
         type="aiotar",
-        config={"transferBufferSize": 2**16},
+        config={"transferBufferSize": 16},
         external=False,
         lazy=False,
         workdir=workdir,
