@@ -276,7 +276,7 @@ async def test_hardlink(
         else:
             with pytest.raises(WorkflowExecutionException) as err:
                 await path.hardlink_to(src)
-            assert "Operation not permitted" in str(err.value)
+            assert "1 Command 'ln -nf " in str(err.value)
     finally:
         await path.rmtree()
         await src.rmtree()

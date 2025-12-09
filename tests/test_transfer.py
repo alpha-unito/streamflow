@@ -91,7 +91,7 @@ async def test_directory_to_directory(
                     lvl=f"{i}-0",
                 )
         await (src_path / "mylnkfile").hardlink_to(
-            next(iter([p async for p in src_path.glob("file-0*")]))
+            next(iter([p async for p in src_path.glob("file-0-*")]))
         )
         src_path = await src_path.resolve()
         assert src_path is not None

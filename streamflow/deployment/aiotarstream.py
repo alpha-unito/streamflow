@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import grp
 import os
@@ -13,6 +14,7 @@ import tarfile
 import time
 from abc import ABC
 from builtins import open as bltn_open
+from pathlib import PurePath
 from typing import Any, cast
 
 from typing_extensions import Self
@@ -294,7 +296,10 @@ class AioTarInfo(tarfile.TarInfo):
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
         obj = cls.frombuf(buf, tarstream.encoding, tarstream.errors)
         obj.offset = tarstream.stream.tell() - tarfile.BLOCKSIZE
-        return await obj._proc_member(tarstream)
+        a = await obj._proc_member(tarstream)
+        if a.islnk():
+            pass
+        return a
 
     def _proc_builtin(self, tarstream):
         self.offset_data = tarstream.stream.tell()
@@ -491,6 +496,8 @@ class AioTarStream:
         self._unames = {}  # Cached mappings of uid -> uname
         self._gnames = {}  # Cached mappings of gid -> gname
 
+        self.pending_lnks = []
+
     async def __aenter__(self):
         self._check()
         try:
@@ -509,6 +516,13 @@ class AioTarStream:
             raise
 
     async def __aexit__(self, exc_type, value, traceback):
+        replica_list = self.pending_lnks
+        self.pending_lnks = []
+        while replica_list:
+            tarinfo, targetpath = replica_list.pop()
+            await self._extract_member(tarinfo, targetpath)
+        if self.pending_lnks:
+            raise Exception("Failed to create pending links")
         if exc_type is None:
             await self.close()
         else:
@@ -619,10 +633,13 @@ class AioTarStream:
         else:
             await self.makefile(tarinfo, targetpath)
         if set_attrs:
-            self.chown(tarinfo, targetpath, numeric_owner)
-            if not tarinfo.issym():
-                self.chmod(tarinfo, targetpath)
-                self.utime(tarinfo, targetpath)
+            if os.path.exists(targetpath):
+                self.chown(tarinfo, targetpath, numeric_owner)
+                if not tarinfo.issym():
+                    self.chmod(tarinfo, targetpath)
+                    self.utime(tarinfo, targetpath)
+            elif not (tarinfo.islnk() or tarinfo.issym()):
+                raise Exception("File {targetpath} does not exist}")
 
     async def _find_link_target(self, tarinfo):
         if tarinfo.issym():
@@ -758,7 +775,10 @@ class AioTarStream:
         self._check("r")
         tarinfo = await self.getmember(member) if isinstance(member, str) else member
         if tarinfo.islnk():
-            tarinfo._link_target = os.path.join(path, tarinfo.linkname)
+            linkname = PurePath(tarinfo.linkname)
+            tarinfo._link_target = os.path.join(
+                path, linkname.relative_to(linkname.parts[0])
+            )
         try:
             await self._extract_member(
                 tarinfo,
@@ -984,9 +1004,12 @@ class AioTarStream:
                         os.unlink(targetpath)
                     os.link(tarinfo._link_target, targetpath)
                 else:
-                    await self._extract_member(
-                        await self._find_link_target(tarinfo), targetpath
+                    # await self.makefile(tarinfo, targetpath)
+                    bufsize = self.copybufsize
+                    await copyfileobj(
+                        self.stream, asyncio.subprocess.DEVNULL, tarinfo.size, bufsize
                     )
+                    self.pending_lnks.append((tarinfo, targetpath))
         except tarfile.symlink_exception:
             try:
                 await self._extract_member(
