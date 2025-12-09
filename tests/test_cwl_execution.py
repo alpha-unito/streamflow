@@ -1,12 +1,16 @@
+import asyncio
 import itertools
 import os
 import posixpath
+from collections.abc import MutableSequence
 from typing import cast
 
 import pytest
 
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.data import DataType
+from streamflow.cwl import utils as cwl_utils
 from streamflow.cwl.command import CWLCommand, CWLCommandTokenProcessor
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.step import CWLExecuteStep, CWLInputInjectorStep, CWLScheduleStep
@@ -202,3 +206,60 @@ async def test_initial_workdir(
     finally:
         if path:
             await path.rmtree()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("file_type", ("file", "directory"))
+async def test_creating_file(
+    chosen_deployment_types: MutableSequence[str],
+    context: StreamFlowContext,
+    file_type: str,
+) -> None:
+    """Test the creation of files and their registration in the `DataManager`."""
+    deployments = ["local", "docker"]
+    for deployment in deployments:
+        if deployment not in chosen_deployment_types:
+            pytest.skip(f"Deployment {deployment} was not activated")
+    locations = await asyncio.gather(
+        *(
+            asyncio.create_task(get_location(context, deployment))
+            for deployment in deployments
+        )
+    )
+    basename = utils.random_name()
+    path = os.path.join("/tmp", basename)
+    match file_type:
+        case "file":
+            await cwl_utils.write_remote_file(
+                context=context,
+                locations=locations,
+                content="Hello",
+                path=path,
+                relpath=basename,
+            )
+        case "directory":
+            await cwl_utils.create_remote_directory(
+                context=context, locations=locations, path=path, relpath=basename
+            )
+        case _:
+            raise ValueError(f"Unsupported file type: {file_type}")
+    real_paths = []
+    for location in locations:
+        src_location = await context.data_manager.get_source_location(
+            path, location.deployment
+        )
+        assert src_location is not None
+        real_path = await StreamFlowPath(
+            path, context=context, location=location
+        ).resolve()
+        assert real_path is not None
+        real_paths.append(str(real_path))
+        assert src_location.path == real_paths[-1]
+    assert len(
+        context.data_manager.get_data_locations(path=path, data_type=DataType.PRIMARY)
+    ) == len(deployments)
+    assert len(
+        context.data_manager.get_data_locations(
+            path=path, data_type=DataType.SYMBOLIC_LINK
+        )
+    ) == len([p for p in real_paths if p != path])

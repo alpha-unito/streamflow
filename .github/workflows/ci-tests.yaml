@@ -63,13 +63,12 @@ jobs:
     runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.16"
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: | 
-            requirements.txt
-            test-requirements.txt
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -97,9 +96,6 @@ jobs:
           kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ matrix.docker == 'kubernetes' }}
-      - name: "Install StreamFlow"
-        run: |
-          python -m pip install . --user
       - name: "Test CWL ${{ matrix.version }} conformance"
         env:
           VERSION: ${{ matrix.version }}
@@ -146,26 +142,26 @@ jobs:
             streamflow run /streamflow/project/streamflow.yml
   documentation:
     name: "Build Sphinx documentation"
+    strategy:
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.16"
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: |
-            docs/requirements.txt
-            requirements.txt
+          python-version: ${{ matrix.python }}
       - name: "Install Python Dependencies"
-        run: |
-          python -m pip install -r docs/requirements.txt
-          python -m pip install .
+        run: uv sync --locked --no-dev --group docs
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "c2b7f3b50bb5ec79e95645b67526af3c6c0b1b37111a1453626c2d98020b86a0"
+          CHECKSUM: "add67e640a15da202e6abe1307841a3a7dad08dfb8bfe941e4f21f2da2e8e968"
         run: |
           cd docs
-          HASH="$(make checksum | tail -n1)"
+          HASH="$(uv run --no-sync make checksum | tail -n1)"
           echo "Docs checksum is ${HASH}"
           test "${HASH}" == "${CHECKSUM}"
   test-flux:
@@ -215,19 +211,14 @@ jobs:
       TOXENV: ${{ matrix.step }}
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.16"
       - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
-          cache: pip
-          cache-dependency-path: |
-            bandit-requirements.txt
-            lint-requirements.txt
-            requirements.txt
-            tox.ini
-      - name: "Install Python Dependencies and StreamFlow"
-        run: |
-          python -m pip install tox --user
-          python -m pip install . --user
+      - name: "Install Tox"
+        run: uv tool install tox --with tox-uv
       - name: "Run StreamFlow static analysis via Tox"
         run: tox
   unit-tests:
@@ -244,15 +235,12 @@ jobs:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.16"
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: |
-            report-requirements.txt
-            requirements.txt
-            test-requirements.txt
-            tox.ini
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -280,12 +268,10 @@ jobs:
           kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
-      - name: "Install Python Dependencies and StreamFlow"
-        run: |
-          python -m pip install tox --user
-          python -m pip install . --user
+      - name: "Install Tox"
+        run: uv tool install tox --with tox-uv
       - name: "Run StreamFlow tests via Tox"
-        run: python -m tox
+        run: tox
       - name: "Upload test results"
         if: ${{ !cancelled() }}
         uses: codecov/test-results-action@v1
