@@ -20,7 +20,7 @@ def _get_content(min_length: int, text: str = "") -> str:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tar_format", ["gnu", "pax"])
+@pytest.mark.parametrize("tar_format", ["gnu", "pax", "posix", "ustar", "v7"])
 async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
     src_deployment_config = get_aiotar_deployment_config()
     src_deployment_config.config["tar_format"] = tar_format

@@ -72,8 +72,8 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
         # - v7            Old V7 tar format.
         match tar_format:
             case "ustar" | "v7":
-                raise NotImplementedError(tar_format)
-            case "gnu" | "oldgnu":
+                self.tar_format: int = tarfile.USTAR_FORMAT
+            case "gnu":  # FIXME: oldgnu?
                 self.tar_format: int = tarfile.GNU_FORMAT
             case "pax" | "posix":
                 self.tar_format: int = tarfile.PAX_FORMAT
