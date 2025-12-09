@@ -93,6 +93,13 @@ async def test_directory_to_directory(
         await (src_path / "mylnkfile").hardlink_to(
             next(iter([p async for p in src_path.glob("file-0-*")]))
         )
+        await (src_path / "mysymfile").symlink_to(
+            next(iter([p async for p in src_path.glob("file-1-*")]))
+        )
+        await (src_path / "mysymdir").symlink_to(
+            next(iter([p async for p in src_path.glob("dir-0-*")])),
+            target_is_directory=True,
+        )
         src_path = await src_path.resolve()
         assert src_path is not None
         # Transfer from `src_path` on `src_location` to `dst_path` directory on `dst_location`
@@ -118,13 +125,7 @@ async def test_directory_to_directory(
         await dst_path.exists()
 
         # Check that the source and destination have the same subdirectories and files
-        await compare_remote_dirs(
-            context,
-            src_location,
-            src_path,
-            dst_location,
-            dst_path,
-        )
+        await compare_remote_dirs(context, src_path, dst_path)
     finally:
         if src_path is not None:
             await src_path.rmtree()

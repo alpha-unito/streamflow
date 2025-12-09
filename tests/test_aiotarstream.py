@@ -44,7 +44,9 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
     )
     await dst_path.mkdir(parents=True, exist_ok=True)
     await src_path.mkdir(parents=True, exist_ok=True)
+    src_path = await src_path.resolve()
     assert await src_path.exists()
+    dst_path = await dst_path.resolve()
     assert await dst_path.exists()
 
     await (src_path / "a").mkdir(parents=True, exist_ok=True)
@@ -76,6 +78,4 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
         dst_path=str(dst_path / src_path.name),
         writable=False,
     )
-    await compare_remote_dirs(
-        context, src_location, src_path, dst_location, dst_path / src_path.name
-    )
+    await compare_remote_dirs(context, src_path, dst_path / src_path.name)

@@ -71,12 +71,12 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
         # - ustar         POSIX 1003.1 - 1988 (ustar) format.
         # - v7            Old V7 tar format.
         match tar_format:
-            case "ustar" | "v7":
-                self.tar_format: int = tarfile.USTAR_FORMAT
             case "gnu":  # FIXME: oldgnu?
                 self.tar_format: int = tarfile.GNU_FORMAT
             case "pax" | "posix":
                 self.tar_format: int = tarfile.PAX_FORMAT
+            case "ustar" | "v7":
+                self.tar_format: int = tarfile.USTAR_FORMAT
             case _:
                 raise ValueError(f"Unknown format: {tar_format}")
 
@@ -123,7 +123,7 @@ class TarConnector(BaseConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        pass
+        return ""
 
     async def get_available_locations(
         self, service: str | None = None
@@ -157,12 +157,13 @@ class TarConnector(BaseConnector):
         )
 
     def _get_shell(self) -> str:
-        if sys.platform == "win32":
-            return "cmd"
-        elif sys.platform == "darwin":
-            return "bash"
-        else:
-            return "sh"
+        match sys.platform:
+            case "win32":
+                return "cmd"
+            case "darwin":
+                return "bash"
+            case _:
+                return "sh"
 
     async def run(
         self,
@@ -206,7 +207,7 @@ class FailureConnectorException(Exception):
 class FailureConnector(Connector):
     @classmethod
     def get_schema(cls) -> str:
-        pass
+        return ""
 
     async def copy_local_to_remote(
         self,
