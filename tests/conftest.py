@@ -54,9 +54,9 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     streamflow.deployment.connector.connector_classes.update(
         {
+            "aiotar": TarConnector,
             "failure": FailureConnector,
             "parameterizable_hardware": ParameterizableHardwareConnector,
-            "aiotar": TarConnector,
         }
     )
     streamflow.deployment.filter.binding_filter_classes.update(

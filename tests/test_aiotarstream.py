@@ -4,7 +4,6 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.data.remotepath import StreamFlowPath
-from streamflow.log_handler import logger
 from tests.utils.deployment import (
     get_aiotar_deployment_config,
     get_local_deployment_config,
@@ -23,13 +22,12 @@ def _get_content(min_length: int, text: str = "") -> str:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tar_format", ["gnu", "pax", "posix", "ustar", "v7"])
 async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
-    src_deployment_config = get_aiotar_deployment_config(tar_format=tar_format)
+    src_deployment_config = get_aiotar_deployment_config(tar_format)
     await context.deployment_manager.deploy(src_deployment_config)
-    connector = context.deployment_manager.get_connector(src_deployment_config.name)
-    locations = await connector.get_available_locations()
+    src_connector = context.deployment_manager.get_connector(src_deployment_config.name)
+    locations = await src_connector.get_available_locations()
     src_location = next(iter(locations.values())).location
 
-    src_connector = context.deployment_manager.get_connector(src_location.deployment)
     dst_deployment_config = get_local_deployment_config()
     dst_location = await get_location(context, dst_deployment_config.type)
 
@@ -41,26 +39,16 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
         context=context,
         location=dst_location,
     )
-    dst_path = StreamFlowPath(
-        dst_deployment_config.workdir,
-        utils.random_name(),
-        context=context,
-        location=dst_location,
-    )
-    await dst_path.mkdir(parents=True, exist_ok=True)
+    # Populate `src_path`
     await src_path.mkdir(parents=True, exist_ok=True)
     src_path = await src_path.resolve()
     assert await src_path.exists()
-    dst_path = await dst_path.resolve()
-    assert await dst_path.exists()
-
     await (src_path / "a").mkdir(parents=True, exist_ok=True)
     src_buff_size = src_connector.transferBufferSize
     await (src_path / "a" / "base1.txt").write_text(
         _get_content(text="StreamFlow base1", min_length=src_buff_size * 2)
     )
     await (src_path / "base1.1.txt").hardlink_to(src_path / "a" / "base1.txt")
-
     await (src_path / "b").mkdir(parents=True, exist_ok=True)
     await (src_path / "b" / "base2.txt").write_text(
         _get_content(text="StreamFlow base.2", min_length=src_buff_size * 3)
@@ -69,15 +57,24 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
     await (src_path / "base3.txt").write_text(
         _get_content(text="StreamFlow base.3.", min_length=src_buff_size * 2)
     )
-    logger.info(f"1. src_path elements: {[p async for p in src_path.glob('*')]}")
-
+    # Register `src_path`
     context.data_manager.register_path(
         location=src_location,
         path=str(src_path),
         relpath=str(src_path),
         data_type=DataType.PRIMARY,
     )
-    logger.info(f"2. src_path elements: {[p async for p in src_path.glob('*')]}")
+    # Create `dst_path` workdir
+    dst_path = StreamFlowPath(
+        dst_deployment_config.workdir,
+        utils.random_name(),
+        context=context,
+        location=dst_location,
+    )
+    await dst_path.mkdir(parents=True, exist_ok=True)
+    dst_path = await dst_path.resolve()
+    assert await dst_path.exists()
+    # Transfer data
     await context.data_manager.transfer_data(
         src_location=src_location,
         src_path=str(src_path),
@@ -85,5 +82,5 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
         dst_path=str(dst_path / src_path.name),
         writable=False,
     )
-    logger.info(f"3. src_path elements: {[p async for p in src_path.glob('*')]}")
+    # Check if the data are equals
     await compare_remote_dirs(src_path, dst_path / src_path.name)

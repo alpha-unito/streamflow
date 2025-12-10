@@ -38,7 +38,7 @@ def _get_free_tcp_port() -> int:
     return port
 
 
-def get_aiotar_deployment_config(tar_format: str = "none") -> DeploymentConfig:
+def get_aiotar_deployment_config(tar_format: str) -> DeploymentConfig:
     workdir = os.path.join(
         os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
     )

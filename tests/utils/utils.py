@@ -129,46 +129,6 @@ async def compare_remote_dirs(
     await asyncio.gather(*tasks)
 
 
-# async def compare_remote_dirs(
-#     src_path: StreamFlowPath, dst_path: StreamFlowPath
-# ) -> None:
-#     assert await dst_path.exists()
-#
-#     if type(src_path) is type(dst_path) and (
-#         isinstance(src_path, LocalStreamFlowPath)
-#         or src_path.location.deployment == dst_path.location.deployment
-#     ):
-#         assert await dst_path.is_symlink()
-#         assert await dst_path.resolve() == src_path
-#     else:
-#         logger.info(
-#             f"CMP\n"
-#             f"src_elems: {[p async for p in src_path.glob('*')]}\n"
-#             f"dst_elems: {[p async for p in dst_path.glob('*')]}"
-#         )
-#         assert len(src_elements := [p async for p in src_path.glob("*")]) == len(
-#             dst_elements := [p async for p in dst_path.glob("*")]
-#         )
-#         for src_elem, dst_elem in zip(
-#             sorted(src_elements), sorted(dst_elements), strict=True
-#         ):
-#             if await src_elem.is_symlink():
-#                 # During the transfer, we dereference the symbolic links
-#                 assert not await dst_elem.is_symlink()
-#                 assert src_elem.name == dst_elem.name
-#
-#             if await src_elem.is_file():
-#                 assert await dst_elem.is_file()
-#                 assert src_elem.name == dst_elem.name
-#                 assert (await src_elem.checksum()) == (await dst_elem.checksum())
-#             elif await src_elem.is_dir():
-#                 assert await dst_elem.is_dir()
-#                 assert src_elem.name == dst_elem.name
-#                 await compare_remote_dirs(src_elem, dst_elem)
-#             else:
-#                 raise ValueError(f"Invalid element type: {src_elem}")
-
-
 async def create_and_run_step(
     context: StreamFlowContext,
     workflow: Workflow,
