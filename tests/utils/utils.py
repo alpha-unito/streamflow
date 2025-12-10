@@ -105,13 +105,18 @@ async def compare_remote_dirs(
 
     # The two directories must have the same order of elements
     src_path, src_dirs, src_files = await src_path.walk(
-        follow_symlinks=True
+        # follow_symlinks=True
     ).__anext__()
     dst_path, dst_dirs, dst_files = await dst_path.walk(
-        follow_symlinks=True
+        # follow_symlinks=True
     ).__anext__()
     assert len(src_files) == len(dst_files)
     for src_file, dst_file in zip(sorted(src_files), sorted(dst_files), strict=True):
+        logger.info(
+            f"dst_path: {dst_path}, dst_file: {dst_file}\n"
+            f"Path exists? {dst_path / dst_file}: {await (dst_path / dst_file).exists()}"
+        )
+        assert await (dst_path / dst_file).exists()
         logger.info(
             f"Comparing {src_path / src_file}:{await (src_path / src_file).checksum()} "
             f"and {dst_path / dst_file}:{await (dst_path / dst_file).checksum()}"
@@ -123,6 +128,11 @@ async def compare_remote_dirs(
     assert len(src_dirs) == len(dst_dirs)
     tasks = []
     for src_dir, dst_dir in zip(sorted(src_dirs), sorted(dst_dirs), strict=True):
+        logger.info(
+            f"dst_path: {dst_path}, dst_dir: {dst_dir}\n"
+            f"Path {dst_path / dst_dir} exists? {await (dst_path / dst_dir).exists()}"
+        )
+        assert await (dst_path / dst_dir).exists()
         assert os.path.basename(src_dir) == os.path.basename(dst_dir)
         tasks.append(
             asyncio.create_task(
