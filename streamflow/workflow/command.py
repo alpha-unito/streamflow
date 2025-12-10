@@ -302,7 +302,7 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
     ) -> CommandToken:
         if (command_token := self._get_processor(token)) is None:
             raise WorkflowDefinitionException(
-                f"No suitable command token for input value {get_token_value(token)}"
+                f"No suitable command token for input {self.name} value {get_token_value(token)}"
             )
         return command_token.bind(token, position, self._update_options(options, token))
 
