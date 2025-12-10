@@ -195,7 +195,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     """
     obj_compared = obj_compared if obj_compared else []
 
-    # If the objects are of different types, they are definitely not the same
+    # If the objects are of different types, they are definitely different
     if type(elem1) is not type(elem2):
         return False
 

@@ -4,6 +4,7 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.data.remotepath import StreamFlowPath
+from streamflow.log_handler import logger
 from tests.utils.deployment import (
     get_aiotar_deployment_config,
     get_local_deployment_config,
@@ -22,19 +23,23 @@ def _get_content(min_length: int, text: str = "") -> str:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tar_format", ["gnu", "pax", "posix", "ustar", "v7"])
 async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
-    src_deployment_config = get_aiotar_deployment_config()
-    src_deployment_config.config["tar_format"] = tar_format
+    src_deployment_config = get_aiotar_deployment_config(tar_format=tar_format)
     await context.deployment_manager.deploy(src_deployment_config)
-    src_location = await get_location(context, src_deployment_config.type)
+    connector = context.deployment_manager.get_connector(src_deployment_config.name)
+    locations = await connector.get_available_locations()
+    src_location = next(iter(locations.values())).location
+
     src_connector = context.deployment_manager.get_connector(src_location.deployment)
     dst_deployment_config = get_local_deployment_config()
     dst_location = await get_location(context, dst_deployment_config.type)
 
+    # Used the `dst_location` for the `src_path` to leverage the implementation
+    # of LocalStreamFlowPath methods
     src_path = StreamFlowPath(
         src_deployment_config.workdir,
         utils.random_name(),
         context=context,
-        location=src_location,
+        location=dst_location,
     )
     dst_path = StreamFlowPath(
         dst_deployment_config.workdir,
@@ -64,6 +69,7 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
     await (src_path / "base3.txt").write_text(
         _get_content(text="StreamFlow base.3.", min_length=src_buff_size * 2)
     )
+    logger.info(f"1. src_path elements: {[p async for p in src_path.glob('*')]}")
 
     context.data_manager.register_path(
         location=src_location,
@@ -71,6 +77,7 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
         relpath=str(src_path),
         data_type=DataType.PRIMARY,
     )
+    logger.info(f"2. src_path elements: {[p async for p in src_path.glob('*')]}")
     await context.data_manager.transfer_data(
         src_location=src_location,
         src_path=str(src_path),
@@ -78,4 +85,5 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
         dst_path=str(dst_path / src_path.name),
         writable=False,
     )
-    await compare_remote_dirs(context, src_path, dst_path / src_path.name)
+    logger.info(f"3. src_path elements: {[p async for p in src_path.glob('*')]}")
+    await compare_remote_dirs(src_path, dst_path / src_path.name)

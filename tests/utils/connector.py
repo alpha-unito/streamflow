@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import tarfile
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, AsyncContextManager, cast
@@ -10,7 +9,6 @@ from typing import Any, AsyncContextManager, cast
 import asyncssh
 from asyncssh import SSHClient, SSHClientConnection
 
-from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware
@@ -86,7 +84,7 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
         else:
             read_fd, write_fd = os.pipe()
             with os.fdopen(write_fd, "wb") as f:
-                with tarfile.open(fileobj=f, mode="w|") as tar:
+                with tarfile.open(fileobj=f, mode="w|", dereference=True) as tar:
                     tar.add(self.fileobj, arcname=os.path.basename(self.fileobj))
             self.stream = TarStreamReaderWrapper(read_fd)
         return self.stream
@@ -114,15 +112,6 @@ class TarConnector(BaseConnector):
         )
         self.tar_format: str = tar_format
 
-    def _get_shell(self) -> str:
-        match sys.platform:
-            case "win32":
-                return "cmd"
-            case "darwin":
-                return "bash"
-            case _:
-                return "sh"
-
     async def deploy(self, external: bool) -> None:
         pass
 
@@ -130,12 +119,12 @@ class TarConnector(BaseConnector):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return {
-            "aiotar": AvailableLocation(
-                name="aiotar",
+            f"aiotar-{self.tar_format}": AvailableLocation(
+                name=f"aiotar-{self.tar_format}",
                 deployment=self.deployment_name,
                 service=service,
                 hostname="localhost",
-                local=False,  # False to simulate remote location
+                local=False,
                 slots=1,
                 hardware=None,
             )
@@ -174,26 +163,13 @@ class TarConnector(BaseConnector):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
-        command = utils.create_command(
-            self.__class__.__name__,
-            command,
-            environment,
-            workdir,
-            stdin,
-            stdout,
-            stderr,
-        )
-        command = utils.encode_command(command, self._get_shell())
-        return await utils.run_in_subprocess(
-            location=location,
-            command=[
-                self._get_shell(),
-                "/C" if sys.platform == "win32" else "-c",
-                f"'{command}'",
-            ],
-            capture_output=capture_output,
-            timeout=timeout,
-        )
+        # The connector simulates a remote location, but it manipulates the files
+        # on the local filesystem.
+        # However, the remote location assumed by StreamFlow must be a Linux OS,
+        # because of the system commands that are executed.
+        # For example, all commands within RemoteStreamFlowPath are Linux-specific.
+        # Executing these commands on Mac or Windows will lead to errors.
+        raise NotImplementedError("TarConnector run")
 
     async def undeploy(self, external: bool) -> None:
         pass

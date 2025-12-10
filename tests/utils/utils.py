@@ -99,28 +99,19 @@ def check_persistent_id(
 
 
 async def compare_remote_dirs(
-    context: StreamFlowContext, src_path: StreamFlowPath, dst_path: StreamFlowPath
+    src_path: StreamFlowPath, dst_path: StreamFlowPath
 ) -> None:
-    assert await dst_path.exists()
-
     # The two directories must have the same order of elements
     src_path, src_dirs, src_files = await src_path.walk(
-        # follow_symlinks=True
+        follow_symlinks=True
     ).__anext__()
     dst_path, dst_dirs, dst_files = await dst_path.walk(
-        # follow_symlinks=True
+        follow_symlinks=True
     ).__anext__()
     assert len(src_files) == len(dst_files)
     for src_file, dst_file in zip(sorted(src_files), sorted(dst_files), strict=True):
-        logger.info(
-            f"dst_path: {dst_path}, dst_file: {dst_file}\n"
-            f"Path exists? {dst_path / dst_file}: {await (dst_path / dst_file).exists()}"
-        )
         assert await (dst_path / dst_file).exists()
-        logger.info(
-            f"Comparing {src_path / src_file}:{await (src_path / src_file).checksum()} "
-            f"and {dst_path / dst_file}:{await (dst_path / dst_file).checksum()}"
-        )
+        assert src_file == dst_file
         assert (
             await (src_path / src_file).checksum()
             == await (dst_path / dst_file).checksum()
@@ -128,18 +119,54 @@ async def compare_remote_dirs(
     assert len(src_dirs) == len(dst_dirs)
     tasks = []
     for src_dir, dst_dir in zip(sorted(src_dirs), sorted(dst_dirs), strict=True):
-        logger.info(
-            f"dst_path: {dst_path}, dst_dir: {dst_dir}\n"
-            f"Path {dst_path / dst_dir} exists? {await (dst_path / dst_dir).exists()}"
-        )
         assert await (dst_path / dst_dir).exists()
         assert os.path.basename(src_dir) == os.path.basename(dst_dir)
         tasks.append(
             asyncio.create_task(
-                compare_remote_dirs(context, src_path / src_dir, dst_path / dst_dir)
+                compare_remote_dirs(src_path / src_dir, dst_path / dst_dir)
             )
         )
     await asyncio.gather(*tasks)
+
+
+# async def compare_remote_dirs(
+#     src_path: StreamFlowPath, dst_path: StreamFlowPath
+# ) -> None:
+#     assert await dst_path.exists()
+#
+#     if type(src_path) is type(dst_path) and (
+#         isinstance(src_path, LocalStreamFlowPath)
+#         or src_path.location.deployment == dst_path.location.deployment
+#     ):
+#         assert await dst_path.is_symlink()
+#         assert await dst_path.resolve() == src_path
+#     else:
+#         logger.info(
+#             f"CMP\n"
+#             f"src_elems: {[p async for p in src_path.glob('*')]}\n"
+#             f"dst_elems: {[p async for p in dst_path.glob('*')]}"
+#         )
+#         assert len(src_elements := [p async for p in src_path.glob("*")]) == len(
+#             dst_elements := [p async for p in dst_path.glob("*")]
+#         )
+#         for src_elem, dst_elem in zip(
+#             sorted(src_elements), sorted(dst_elements), strict=True
+#         ):
+#             if await src_elem.is_symlink():
+#                 # During the transfer, we dereference the symbolic links
+#                 assert not await dst_elem.is_symlink()
+#                 assert src_elem.name == dst_elem.name
+#
+#             if await src_elem.is_file():
+#                 assert await dst_elem.is_file()
+#                 assert src_elem.name == dst_elem.name
+#                 assert (await src_elem.checksum()) == (await dst_elem.checksum())
+#             elif await src_elem.is_dir():
+#                 assert await dst_elem.is_dir()
+#                 assert src_elem.name == dst_elem.name
+#                 await compare_remote_dirs(src_elem, dst_elem)
+#             else:
+#                 raise ValueError(f"Invalid element type: {src_elem}")
 
 
 async def create_and_run_step(

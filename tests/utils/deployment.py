@@ -38,15 +38,15 @@ def _get_free_tcp_port() -> int:
     return port
 
 
-def get_aiotar_deployment_config():
+def get_aiotar_deployment_config(tar_format: str = "none") -> DeploymentConfig:
     workdir = os.path.join(
         os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
     )
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
-        name="aiotar",
+        name=f"aiotar-{tar_format}",
         type="aiotar",
-        config={"transferBufferSize": 16},
+        config={"tar_format": tar_format, "transferBufferSize": 16},
         external=False,
         lazy=False,
         workdir=workdir,
@@ -55,8 +55,8 @@ def get_aiotar_deployment_config():
 
 def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
     match deployment_t:
-        case "local":
-            return "__LOCAL__"
+        case "aiotar":
+            return "aiotar"
         case "docker":
             return "alpine-docker"
         case "docker-wrapper":
@@ -65,18 +65,18 @@ def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
             return "alpine-docker-compose"
         case "kubernetes":
             return "alpine-kubernetes"
+        case "local":
+            return "__LOCAL__"
+        case "local-fs-volatile":
+            return "local-fs-volatile"
         case "parameterizable_hardware":
             return "custom-hardware"
-        case "aiotar":
-            return "aiotar"
         case "singularity":
             return "alpine-singularity"
         case "slurm":
             return "docker-slurm"
         case "ssh":
             return "linuxserver-ssh"
-        case "local-fs-volatile":
-            return "local-fs-volatile"
         case _:
             raise Exception(f"{deployment_t} deployment type not supported")
 
@@ -85,8 +85,6 @@ async def get_deployment_config(
     _context: StreamFlowContext, deployment_t: str
 ) -> DeploymentConfig:
     match deployment_t:
-        case "aiotar":
-            return get_aiotar_deployment_config()
         case "docker":
             return get_docker_deployment_config()
         case "docker-compose":

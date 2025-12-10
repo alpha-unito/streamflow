@@ -125,7 +125,7 @@ async def test_directory_to_directory(
         await dst_path.exists()
 
         # Check that the source and destination have the same subdirectories and files
-        await compare_remote_dirs(context, src_path, dst_path)
+        await compare_remote_dirs(src_path, dst_path)
     finally:
         if src_path is not None:
             await src_path.rmtree()
