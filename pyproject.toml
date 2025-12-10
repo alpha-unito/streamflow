@@ -169,3 +169,6 @@ exclude = "streamflow/cwl/antlr"
 [tool.isort]
 profile = "black"
 skip = "streamflow/cwl/antlr"
+
+[tool.pytest.ini_options]
+addopts = "-vv"
