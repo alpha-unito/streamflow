@@ -86,7 +86,6 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
         else:
             read_fd, write_fd = os.pipe()
             with os.fdopen(write_fd, "wb") as f:
-                # mode='w|' is essential for streaming (non-seekable)
                 with tarfile.open(fileobj=f, mode="w|") as tar:
                     tar.add(self.fileobj, arcname=os.path.basename(self.fileobj))
             self.stream = TarStreamReaderWrapper(read_fd)
@@ -115,15 +114,17 @@ class TarConnector(BaseConnector):
         )
         self.tar_format: str = tar_format
 
+    def _get_shell(self) -> str:
+        match sys.platform:
+            case "win32":
+                return "cmd"
+            case "darwin":
+                return "bash"
+            case _:
+                return "sh"
+
     async def deploy(self, external: bool) -> None:
         pass
-
-    async def undeploy(self, external: bool) -> None:
-        pass
-
-    @classmethod
-    def get_schema(cls) -> str:
-        return ""
 
     async def get_available_locations(
         self, service: str | None = None
@@ -134,11 +135,15 @@ class TarConnector(BaseConnector):
                 deployment=self.deployment_name,
                 service=service,
                 hostname="localhost",
-                local=False,
+                local=False,  # False to simulate remote location
                 slots=1,
                 hardware=None,
             )
         }
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return ""
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
@@ -155,15 +160,6 @@ class TarConnector(BaseConnector):
         return TarStreamWrapperContextManager(
             fileobj=open(path, "wb"), mode="w", tar_format=self.tar_format
         )
-
-    def _get_shell(self) -> str:
-        match sys.platform:
-            case "win32":
-                return "cmd"
-            case "darwin":
-                return "bash"
-            case _:
-                return "sh"
 
     async def run(
         self,
@@ -198,6 +194,9 @@ class TarConnector(BaseConnector):
             capture_output=capture_output,
             timeout=timeout,
         )
+
+    async def undeploy(self, external: bool) -> None:
+        pass
 
 
 class FailureConnectorException(Exception):
