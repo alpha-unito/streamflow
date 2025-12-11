@@ -860,6 +860,9 @@ class DockerBaseConnector(ContainerConnector, ABC):
             for v in container["NetworkSettings"]["Networks"].values()
             if v["IPAddress"]
         ]
+        logger.info(
+            f"Docker-resources {name} has {cores} cores and {memory} GB of memory."
+        )
         self._instances[name] = ContainerInstance(
             address=addresses[0] if addresses else "",
             cores=cores,
@@ -1842,6 +1845,9 @@ class SingularityConnector(ContainerConnector):
             binds=cast(MutableMapping[str, str], binds),
         )
         # Create instance
+        logger.info(
+            f"Singularity-resources {name} has {cores} cores and {memory} GB of memory."
+        )
         self._instances[name] = ContainerInstance(
             address=ip_address,
             cores=cores,
