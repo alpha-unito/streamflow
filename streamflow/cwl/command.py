@@ -838,7 +838,6 @@ class CWLCommand(TokenizedCommand):
                                         CWLWorkflow, self.step.workflow
                                     ).cwl_version,
                                     inputs=job.inputs,
-                                    process_files=True,
                                     streamflow_context=self.step.workflow.context,
                                     token_value=context["inputs"][key],
                                     job=job,

@@ -143,16 +143,11 @@ async def _process_file_token(
 async def build_token(
     cwl_version: str,
     inputs: MutableMapping[str, Any],
-    process_files: bool,
     streamflow_context: StreamFlowContext,
     token_value: Any,
     job: Job | None = None,
     recoverable: bool = False,
 ) -> Token:
-    if process_files and job is None:
-        raise WorkflowExecutionException(
-            "It is required a scheduled job to process the files"
-        )
     match token_value:
         case MutableSequence():
             return ListToken(
@@ -163,7 +158,6 @@ async def build_token(
                             build_token(
                                 cwl_version=cwl_version,
                                 inputs=inputs,
-                                process_files=process_files,
                                 streamflow_context=streamflow_context,
                                 token_value=v,
                                 job=job,
@@ -185,7 +179,7 @@ async def build_token(
                             cwl_version=cwl_version,
                             streamflow_context=streamflow_context,
                         )
-                        if process_files
+                        if job is not None
                         else token_value
                     ),
                     recoverable=recoverable,
@@ -202,7 +196,6 @@ async def build_token(
                                         build_token(
                                             cwl_version=cwl_version,
                                             inputs=inputs,
-                                            process_files=process_files,
                                             streamflow_context=streamflow_context,
                                             token_value=v,
                                             job=job,
@@ -571,7 +564,6 @@ class CWLInputInjectorStep(InputInjectorStep):
             token_value=token_value,
             cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
             streamflow_context=self.workflow.context,
-            process_files=True,
             recoverable=True,
         )
 

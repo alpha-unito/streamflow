@@ -484,7 +484,6 @@ class ValueFromTransformer(ManyToOneTransformer):
             output_name: await build_token(
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 inputs=inputs,
-                process_files=False,
                 streamflow_context=self.workflow.context,
                 token_value=utils.eval_expression(
                     expression=self.value_from,
@@ -585,7 +584,6 @@ class LoopValueFromTransformer(ValueFromTransformer):
             self.get_output_name(): await build_token(
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 inputs=inputs,
-                process_files=False,
                 token_value=utils.eval_expression(
                     expression=self.value_from,
                     context=context,
