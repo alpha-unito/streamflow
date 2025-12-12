@@ -861,7 +861,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             if v["IPAddress"]
         ]
         logger.info(
-            f"Docker-resources {name} has {cores} cores and {memory} GB of memory."
+            f"Docker-resources {name} has {cores} cores and {memory} bytes of memory."
         )
         self._instances[name] = ContainerInstance(
             address=addresses[0] if addresses else "",
@@ -1811,14 +1811,18 @@ class SingularityConnector(ContainerConnector):
                     fs_type := line.split(" - ")[1].split()[0]
                 ) not in FS_TYPES_TO_SKIP:
                     mount_source = line.split(" - ")[1].split()[1]
+                    logger.info(f"docker-mount line: {line}")
+                    logger.info(f"docker-mount mount_source: {mount_source}")
                     if mount_source.startswith("/dev"):
                         host_mount = line.split()[3]
+                        logger.info(f"docker-mount dev: {host_mount}")
                     elif fs_type.startswith("nfs"):
                         host_mount = None
                         for host_source in sorted(fs_mounts.keys(), reverse=True):
                             if mount_source.startswith(host_source):
                                 host_mount = mount_source.split(":", 1)[1]
                                 break
+                        logger.info(f"docker-mount nfs: {host_mount}")
                     else:
                         host_mount = (
                             (os.path if self._wraps_local() else posixpath).join(
@@ -1827,6 +1831,11 @@ class SingularityConnector(ContainerConnector):
                             if mount_source in fs_mounts
                             else None
                         )
+                        logger.info(
+                            f"docker-mount else fst: {fs_mounts[mount_source] if host_mount else None }"
+                        )
+                        logger.info(f"docker-mount else snd: {line.split()[3][1:]}")
+                        logger.info(f"docker-mount else: {host_mount}")
                     if host_mount is not None:
                         binds[dst] = host_mount
             if logger.isEnabledFor(logging.DEBUG):
@@ -1846,7 +1855,7 @@ class SingularityConnector(ContainerConnector):
         )
         # Create instance
         logger.info(
-            f"Singularity-resources {name} has {cores} cores and {memory} GB of memory."
+            f"Singularity-resources {name} has {cores} cores and {memory} bytes of memory."
         )
         self._instances[name] = ContainerInstance(
             address=ip_address,

@@ -286,6 +286,9 @@ def _create_command_output_processor(
             ],
             expression_lib=expression_lib,
             full_js=full_js,
+            is_clt=not isinstance(
+                cwl_element, cwl_utils.parser.ExpressionToolOutputParameter
+            ),
             optional=optional,
         )
     # Record type: -> ObjectCommandOutputProcessor
@@ -1525,6 +1528,9 @@ def create_command_output_processor_base(
             expression_lib=expression_lib,
             file_format=getattr(cwl_element, "format", None),
             full_js=full_js,
+            is_clt=not isinstance(
+                cwl_element, cwl_utils.parser.ExpressionToolOutputParameter
+            ),
             glob=(
                 cwl_element.outputBinding.glob
                 if getattr(cwl_element, "outputBinding", None)
@@ -1557,6 +1563,9 @@ def create_command_output_processor_base(
                 cwl_element.outputBinding.glob
                 if getattr(cwl_element, "outputBinding", None)
                 else None
+            ),
+            is_clt=not isinstance(
+                cwl_element, cwl_utils.parser.ExpressionToolOutputParameter
             ),
             load_contents=_get_load_contents(cwl_element),
             load_listing=_get_load_listing(cwl_element, context),
@@ -1980,11 +1989,15 @@ class CWLTranslator:
                 name: step.get_output_port() for name, step in deploy_steps.items()
             },
             binding_config=binding_config,
-            hardware_requirement=_get_hardware_requirement(
-                cwl_version=context["version"],
-                requirements=requirements,
-                expression_lib=expression_lib,
-                full_js=full_js,
+            hardware_requirement=(
+                _get_hardware_requirement(
+                    cwl_version=context["version"],
+                    requirements=requirements,
+                    expression_lib=expression_lib,
+                    full_js=full_js,
+                )
+                # if isinstance(cwl_element, get_args(cwl_utils.parser.CommandLineTool))
+                # else None
             ),
             output_directory=context.get("output_directory"),
         )

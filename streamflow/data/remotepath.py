@@ -463,7 +463,6 @@ class RemoteStreamFlowPath(
         )
 
     async def _get_inner_path(self) -> StreamFlowPath:
-        self._inner_path = self
         if self._inner_path is None:
             # Recurse through mount points to find the innermost path (more efficient)
             self._inner_path = get_inner_path(path=self, recursive=True) or self

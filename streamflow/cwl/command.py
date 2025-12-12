@@ -25,11 +25,6 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.persistence import DatabaseLoadingContext
-from streamflow.core.processor import (
-    CommandOutputProcessor,
-    MapCommandOutputProcessor,
-    UnionCommandOutputProcessor,
-)
 from streamflow.core.utils import flatten_list
 from streamflow.core.workflow import (
     Command,
@@ -43,11 +38,7 @@ from streamflow.core.workflow import (
     Workflow,
 )
 from streamflow.cwl import utils
-from streamflow.cwl.processor import (
-    CWLCommandOutput,
-    CWLCommandOutputProcessor,
-    CWLObjectCommandOutputProcessor,
-)
+from streamflow.cwl.processor import CWLCommandOutput
 from streamflow.cwl.step import build_token
 from streamflow.cwl.utils import is_literal_file
 from streamflow.cwl.workflow import CWLWorkflow
@@ -182,47 +173,6 @@ def _adjust_inputs(
     for inp in inputs:
         if _adjust_input(job_name, inp, path_processor, src_path, dst_path):
             break
-
-
-def _build_command_output_processor(
-    name: str, step: Step, value: Any
-) -> CommandOutputProcessor:
-    match value:
-        case MutableSequence():
-            return MapCommandOutputProcessor(
-                name=name,
-                workflow=cast(CWLWorkflow, step.workflow),
-                processor=UnionCommandOutputProcessor(
-                    name=name,
-                    workflow=cast(CWLWorkflow, step.workflow),
-                    processors=[
-                        _build_command_output_processor(name=name, step=step, value=v)
-                        for v in value
-                    ],
-                ),
-            )
-        case MutableMapping():
-            if (token_type := utils.get_token_class(value)) in ["File", "Directory"]:
-                return CWLCommandOutputProcessor(
-                    name=name,
-                    workflow=cast(CWLWorkflow, step.workflow),
-                    token_type=token_type,  # nosec
-                )
-            else:
-                return CWLObjectCommandOutputProcessor(
-                    name=name,
-                    workflow=cast(CWLWorkflow, step.workflow),
-                    processors={
-                        k: _build_command_output_processor(
-                            name=name, step=step, value=v
-                        )
-                        for k, v in value.items()
-                    },
-                )
-        case _:
-            return CWLCommandOutputProcessor(  # nosec
-                name=name, workflow=cast(CWLWorkflow, step.workflow), token_type="Any"
-            )
 
 
 async def _check_cwl_output(job: Job, step: Step, result: Any) -> tuple[Any, bool]:

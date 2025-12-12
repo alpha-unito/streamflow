@@ -362,6 +362,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         file_format: str | None = None,
         full_js: bool = False,
         glob: str | None = None,
+        is_clt: bool = True,
         load_contents: bool = False,
         load_listing: LoadListing = LoadListing.no_listing,
         optional: bool = False,
@@ -377,6 +378,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         self.file_format: str | None = file_format
         self.full_js: bool = full_js
         self.glob: str | MutableSequence[str] | None = glob
+        self.is_clt: bool = is_clt
         self.load_contents: bool = load_contents
         self.load_listing: LoadListing = load_listing
         self.optional: bool = optional
@@ -435,55 +437,50 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     ) -> Token:
         match token_value:
             case MutableMapping():
-                match utils.get_token_class(token_value):
-                    case "File" | "Directory":
-                        connector = self._get_connector(connector, job)
-                        locations = await self._get_locations(connector, job)
-                        # Register path
-                        await utils.register_data(
-                            context=self.workflow.context,
-                            connector=connector,
-                            locations=locations,
-                            token_value=token_value,
-                            base_path=(
-                                self.target.workdir
-                                if self.target
-                                else job.output_directory
-                            ),
+                if utils.get_token_class(token_value) in ("File", "Directory"):
+                    connector = self._get_connector(connector, job)
+                    locations = await self._get_locations(connector, job)
+                    # Register path
+                    await utils.register_data(
+                        context=self.workflow.context,
+                        connector=connector,
+                        locations=locations,
+                        token_value=token_value,
+                        base_path=(
+                            self.target.workdir if self.target else job.output_directory
+                        ),
+                    )
+                    # Process file format
+                    if self.file_format:
+                        context |= {"self": token_value}
+                        token_value["format"] = utils.eval_expression(
+                            expression=self.file_format,
+                            context=context,
+                            full_js=self.full_js,
+                            expression_lib=self.expression_lib,
                         )
-                        # Process file format
-                        if self.file_format:
-                            context |= {"self": token_value}
-                            token_value["format"] = utils.eval_expression(
-                                expression=self.file_format,
-                                context=context,
-                                full_js=self.full_js,
-                                expression_lib=self.expression_lib,
+                    return CWLFileToken(
+                        value=token_value,
+                        tag=get_tag(job.inputs.values()),
+                        recoverable=recoverable,
+                    )
+                else:
+                    token_tasks = {
+                        k: asyncio.create_task(
+                            self._build_token(job, connector, context, v, recoverable)
+                        )
+                        for k, v in token_value.items()
+                    }
+                    return ObjectToken(
+                        value=dict(
+                            zip(
+                                token_tasks.keys(),
+                                await asyncio.gather(*token_tasks.values()),
+                                strict=True,
                             )
-                        return CWLFileToken(
-                            value=token_value,
-                            tag=get_tag(job.inputs.values()),
-                            recoverable=recoverable,
-                        )
-                    case _:
-                        token_tasks = {
-                            k: asyncio.create_task(
-                                self._build_token(
-                                    job, connector, context, v, recoverable
-                                )
-                            )
-                            for k, v in token_value.items()
-                        }
-                        return ObjectToken(
-                            value=dict(
-                                zip(
-                                    token_tasks.keys(),
-                                    await asyncio.gather(*token_tasks.values()),
-                                    strict=True,
-                                )
-                            ),
-                            tag=get_tag(job.inputs.values()),
-                        )
+                        ),
+                        tag=get_tag(job.inputs.values()),
+                    )
             case MutableSequence():
                 return ListToken(
                     value=await asyncio.gather(
@@ -506,6 +503,29 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 )
 
     async def _process_command_output(
+        self,
+        job: Job,
+        command_output: asyncio.Future[CommandOutput],
+        connector: Connector | None,
+        context: MutableMapping[str, Any],
+    ):
+        if self.is_clt:
+            return await self._process_clt_command_output(
+                job=job,
+                command_output=command_output,
+                connector=connector,
+                context=context,
+            )
+        else:
+            result = cast(CWLCommandOutput, await command_output)
+            token_value = result.value
+            if isinstance(token_value, MutableMapping) and self.name in token_value:
+                raise ProcessorTypeError(
+                    f"Token {self.name} should be extracted by a `PopCommandOutputProcessor` before being evaluated"
+                )
+            return token_value
+
+    async def _process_clt_command_output(
         self,
         job: Job,
         command_output: asyncio.Future[CommandOutput],
