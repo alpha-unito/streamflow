@@ -167,9 +167,30 @@ class DefaultScheduler(Scheduler):
                                 f"the {job_allocation.job} job working directories: {err}"
                             )
                             storage_usage = Hardware()
+                        logger.debug(
+                            "Job {name} check used resources {hw} in {location}".format(
+                                name=job_allocation.job,
+                                hw=self.hardware_locations[loc.name],
+                                location=loc,
+                            )
+                        )
+                        logger.debug(
+                            "Job {name} free resources {hw} in {location}".format(
+                                name=job_allocation.job,
+                                hw=job_hardware + storage_usage,
+                                location=loc,
+                            )
+                        )
                         self.hardware_locations[loc.name] = (
                             self.hardware_locations[loc.name] - job_hardware
                         ) + storage_usage
+                        logger.debug(
+                            "Job {name} updated used resources {hw} in {location}".format(
+                                name=job_allocation.job,
+                                hw=self.hardware_locations[loc.name],
+                                location=loc,
+                            )
+                        )
                 if locations := [loc.wraps for loc in locations if loc.stacked]:
                     conn = cast(ConnectorWrapper, conn).connector
                     for execution_loc in locations:
@@ -274,6 +295,19 @@ class DefaultScheduler(Scheduler):
                         - self.hardware_locations.get(location.name, Hardware())
                     ).satisfies(hardware_requirement)
                 ):
+                    logger.info(
+                        f"Loc {location.name} max resources: {location.hardware}"
+                    )
+                    logger.info(
+                        f"Loc {location.name} used resources: {self.hardware_locations.get(location.name, Hardware())}"
+                    )
+                    logger.info(
+                        f"Loc {location.name} available resources: {location.hardware - self.hardware_locations.get(location.name, Hardware())}"
+                    )
+                    logger.info(f"Job {job_name} requires: {hardware_requirement}")
+                    logger.info(
+                        f"No resources available for job {job_name} on location {location.name}"
+                    )
                     return False
             # Otherwise, simply compute the number of allocated slots
             else:
@@ -413,6 +447,7 @@ class DefaultScheduler(Scheduler):
                                     f"but only {len(valid_locations)} are available."
                                 )
                 try:
+                    logger.info(f"scheduler retry_interval: {self.retry_interval}")
                     await asyncio.wait_for(
                         self.wait_queues[deployment].wait(), timeout=self.retry_interval
                     )
