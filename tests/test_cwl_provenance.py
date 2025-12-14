@@ -702,7 +702,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     port_name = "test"
     transformer = workflow.create_step(
         cls=LoopValueFromTransformer,
-        name=utils.random_name() + "-loop-value-from-transformer",
+        name=f"{utils.random_name()}-loop-value-from-transformer",
         processor=CWLTokenProcessor(
             name=in_port.name,
             workflow=cast(CWLWorkflow, workflow),
