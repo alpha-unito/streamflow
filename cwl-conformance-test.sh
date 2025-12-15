@@ -12,6 +12,7 @@ venv() {
   if ! test -d "$1" ; then
 	  if command -v uv > /dev/null; then
 	    uv venv "$1"
+	    uv sync --locked --no-dev || exit 1
 	  elif command -v virtualenv > /dev/null; then
       virtualenv -p python3 "$1"
 	  else
