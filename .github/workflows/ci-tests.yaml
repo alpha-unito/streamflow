@@ -110,7 +110,7 @@ jobs:
           flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: "Upload coverage report for conformance tests"
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ format('{0}-py{1}-cwl{2}-{3}-conformance-tests', matrix.on, matrix.python, matrix.version, matrix.docker) }}
           path: |
@@ -279,7 +279,7 @@ jobs:
           flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: "Upload coverage report for unit tests"
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ format('{0}-py{1}-unit-tests', matrix.on, matrix.python) }}
           path: |
