@@ -293,11 +293,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: "Download conformance tests artifacts"
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: "*-conformance-tests"
       - name: "Download unit tests artifacts"
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: "*-unit-tests"
       - name: "Upload coverage to Codecov"
