@@ -27,7 +27,13 @@ class FailureConnectorException(Exception):
 class FailureConnector(Connector):
     @classmethod
     def get_schema(cls) -> str:
-        pass
+        return """{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://streamflow.di.unito.it/schemas/tests/utils/connector/failure_connector.json",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}"""
 
     async def copy_local_to_remote(
         self,
