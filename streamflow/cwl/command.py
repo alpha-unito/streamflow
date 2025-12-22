@@ -834,10 +834,13 @@ class CWLCommand(TokenizedCommand):
                         *(
                             asyncio.create_task(
                                 build_token(
-                                    job,
-                                    context["inputs"][key],
-                                    cast(CWLWorkflow, self.step.workflow).cwl_version,
-                                    self.step.workflow.context,
+                                    cwl_version=cast(
+                                        CWLWorkflow, self.step.workflow
+                                    ).cwl_version,
+                                    inputs=job.inputs,
+                                    streamflow_context=self.step.workflow.context,
+                                    token_value=context["inputs"][key],
+                                    job=job,
                                 )
                             )
                             for key in job.inputs.keys()

@@ -1445,11 +1445,8 @@ def _process_transformers(
     input_ports: MutableMapping[str, Port],
     transformers: MutableMapping[str, Transformer],
     input_dependencies: MutableMapping[str, set[str]],
-    schedule_steps: MutableMapping[str, ScheduleStep] | None = None,
 ) -> MutableMapping[str, Port]:
     new_input_ports = {}
-    if schedule_steps is None:
-        schedule_steps = {}
     for input_name, token_transformer in transformers.items():
         # If transformer has true dependencies, use them
         if not (dependencies := input_dependencies[input_name]):
@@ -1469,10 +1466,6 @@ def _process_transformers(
                 token_transformer.add_input_port(
                     posixpath.relpath(dep_name, step_name), input_ports[dep_name]
                 )
-                if schedule_step := schedule_steps.get(input_name):
-                    schedule_step.add_input_port(
-                        posixpath.relpath(dep_name, step_name), input_ports[dep_name]
-                    )
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
     return cast(dict[str, Port], input_ports) | new_input_ports
@@ -2421,18 +2414,6 @@ class CWLTranslator:
             list(input_dependencies.keys()),
         )
         input_ports |= default_ports
-        # Get loop if present
-        if (loop := _get_loop(cwl_element, requirements)) is not None:
-            # Create loop conditional step
-            if loop["when"] is not None:
-                _create_loop_condition(
-                    condition=loop["when"],
-                    expression_lib=expression_lib,
-                    full_js=full_js,
-                    input_ports=input_ports,
-                    step_name=step_name,
-                    workflow=workflow,
-                )
         # If there are scatter inputs
         if scatter_inputs:
             # Retrieve scatter method (default to dotproduct)
@@ -2534,16 +2515,26 @@ class CWLTranslator:
                         "-".join(output_port_names), size_port
                     )
 
-        # Process inputs again to attach ports to transformers
+        # Process inputs again to attach ports to `valueFrom` transformers
         input_ports = _process_transformers(
             step_name=step_name,
             input_ports=input_ports,
             transformers=value_from_transformers,
             input_dependencies=input_dependencies,
-            schedule_steps={
-                k: _get_schedule_step(v) for k, v in value_from_transformers.items()
-            },
         )
+
+        # Get loop if present
+        if (loop := _get_loop(cwl_element, requirements)) is not None:
+            # Create loop conditional step
+            if loop["when"] is not None:
+                _create_loop_condition(
+                    condition=loop["when"],
+                    expression_lib=expression_lib,
+                    full_js=full_js,
+                    input_ports=input_ports,
+                    step_name=step_name,
+                    workflow=workflow,
+                )
 
         # Save input ports in the global map
         self.input_ports |= input_ports
@@ -2866,22 +2857,6 @@ class CWLTranslator:
                 raise WorkflowDefinitionException(
                     "Workflow step contains valueFrom but StepInputExpressionRequirement not in requirements"
                 )
-            # Retrieve the DeployStep for the port target
-            binding_config = get_binding_config(
-                global_name, "port", self.workflow_config
-            )
-            target = binding_config.targets[0]
-            deploy_step = self._get_deploy_step(target.deployment, workflow)
-            # Create a schedule step and connect it to the local DeployStep
-            schedule_step = workflow.create_step(
-                cls=ScheduleStep,
-                name=posixpath.join(
-                    global_name + inner_steps_prefix + "-value-from", "__schedule__"
-                ),
-                job_prefix=f"{global_name}-value-from",
-                connector_ports={target.deployment.name: deploy_step.get_output_port()},
-                binding_config=binding_config,
-            )
             # Create a ValueFromTransformer
             value_from_transformers[global_name] = workflow.create_step(
                 cls=value_from_transformer_cls,
@@ -2899,7 +2874,6 @@ class CWLTranslator:
                 expression_lib=expression_lib,
                 full_js=full_js,
                 value_from=element_input.valueFrom,
-                job_port=schedule_step.get_output_port(),
             )
             value_from_transformers[global_name].add_output_port(
                 port_name, workflow.create_port()
