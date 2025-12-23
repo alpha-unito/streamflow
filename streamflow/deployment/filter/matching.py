@@ -21,7 +21,7 @@ class MatchingRule:
         deployment: str,
         filter_: str,
         predicates: MutableMapping[str, str],
-        service: str | None,
+        service: str | None = None,
     ) -> None:
         self.deployment: str = deployment
         self.filter: str = filter_
@@ -103,7 +103,10 @@ class MatchingBindingFilter(BindingFilter):
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
     ) -> MutableSequence[Target]:
-        if not (step_name := get_job_step_name(job.name)) in self._evaluated_steps:
+        if (
+            logger.isEnabledFor(logging.WARNING)
+            and not (step_name := get_job_step_name(job.name)) in self._evaluated_steps
+        ):
             self._evaluated_steps.add(step_name)
             if (target_deployments := {t.deployment.name for t in targets}) - (
                 filter_deployments := {c.deployment for c in self.matching_rules}

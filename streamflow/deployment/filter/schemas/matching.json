@@ -26,7 +26,6 @@
           "title": "Job inputs",
           "description": "A list of ports and values that the port data must match.",
           "items": {
-            "type": "object",
             "$ref": "#/$defs/job",
             "title": "Job"
           }
@@ -88,7 +87,6 @@
       "title": "Filters",
       "description": "A list of filters for each target deployment.",
       "items": {
-        "type": "object",
         "$ref": "#/$defs/filter"
       }
     }

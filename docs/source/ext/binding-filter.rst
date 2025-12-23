@@ -37,7 +37,7 @@ It is possible to define the same ``deployment`` multiple times with different c
 
 The ``MatchingBindingFilter`` allows to define a list of ``filters``, where each filter has a ``target`` and a ``job`` definition:
 
-* A ``target`` should be a ``deployment`` on which the step is bound. If the ``deployment`` does not match any target in the filters list, it is discarded. The filter can be stricter, including a ``service`` name as well.
+* A ``target`` should be a ``deployment`` to which the step is bound. If the ``deployment`` does not match any target in the filters list, it is discarded. The filter can be stricter, including a ``service`` name as well.
 * A ``job`` is a list that specifies ``port`` names and ``match`` values. The ``port`` option must specify the name of an input of the bound step. The ``match`` value must be equal to the value inside the ``port``. The ``filter`` works with string data types. Non-string values are automatically cast to strings, but this process may lead to unexpected errors. Lists, objects, and other complex types are not supported. When multiple ``ports`` are defined, the ``deployment`` is chosen only if all the ``ports`` match the expected values.
 
 An example of the filter follows:
@@ -74,3 +74,7 @@ An example of the filter follows:
             match: "hello.rs"
 
 .. jsonschema:: https://streamflow.di.unito.it/schemas/deployment/filter/matching.json
+    :lift_description: true
+    :lift_definitions: true
+    :auto_reference: true
+    :auto_target: true
