@@ -1,3 +1,4 @@
+import json
 from collections.abc import MutableSequence
 from pathlib import Path
 
@@ -24,18 +25,17 @@ class CustomDataManager(DataManager):
 
     @classmethod
     def get_schema(cls) -> str:
-        return """{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://streamflow.di.unito.it/schemas/tests/utils/data/custom_data_manager.json",
-  "type": "object",
-  "properties": {
-    "custom_arg": {
-      "type": "integer",
-      "description": "No description"
-    }
-  },
-  "additionalProperties": false
-}"""
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/data/custom_data_manager.json",
+                "type": "object",
+                "properties": {
+                    "custom_arg": {"type": "integer", "description": "No description"}
+                },
+                "additionalProperties": False,
+            }
+        )
 
     def get_data_locations(
         self,

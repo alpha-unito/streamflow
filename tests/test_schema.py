@@ -13,6 +13,7 @@ from streamflow.recovery import DefaultCheckpointManager, DefaultFailureManager
 from streamflow.scheduling import DefaultScheduler
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager
+from tests.utils.utils import InjectPlugin
 
 
 def test_cwl_workflow():
@@ -189,11 +190,11 @@ def test_schema_generation():
     """Check that the `streamflow schema` command generates a correct JSON Schema."""
     assert (
         hashlib.sha256(SfSchema().dump("v1.0", False).encode()).hexdigest()
-        == "0eac3a8c7fd1112b9639d1963e2976b0fb54aa55829c1387f7bde5b82848b716"
+        == "8816f3c71ce535a06fb0d4cd61f0a1fa11803d055db5a5d33e7724ac16ff75fd"
     )
     assert (
         hashlib.sha256(SfSchema().dump("v1.0", True).encode()).hexdigest()
-        == "2b232c6fff12e99a1ad3b87aae01b9a584f53faa58d40682e4a27ba75ab7d46e"
+        == "4a9a89e2da39996d9428d02f4f2834a3cb521d4f39951290ee475609ec05c4d7"
     )
 
 
@@ -311,8 +312,9 @@ def test_sf_context():
             "scheduler": {"type": "default", "config": {"retry_delay": 101}}
         },
     }
-    assert SfValidator().validate(config)
-    context = build_context(config)
+    with InjectPlugin("custom-data"), InjectPlugin("custom-deployment"):
+        assert SfValidator().validate(config)
+        context = build_context(config)
     assert (
         cast(DefaultCheckpointManager, context.checkpoint_manager).checkpoint_dir
         == config["checkpointManager"]["config"]["checkpoint_dir"]
