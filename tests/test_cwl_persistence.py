@@ -410,7 +410,7 @@ async def test_default_transformer(context: StreamFlowContext):
     workflow, (port,) = await create_workflow(context=context, num_port=1)
     step = get_full_instantiation(
         cls_=DefaultTransformer,
-        name=utils.random_name() + "-transformer",
+        name=f"{utils.random_name()}-transformer",
         default_port=port,
         workflow=workflow,
     )
@@ -424,7 +424,7 @@ async def test_default_retag_transformer(context: StreamFlowContext):
     workflow, (port,) = await create_workflow(context=context, num_port=1)
     step = get_full_instantiation(
         cls_=DefaultRetagTransformer,
-        name=utils.random_name() + "-transformer",
+        name=f"{utils.random_name()}-transformer",
         default_port=port,
         primary_port="prime",
         workflow=workflow,
@@ -446,7 +446,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext, processor_t: st
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
-
+    processor = None
     match processor_t:
         case "primitive":
             processor = _create_cwl_token_processor(port.name, workflow)
@@ -487,7 +487,7 @@ async def test_cwl_token_transformer(context: StreamFlowContext, processor_t: st
             raise Exception(f"Unknown processor type: {processor_t}")
     step = get_full_instantiation(
         cls_=CWLTokenTransformer,
-        name=utils.random_name() + "-transformer",
+        name=f"{utils.random_name()}-transformer",
         port_name=port.name,
         processor=processor,
         workflow=workflow,
@@ -503,20 +503,18 @@ async def test_value_from_transformer(context: StreamFlowContext):
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
-    job_port = workflow.create_port(JobPort)
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
 
     step = get_full_instantiation(
         cls_=ValueFromTransformer,
-        name=utils.random_name() + "-value-from-transformer",
+        name=f"{utils.random_name()}-value-from-transformer",
         processor=_create_cwl_token_processor(port.name, workflow),
         port_name=port.name,
         expression_lib=True,
         full_js=True,
         value_from="$(1 + 1)",
-        job_port=job_port,
         workflow=workflow,
     )
     workflow.steps[step.name] = step
@@ -529,23 +527,27 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     workflow = CWLWorkflow(
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
-    job_port = workflow.create_port(JobPort)
+    ports = [workflow.create_port() for _ in range(2)]
+    port_name = utils.random_name()
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
 
-    step = get_full_instantiation(
-        cls_=LoopValueFromTransformer,
-        name=utils.random_name() + "-loop-value-from-transformer",
-        processor=_create_cwl_token_processor(port.name, workflow),
-        port_name=port.name,
-        expression_lib=True,
-        full_js=True,
-        value_from="$(1 + 1 == 0)",
-        job_port=job_port,
-        workflow=workflow,
+    step = cast(
+        LoopValueFromTransformer,
+        get_full_instantiation(
+            cls_=LoopValueFromTransformer,
+            name=f"{utils.random_name()}-loop-value-from-transformer",
+            processor=_create_cwl_token_processor(port_name, workflow),
+            port_name=port_name,
+            expression_lib=True,
+            full_js=True,
+            value_from="$(1 + 1 == 0)",
+            workflow=workflow,
+        ),
     )
+    step.add_loop_input_port(port_name, ports[0])
+    step.add_loop_source_port(port_name, ports[1])
     workflow.steps[step.name] = step
     await save_load_and_test(step, context)
 
@@ -653,7 +655,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
     workflow, (skip_port,) = await create_workflow(context=context, num_port=1)
     step = get_full_instantiation(
         cls_=CWLConditionalStep,
-        name=utils.random_name() + "-when",
+        name=f"{utils.random_name()}-when",
         expression="$(inputs.name.length == 10)",
         expression_lib=[],
         full_js=True,
@@ -670,7 +672,7 @@ async def test_cwl_loop_conditional_step(context: StreamFlowContext):
     workflow, (skip_port,) = await create_workflow(context=context, num_port=1)
     step = get_full_instantiation(
         cls_=CWLLoopConditionalStep,
-        name=utils.random_name() + "-when",
+        name=f"{utils.random_name()}-when",
         expression="$(inputs.name.length == 10)",
         expression_lib=[],
         full_js=True,

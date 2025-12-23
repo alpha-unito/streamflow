@@ -28,7 +28,32 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Topic :: System :: Distributed Computing"
 ]
-dynamic = ["dependencies", "optional-dependencies", "version"]
+dependencies = [
+    "aiohttp==3.13.2",
+    "aiosqlite==0.22.0",
+    "antlr4-python3-runtime==4.13.2",
+    "asyncssh==2.21.1",
+    "bcrypt==5.0.0",
+    "cachetools==6.2.3",
+    "cwl-utils==0.40",
+    "importlib-metadata==8.7.0",
+    "Jinja2==3.1.6",
+    "jsonschema==4.25.1",
+    "kubernetes_asyncio==33.3.0",
+    "psutil==7.1.3",
+    "referencing==0.37.0",
+    "rdflib==7.4.0",
+    "typing-extensions==4.15.0",
+    "yattag==1.16.1"
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+report = [
+    "pandas==2.3.3",
+    "plotly==6.5.0",
+    "kaleido==1.2.0"
+]
 
 [project.scripts]
 cwl-runner = "streamflow.cwl.runner:run"
@@ -39,6 +64,38 @@ Homepage = "https://streamflow.di.unito.it"
 Package = "https://pypi.org/project/streamflow"
 Repository = "https://github.com/alpha-unito/streamflow"
 Docker = "https://hub.docker.com/r/alphaunito/streamflow"
+
+[dependency-groups]
+dev = [
+    {include-group = "bandit"},
+    {include-group = "docs"},
+    {include-group = "lint"},
+    {include-group = "test"}
+]
+bandit = [
+    "bandit==1.9.2"
+]
+docs = [
+    "sphinx==8.1.3",
+    "sphinx-jsonschema==1.19.2",
+    "sphinx-llms-txt==0.3.1",
+    "sphinx-rtd-theme==3.0.2"
+]
+lint = [
+    "black==25.12.0",
+    "codespell==2.4.1",
+    "flake8-bugbear==25.11.29",
+    "isort==7.0.0",
+    "pyupgrade==3.21.2"
+]
+test = [
+    "cwltest==2.6.20250818005349",
+    "cwltool==3.1.20251031082601",
+    "pytest==8.4.2",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov==7.0.0",
+    "pytest-xdist==3.8.0"
+]
 
 [tool.setuptools]
 packages = [
@@ -77,15 +134,7 @@ zip-safe = true
 "streamflow.scheduling.policy" = ["schemas/*.json"]
 
 [tool.setuptools.dynamic]
-dependencies = {file = "requirements.txt"}
 version = {attr = "streamflow.version.VERSION"}
-
-[tool.setuptools.dynamic.optional-dependencies]
-bandit = {file = "bandit-requirements.txt"}
-docs = {file = "docs/requirements.txt"}
-lint = {file = "lint-requirements.txt"}
-report = {file = "report-requirements.txt"}
-test = {file = "test-requirements.txt"}
 
 [tool.codespell]
 ignore-words-list = "Crate,crate,NotIn,notin"

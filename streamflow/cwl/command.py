@@ -834,10 +834,13 @@ class CWLCommand(TokenizedCommand):
                         *(
                             asyncio.create_task(
                                 build_token(
-                                    job,
-                                    context["inputs"][key],
-                                    cast(CWLWorkflow, self.step.workflow).cwl_version,
-                                    self.step.workflow.context,
+                                    cwl_version=cast(
+                                        CWLWorkflow, self.step.workflow
+                                    ).cwl_version,
+                                    inputs=job.inputs,
+                                    streamflow_context=self.step.workflow.context,
+                                    token_value=context["inputs"][key],
+                                    job=job,
                                 )
                             )
                             for key in job.inputs.keys()
@@ -1107,9 +1110,12 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
         if self.processor is not None:
             return self.processor.check_type(token)
         else:
-            return self.token_type == utils.infer_type_from_token(
-                get_token_value(token)
-            )
+            if self.token_type != (
+                inferred_type := utils.infer_type_from_token(get_token_value(token))
+            ):
+                # In CWL, long is considered as a subtype of double
+                return inferred_type != "long" or self.token_type != "double"  # nosec
+            return True
 
     @classmethod
     async def _load(
@@ -1198,7 +1204,12 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
         )
 
     def check_type(self, token: Token) -> bool:
-        return self.token_type == utils.infer_type_from_token(get_token_value(token))
+        if self.token_type != (
+            inferred_type := utils.infer_type_from_token(get_token_value(token))
+        ):
+            # In CWL, long is considered as a subtype of double
+            return inferred_type != "long" or self.token_type != "double"  # nosec
+        return True
 
 
 class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):

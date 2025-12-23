@@ -1,8 +1,19 @@
 #!/bin/bash
 
+pip() {
+  if command -v uv > /dev/null; then
+    uv pip "$@"
+  else
+    python3 -m pip "$@"
+  fi
+}
+
 venv() {
   if ! test -d "$1" ; then
-	  if command -v virtualenv > /dev/null; then
+	  if command -v uv > /dev/null; then
+	    uv venv "$1"
+	    uv sync --locked --no-dev || exit 1
+	  elif command -v virtualenv > /dev/null; then
       virtualenv -p python3 "$1"
 	  else
 	    python3 -m venv "$1"
@@ -50,9 +61,9 @@ fi
 
 # Setup environment
 venv cwl-conformance-venv
-pip install -U setuptools wheel pip
-pip install -r "${SCRIPT_DIRECTORY}/requirements.txt"
-pip install -r "${SCRIPT_DIRECTORY}/test-requirements.txt"
+pip install -U setuptools wheel "pip>=25.1"
+pip install "${SCRIPT_DIRECTORY}"
+pip install --group test "${SCRIPT_DIRECTORY}"
 if [[ "${VERSION}" = "v1.3" ]] ; then
   pip uninstall -y cwl-utils
   pip install git+https://github.com/common-workflow-language/cwl-utils.git@refs/pull/370/head
