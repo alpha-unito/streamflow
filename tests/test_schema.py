@@ -1,5 +1,6 @@
 import hashlib
-from typing import cast
+from collections.abc import MutableMapping
+from typing import Any, cast
 
 from pytest import raises
 
@@ -10,6 +11,9 @@ from streamflow.main import build_context
 from streamflow.persistence import SqliteDatabase
 from streamflow.recovery import DefaultCheckpointManager, DefaultFailureManager
 from streamflow.scheduling import DefaultScheduler
+from tests.utils.data import CustomDataManager
+from tests.utils.deployment import CustomDeploymentManager
+from tests.utils.utils import InjectPlugin
 
 
 def test_cwl_workflow():
@@ -186,11 +190,11 @@ def test_schema_generation():
     """Check that the `streamflow schema` command generates a correct JSON Schema."""
     assert (
         hashlib.sha256(SfSchema().dump("v1.0", False).encode()).hexdigest()
-        == "e3009c18fe45ccaffbf43b3a4eb98fd7a661f4a34b6fc5bcab1dc5f183dfc0fe"
+        == "8816f3c71ce535a06fb0d4cd61f0a1fa11803d055db5a5d33e7724ac16ff75fd"
     )
     assert (
         hashlib.sha256(SfSchema().dump("v1.0", True).encode()).hexdigest()
-        == "6b6c8ba7b9433729068e39fd5e8fa5c00ab5d10d0187fa36fe3ea2b0f5b9276b"
+        == "4a9a89e2da39996d9428d02f4f2834a3cb521d4f39951290ee475609ec05c4d7"
     )
 
 
@@ -288,21 +292,29 @@ def test_sf_context():
         "version",
         "workflows",
     }
-    config = {
+    config: MutableMapping[str, Any] = {
+        "version": "v1.0",
         "checkpointManager": {
             "type": "default",
             "config": {"checkpoint_dir": "/home/resilient_volume"},
         },
         "database": {"type": "default", "config": {"connection": ":memory:"}},
-        "dataManager": {"type": "default", "config": {}},
-        "deploymentManager": {"type": "default", "config": {}},
+        "dataManager": {"type": "custom-data", "config": {"custom_arg": 104}},
+        "deploymentManager": {
+            "type": "custom-deployment",
+            "config": {"my_arg": "hold"},
+        },
         "failureManager": {
             "type": "default",
             "config": {"max_retries": 10, "retry_delay": 61},
         },
-        "scheduler": {"type": "default", "config": {"retry_delay": 101}},
+        "scheduling": {
+            "scheduler": {"type": "default", "config": {"retry_delay": 101}}
+        },
     }
-    context = build_context(config)
+    with InjectPlugin("custom-data"), InjectPlugin("custom-deployment"):
+        assert SfValidator().validate(config)
+        context = build_context(config)
     assert (
         cast(DefaultCheckpointManager, context.checkpoint_manager).checkpoint_dir
         == config["checkpointManager"]["config"]["checkpoint_dir"]
@@ -310,6 +322,14 @@ def test_sf_context():
     assert (
         cast(SqliteDatabase, context.database).connection.connection
         == config["database"]["config"]["connection"]
+    )
+    assert (
+        cast(CustomDataManager, context.data_manager).custom_arg
+        == config["dataManager"]["config"]["custom_arg"]
+    )
+    assert (
+        cast(CustomDeploymentManager, context.deployment_manager).my_arg
+        == config["deploymentManager"]["config"]["my_arg"]
     )
     assert (
         cast(DefaultFailureManager, context.failure_manager).retry_delay
@@ -321,5 +341,5 @@ def test_sf_context():
     )
     assert (
         cast(DefaultScheduler, context.scheduler).retry_interval
-        == config["scheduler"]["config"]["retry_delay"]
+        == config["scheduling"]["scheduler"]["config"]["retry_delay"]
     )

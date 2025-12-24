@@ -28,6 +28,7 @@ from tests.utils.deployment import (
     get_location,
     get_ssh_deployment_config,
 )
+from tests.utils.utils import InjectPlugin
 
 
 def _get_future_connector_methods() -> MutableSequence[Callable]:
@@ -94,14 +95,15 @@ async def test_deployment_manager_deploy_fails(context: StreamFlowContext) -> No
     """Test DeploymentManager deploy method with multiple requests but they fail"""
     deployment_config = get_failure_deployment_config()
     deployment_config.lazy = False
-    for result in await asyncio.gather(
-        *(context.deployment_manager.deploy(deployment_config) for _ in range(3)),
-        return_exceptions=True,
-    ):
-        assert isinstance(result, FailureConnectorException) or (
-            isinstance(result, WorkflowExecutionException)
-            and result.args[0] == f"FAILED deployment of {deployment_config.name}"
-        )
+    with InjectPlugin("failure-connector"):
+        for result in await asyncio.gather(
+            *(context.deployment_manager.deploy(deployment_config) for _ in range(3)),
+            return_exceptions=True,
+        ):
+            assert isinstance(result, FailureConnectorException) or (
+                isinstance(result, WorkflowExecutionException)
+                and result.args[0] == f"FAILED deployment of {deployment_config.name}"
+            )
 
 
 @pytest.mark.asyncio
