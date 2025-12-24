@@ -33,6 +33,7 @@ from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import (
     LoadListing,
     SecondaryFile,
+    build_token,
     is_expression,
     resolve_dependencies,
 )
@@ -501,7 +502,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None,
         context: MutableMapping[str, Any],
-    ):
+    ) -> MutableMapping[str, Any]:
         connector = self._get_connector(connector, job)
         locations = await self._get_locations(connector, job)
         cwl_workflow = cast(CWLWorkflow, self.workflow)
@@ -956,3 +957,96 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
             ),
         ]
         return await eval_processors(process_tasks, name=self.name)
+
+
+class CWLExpressionToolOutputProcessor(CommandOutputProcessor):
+    def __init__(
+        self,
+        name: str,
+        workflow: CWLWorkflow,
+        target: Target | None = None,
+        token_type: str | MutableSequence[str] | None = None,
+        enum_symbols: MutableSequence[str] | None = None,
+        file_format: str | None = None,
+        optional: bool = False,
+        streamable: bool = False,
+    ):
+        super().__init__(name, workflow, target)
+        self.token_type: str | MutableSequence[str] | None = token_type
+        self.enum_symbols: str | MutableSequence[str] = enum_symbols or []
+        self.file_format: str | None = file_format
+        self.optional: bool = optional
+        self.streamable: bool = streamable
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Self:
+        return cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            target=(
+                (await loading_context.load_target(context, row["target"]))
+                if row["target"]
+                else None
+            ),
+            token_type=row["token_type"],
+            file_format=row["file_format"],
+            enum_symbols=row["enum_symbols"],
+            optional=row["optional"],
+            streamable=row["streamable"],
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "token_type": self.token_type,
+            "enum_symbols": self.enum_symbols,
+            "file_format": self.file_format,
+            "optional": self.optional,
+            "streamable": self.streamable,
+        }
+
+    async def process(
+        self,
+        job: Job,
+        command_output: asyncio.Future[CommandOutput],
+        connector: Connector | None = None,
+        recoverable: bool = False,
+    ) -> Token | None:
+        result = cast(CWLCommandOutput, await command_output)
+        token_value = result.value
+        if self.token_type != "Any":  # nosec
+            if isinstance(token_value, MutableSequence):
+                for value in token_value:
+                    _check_token_type(
+                        name=self.name,
+                        token_value=value,
+                        token_type=self.token_type,
+                        enum_symbols=self.enum_symbols,
+                        optional=self.optional,
+                        check_file=True,
+                    )
+            else:
+                _check_token_type(
+                    name=self.name,
+                    token_value=token_value,
+                    token_type=self.token_type,
+                    enum_symbols=self.enum_symbols,
+                    optional=self.optional,
+                    check_file=True,
+                )
+        return await build_token(
+            cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
+            inputs=job.inputs,
+            token_value=token_value,
+            streamflow_context=self.workflow.context,
+            recoverable=True,
+        )

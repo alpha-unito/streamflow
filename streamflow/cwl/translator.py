@@ -54,6 +54,7 @@ from streamflow.cwl.command import (
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
+    CWLExpressionToolOutputProcessor,
     CWLObjectCommandOutputProcessor,
     CWLTokenProcessor,
 )
@@ -273,21 +274,39 @@ def _create_command_output_processor(
         else:
             enum_prefix = cwl_name_prefix
         # Return OutputProcessor
-        return CWLCommandOutputProcessor(
-            name=port_name,
-            workflow=workflow,
-            target=port_target,
-            token_type=cast(cwl_utils.parser.OutputEnumSchema, port_type).type_,
-            enum_symbols=[
-                posixpath.relpath(
-                    utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
-                )
-                for s in cast(cwl_utils.parser.OutputEnumSchema, port_type).symbols
-            ],
-            expression_lib=expression_lib,
-            full_js=full_js,
-            optional=optional,
-        )
+        if isinstance(
+            cwl_element, get_args(cwl_utils.parser.ExpressionToolOutputParameter)
+        ):
+            return CWLExpressionToolOutputProcessor(
+                name=port_name,
+                workflow=workflow,
+                token_type=port_type[0] if len(port_type) == 1 else port_type,
+                enum_symbols=[
+                    posixpath.relpath(
+                        utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
+                    )
+                    for s in cast(cwl_utils.parser.OutputEnumSchema, port_type).symbols
+                ],
+                file_format=getattr(cwl_element, "format", None),
+                optional=optional,
+                streamable=getattr(cwl_element, "streamable", None),
+            )
+        else:
+            return CWLCommandOutputProcessor(
+                name=port_name,
+                workflow=workflow,
+                target=port_target,
+                token_type=cast(cwl_utils.parser.OutputEnumSchema, port_type).type_,
+                enum_symbols=[
+                    posixpath.relpath(
+                        utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
+                    )
+                    for s in cast(cwl_utils.parser.OutputEnumSchema, port_type).symbols
+                ],
+                expression_lib=expression_lib,
+                full_js=full_js,
+                optional=optional,
+            )
     # Record type: -> ObjectCommandOutputProcessor
     elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
         # Process InlineJavascriptRequirement
@@ -1488,7 +1507,7 @@ def create_command_output_processor_base(
     context: MutableMapping[str, Any],
     optional: bool = False,
     single: bool = True,
-) -> CWLCommandOutputProcessor:
+) -> CommandOutputProcessor:
     if not isinstance(port_type, MutableSequence):
         port_type = [port_type]
     # Normalize port type (Python does not distinguish among all CWL number types)
@@ -1499,7 +1518,18 @@ def create_command_output_processor_base(
     requirements = context["hints"] | context["requirements"]
     expression_lib, full_js = _process_javascript_requirement(requirements)
     # Create OutputProcessor
-    if "File" in port_type:
+    if isinstance(
+        cwl_element, get_args(cwl_utils.parser.ExpressionToolOutputParameter)
+    ):
+        return CWLExpressionToolOutputProcessor(
+            name=port_name,
+            workflow=workflow,
+            token_type=port_type[0] if len(port_type) == 1 else port_type,
+            file_format=getattr(cwl_element, "format", None),
+            optional=optional,
+            streamable=getattr(cwl_element, "streamable", None),
+        )
+    elif "File" in port_type:
         return CWLCommandOutputProcessor(
             name=port_name,
             workflow=workflow,
