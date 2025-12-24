@@ -29,6 +29,7 @@ from tests.utils.deployment import (
     get_parameterizable_hardware_deployment_config,
     get_service,
 )
+from tests.utils.utils import InjectPlugin
 from tests.utils.workflow import CWL_VERSION, random_job_name
 
 
@@ -186,9 +187,11 @@ async def test_binding_filter(
     assert len(task_pending) == 1
 
     # Both targets are available for scheduling (timeout parameter useful if a deadlock occurs)
-    _, task_pending = await asyncio.wait(
-        task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
-    )
+
+    with InjectPlugin("reverse"):
+        _, task_pending = await asyncio.wait(
+            task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
+        )
     assert len(task_pending) == 0
     assert context.scheduler.get_allocation(job.name).status == Status.FIREABLE
 
@@ -281,7 +284,10 @@ async def test_multi_env(
     for deployment in ["docker", "local"]:
         if deployment not in chosen_deployment_types:
             pytest.skip(f"Deployment {deployment} was not activated")
-    hardware_requirement, target = _prepare_connector(context)
+    with InjectPlugin(plugin_name="parameterizable-hardware"):
+        config = await get_deployment_config(context, "parameterizable-hardware")
+        await context.deployment_manager.deploy(config)
+        hardware_requirement, target = _prepare_connector(context)
     docker_config = get_docker_deployment_config()
     docker_target = Target(
         deployment=docker_config,
@@ -322,6 +328,7 @@ async def test_multi_env(
     await _notify_status_and_test(context, [j for j, _ in jobs], Status.RUNNING)
     # Jobs change status to COMPLETED
     await _notify_status_and_test(context, [j for j, _ in jobs], Status.COMPLETED)
+    await context.deployment_manager.undeploy(config.name)
 
 
 @pytest.mark.asyncio
@@ -332,7 +339,10 @@ async def test_multi_targets_one_job(
     for deployment in ["docker", "local"]:
         if deployment not in chosen_deployment_types:
             pytest.skip(f"Deployment {deployment} was not activated")
-    hardware_requirement, target = _prepare_connector(context)
+    with InjectPlugin(plugin_name="parameterizable-hardware"):
+        config = await get_deployment_config(context, "parameterizable-hardware")
+        await context.deployment_manager.deploy(config)
+        hardware_requirement, target = _prepare_connector(context)
     # Create fake job with two targets and schedule it
     job = Job(
         name=random_job_name(),
@@ -375,6 +385,7 @@ async def test_multi_targets_one_job(
     await _notify_status_and_test(context, job, Status.RUNNING)
     # Job changes status to COMPLETED
     await _notify_status_and_test(context, job, Status.COMPLETED)
+    await context.deployment_manager.undeploy(config.name)
 
 
 @pytest.mark.asyncio
@@ -388,7 +399,10 @@ async def test_multi_targets_two_jobs(
     for deployment in ["docker", "local"]:
         if deployment not in chosen_deployment_types:
             pytest.skip(f"Deployment {deployment} was not activated")
-    hardware_requirement, target = _prepare_connector(context)
+    with InjectPlugin(plugin_name="parameterizable-hardware"):
+        config = await get_deployment_config(context, "parameterizable-hardware")
+        await context.deployment_manager.deploy(config)
+        hardware_requirement, target = _prepare_connector(context)
     # Create fake jobs with two same targets and schedule them
     jobs = [
         Job(
@@ -439,6 +453,7 @@ async def test_multi_targets_two_jobs(
     await _notify_status_and_test(context, jobs, Status.RUNNING)
     # Job changes status to COMPLETED
     await _notify_status_and_test(context, jobs, Status.COMPLETED)
+    await context.deployment_manager.undeploy(config.name)
 
 
 @pytest.mark.asyncio
@@ -468,7 +483,10 @@ async def test_scheduling(
 async def test_single_env_enough_resources(context: StreamFlowContext) -> None:
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
     num_jobs = 2
-    hardware_requirement, target = _prepare_connector(context, num_jobs=num_jobs)
+    with InjectPlugin(plugin_name="parameterizable-hardware"):
+        config = await get_deployment_config(context, "parameterizable-hardware")
+        await context.deployment_manager.deploy(config)
+        hardware_requirement, target = _prepare_connector(context, num_jobs=num_jobs)
     # Create fake jobs and schedule them
     jobs = [
         Job(
@@ -516,15 +534,19 @@ async def test_single_env_enough_resources(context: StreamFlowContext) -> None:
                 for j in jobs
             )
         )
+        await context.deployment_manager.undeploy(config.name)
 
 
 @pytest.mark.asyncio
 async def test_single_env_few_resources(context: StreamFlowContext) -> None:
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
     num_jobs = 2
-    hardware_requirement, target = _prepare_connector(
-        context, location_memory=lambda x: x * num_jobs * 3
-    )
+    with InjectPlugin(plugin_name="parameterizable-hardware"):
+        config = await get_deployment_config(context, "parameterizable-hardware")
+        await context.deployment_manager.deploy(config)
+        hardware_requirement, target = _prepare_connector(
+            context, location_memory=lambda x: x * num_jobs * 3
+        )
     # Create fake jobs and schedule them
     jobs = [
         Job(
@@ -597,3 +619,4 @@ async def test_single_env_few_resources(context: StreamFlowContext) -> None:
                 for j in jobs
             )
         )
+        await context.deployment_manager.undeploy(config.name)

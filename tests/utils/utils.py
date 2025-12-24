@@ -3,10 +3,16 @@ from __future__ import annotations
 import inspect
 import logging
 from collections.abc import MutableMapping, MutableSequence
+from contextlib import AbstractContextManager
+from types import TracebackType
 from typing import Any
 
 import pytest
 
+import streamflow.data
+import streamflow.deployment
+import streamflow.deployment.connector
+import streamflow.deployment.filter
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.utils import contains_persistent_id
 from streamflow.core.workflow import Port, Step, Token, Workflow
@@ -20,6 +26,9 @@ from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
+from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
+from tests.utils.data import CustomDataManager
+from tests.utils.deployment import CustomDeploymentManager, ReverseTargetsBindingFilter
 
 
 def get_full_instantiation(cls_: type[Any], **arguments) -> Any:
@@ -248,3 +257,63 @@ async def verify_dependency_tokens(
                 assert contains_persistent_id(
                     t1.persistent_id, alternative_expected_dependee
                 )
+
+
+class InjectPlugin(AbstractContextManager):
+    def __init__(self, plugin_name: str) -> None:
+        self.plugin_name: str = plugin_name
+
+    def __enter__(self) -> None:
+        match self.plugin_name:
+            case "custom-data":
+                streamflow.data.data_manager_classes.update(
+                    {"custom-data": CustomDataManager}
+                )
+            case "custom-deployment":
+                streamflow.deployment.deployment_manager_classes.update(
+                    {"custom-deployment": CustomDeploymentManager}
+                )
+            case "failure-connector":
+                streamflow.deployment.connector.connector_classes.update(
+                    {
+                        "failure-connector": FailureConnector,
+                    }
+                )
+            case "parameterizable-hardware":
+                streamflow.deployment.connector.connector_classes.update(
+                    {
+                        "parameterizable-hardware": ParameterizableHardwareConnector,
+                    }
+                )
+            case "reverse":
+                streamflow.deployment.filter.binding_filter_classes.update(
+                    {"reverse": ReverseTargetsBindingFilter}
+                )
+            case _:
+                raise ValueError(f"Unknown plugin name: {self.plugin_name}")
+
+    def __exit__(
+        self,
+        type_: type[BaseException] | None,
+        value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        match self.plugin_name:
+            case "custom-data":
+                streamflow.data.data_manager_classes.pop("custom-data")
+            case "custom-deployment":
+                streamflow.deployment.deployment_manager_classes.pop(
+                    "custom-deployment"
+                )
+            case "failure-connector":
+                streamflow.deployment.connector.connector_classes.pop(
+                    "failure-connector"
+                )
+            case "parameterizable-hardware":
+                streamflow.deployment.connector.connector_classes.pop(
+                    "parameterizable-hardware",
+                )
+            case "reverse":
+                streamflow.deployment.filter.binding_filter_classes.pop("reverse")
+            case _:
+                raise ValueError(f"Unknown plugin name: {self.plugin_name}")

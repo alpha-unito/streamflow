@@ -188,7 +188,7 @@ async def test_gather_step(context: StreamFlowContext):
 
     step = get_full_instantiation(
         cls_=GatherStep,
-        name=utils.random_name() + "-gather",
+        name=f"{utils.random_name()}-gather",
         depth=2,
         size_port=port,
         workflow=workflow,
@@ -205,7 +205,7 @@ async def test_scatter_step(context: StreamFlowContext):
 
     step = get_full_instantiation(
         cls_=ScatterStep,
-        name=utils.random_name() + "-scatter",
+        name=f"{utils.random_name()}-scatter",
         size_port=port,
         workflow=workflow,
     )

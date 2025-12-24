@@ -192,7 +192,7 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
     )
     step = workflow.create_step(
         cls=CombinatorStep,
-        name=utils.random_name() + "-combinator",
+        name=f"{utils.random_name()}-combinator",
         combinator=DotProductCombinator(name=utils.random_name(), workflow=workflow),
     )
     port_name = "test"
@@ -240,7 +240,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
     )
     step = workflow.create_step(
         cls=CombinatorStep,
-        name=utils.random_name() + "-combinator",
+        name=f"{utils.random_name()}-combinator",
         combinator=CartesianProductCombinator(
             name=utils.random_name(), workflow=workflow
         ),

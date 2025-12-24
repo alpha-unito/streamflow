@@ -10,14 +10,11 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-import streamflow.deployment.connector
-import streamflow.deployment.filter
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
-from tests.utils.deployment import ReverseTargetsBindingFilter, get_deployment_config
+from tests.utils.deployment import get_deployment_config
 
 
 def csvtype(choices):
@@ -44,18 +41,6 @@ def pytest_addoption(parser):
         default=all_deployment_types(),
         help="List of deployments to deploy. Use the comma as delimiter e.g. --deploys "
         f"local,docker. (default: {all_deployment_types()})",
-    )
-
-
-def pytest_configure(config):
-    streamflow.deployment.connector.connector_classes.update(
-        {
-            "failure": FailureConnector,
-            "parameterizable_hardware": ParameterizableHardwareConnector,
-        }
-    )
-    streamflow.deployment.filter.binding_filter_classes.update(
-        {"reverse": ReverseTargetsBindingFilter}
     )
 
 
@@ -151,7 +136,7 @@ async def context(
             "path": os.getcwd(),
         },
     )
-    for deployment_t in (*chosen_deployment_types, "parameterizable_hardware"):
+    for deployment_t in chosen_deployment_types:
         config = await get_deployment_config(_context, deployment_t)
         await _context.deployment_manager.deploy(config)
     yield _context

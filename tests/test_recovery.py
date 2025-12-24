@@ -106,7 +106,6 @@ async def fault_tolerant_context(
     )
     for deployment_t in (
         *chosen_deployment_types,
-        "parameterizable_hardware",
         "local-fs-volatile",
     ):
         config = await get_deployment_config(_context, deployment_t)
@@ -295,7 +294,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     )
     # ScatterStep
     scatter_step = workflow.create_step(
-        cls=ScatterStep, name=utils.random_name() + "-scatter"
+        cls=ScatterStep, name=f"{utils.random_name()}-scatter"
     )
     scatter_step.add_input_port(output_name, step.get_output_port(output_name))
     scatter_step.add_output_port(output_name, workflow.create_port())
@@ -311,7 +310,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     # GatherStep
     gather_step = workflow.create_step(
         cls=GatherStep,
-        name=utils.random_name() + "-gather",
+        name=f"{utils.random_name()}-gather",
         size_port=scatter_step.get_size_port(),
     )
     gather_step.add_input_port(output_name, step.get_output_port(output_name))
