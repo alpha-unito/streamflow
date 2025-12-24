@@ -106,7 +106,6 @@ async def fault_tolerant_context(
     )
     for deployment_t in (
         *chosen_deployment_types,
-        "parameterizable_hardware",
         "local-fs-volatile",
     ):
         config = await get_deployment_config(_context, deployment_t)
