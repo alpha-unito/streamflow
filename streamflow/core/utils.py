@@ -143,8 +143,8 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
         yield dict(zip(keys, list(instance), strict=True))
 
 
-def encode_command(command: str, shell: str = "sh") -> str:
-    return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | {shell}"
+def encode_command(command: str) -> str:
+    return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | sh"
 
 
 async def eval_processors(unfinished: Iterable[asyncio.Task], name: str) -> Token:

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import posixpath
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
@@ -577,7 +578,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
     ) -> AsyncContextManager[StreamWrapper]:
         return await self.connector.get_stream_reader(
             command=self._get_run_command(
-                command=utils.encode_command(" ".join(command), "sh"),
+                command=utils.encode_command(" ".join(command)),
                 location=location,
                 interactive=False,
             ),
@@ -632,7 +633,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         return await self.connector.run(
             location=get_inner_location(location),
             command=self._get_run_command(
-                command=utils.encode_command(command, "sh"),
+                command=utils.encode_command(command),
                 location=location,
             ),
             capture_output=capture_output,
@@ -727,7 +728,11 @@ class DockerBaseConnector(ContainerConnector, ABC):
             )
         # Check if the container user is the current host user
         if self._wraps_local():
-            host_user = os.getuid()
+            if sys.platform == "win32":
+                # Windows does not support the `getuid` function
+                host_user = -1
+            else:
+                host_user = os.getuid()
         else:
             stdout, returncode = await self.connector.run(
                 location=self._get_inner_location(),
