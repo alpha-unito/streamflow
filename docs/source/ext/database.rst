@@ -285,7 +285,7 @@ sqlite     streamflow.persistence.sqlite.SqliteDatabase
 
 By default, StreamFlow uses a local ``SqliteDatabase`` instance for metadata persistence. The ``connection`` directive can be set to ``:memory:`` to avoid disk I/O and improve performance. However, in this case, all the metadata will be erased when the workflow execution terminates.
 
-.. jsonschema:: ../../../streamflow/persistence/schemas/sqlite.json
+.. jsonschema:: https://streamflow.di.unito.it/schemas/persistence/sqlite.json
 
 The database schema is structured as follows:
 
@@ -350,7 +350,7 @@ Implementations
 Name                                                                    Class
 ====================================================================    =============================================================
 :ref:`DefaultDatabaseLoadingContext <DefaultDatabaseLoadingContext>`    streamflow.persistent.loading_context.DefaultDatabaseLoadingContext
-:ref:`WorkflowBuilder <WorkflowBuilder>`                                  streamflow.persistent.loading_context.WorkflowBuilder
+:ref:`WorkflowBuilder <WorkflowBuilder>`                                streamflow.persistent.loading_context.WorkflowBuilder
 ====================================================================    =============================================================
 
 DefaultDatabaseLoadingContext

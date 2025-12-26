@@ -63,7 +63,7 @@ In the ``DefaultScheduler`` implementation, scheduling attempts follow a simple 
 
 As discussed above, a scheduling attempt occurs whenever a ``Job`` reaches a final state. Plus, to account for dynamic resource creation and deletion in remote execution environments (e.g., through the Kubernetes `HorizontalPodAutoscaler <https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/>`_) the ``DefaultScheduler`` can automatically perform a scheduling attempt for each queued ``Job`` at regular intervals. The duration of such intervals can be configured through the ``retry_delay`` parameter. A value of ``0`` (the default) turns off this behaviour.
 
-.. jsonschema:: ../../../streamflow/scheduling/schemas/scheduler.json
+.. jsonschema:: https://streamflow.di.unito.it/schemas/scheduling/scheduler.json
 
 Policy
 ======
