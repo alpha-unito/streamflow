@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import tarfile
 from collections.abc import MutableMapping, MutableSequence
@@ -182,7 +183,15 @@ class FailureConnectorException(Exception):
 class FailureConnector(Connector):
     @classmethod
     def get_schema(cls) -> str:
-        return ""
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/connector/failure_connector.json",
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            }
+        )
 
     async def copy_local_to_remote(
         self,

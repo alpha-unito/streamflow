@@ -51,7 +51,8 @@ class StreamFlowContext:
         )
         self.process_executor: ProcessPoolExecutor = ProcessPoolExecutor()
         self.scheduler: Scheduler = scheduler_class(
-            context=self, **config.get("scheduler", {}).get("config", {})
+            context=self,
+            **config.get("scheduling", {}).get("scheduler", {}).get("config", {}),
         )
 
     async def close(self) -> None:

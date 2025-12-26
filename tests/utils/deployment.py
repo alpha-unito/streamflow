@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import socket
 import tempfile
@@ -16,7 +17,9 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     BindingFilter,
+    Connector,
     DeploymentConfig,
+    DeploymentManager,
     ExecutionLocation,
     Target,
     WrapsConfig,
@@ -105,7 +108,15 @@ async def get_deployment_config(
                     "test-fs-volatile",
                 ),
             )
-        case "parameterizable_hardware":
+        case "docker":
+            return get_docker_deployment_config()
+        case "docker-compose":
+            return get_docker_compose_deployment_config()
+        case "docker-wrapper":
+            return await get_docker_wrapper_deployment_config(_context)
+        case "kubernetes":
+            return get_kubernetes_deployment_config()
+        case "parameterizable-hardware":
             return get_parameterizable_hardware_deployment_config()
         case "singularity":
             return get_singularity_deployment_config()
@@ -172,7 +183,7 @@ async def get_docker_wrapper_deployment_config(_context: StreamFlowContext):
 def get_failure_deployment_config():
     return DeploymentConfig(
         name="failure-test",
-        type="failure",
+        type="failure-connector",
         config={"transferBufferSize": 0},
         external=False,
         lazy=True,
@@ -226,7 +237,7 @@ def get_parameterizable_hardware_deployment_config():
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
         name="custom-hardware",
-        type="parameterizable_hardware",
+        type="parameterizable-hardware",
         config={},
         external=True,
         lazy=False,
@@ -242,7 +253,7 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
             | "docker-wrapper"
             | "local"
             | "local-fs-volatile"
-            | "parameterizable_hardware"
+            | "parameterizable-hardware"
             | "singularity"
             | "ssh"
         ):
@@ -342,6 +353,41 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
     )
 
 
+class CustomDeploymentManager(DeploymentManager):
+    def __init__(self, context: StreamFlowContext, my_arg: str) -> None:
+        super().__init__(context)
+        self.my_arg: str = my_arg
+
+    async def close(self) -> None:
+        raise NotImplementedError
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/deployment/custom_deployment_manager.json",
+                "type": "object",
+                "properties": {
+                    "my_arg": {"type": "string", "description": "No description"}
+                },
+                "additionalProperties": False,
+            }
+        )
+
+    async def deploy(self, deployment_config: DeploymentConfig) -> None:
+        raise NotImplementedError
+
+    def get_connector(self, deployment_name: str) -> Connector | None:
+        raise NotImplementedError
+
+    async def undeploy(self, deployment_name: str) -> None:
+        raise NotImplementedError
+
+    async def undeploy_all(self) -> None:
+        raise NotImplementedError
+
+
 class ReverseTargetsBindingFilter(BindingFilter):
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
@@ -350,4 +396,12 @@ class ReverseTargetsBindingFilter(BindingFilter):
 
     @classmethod
     def get_schema(cls) -> str:
-        return ""
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/deployment/reverse_targets.json",
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            }
+        )
