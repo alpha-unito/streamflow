@@ -29,7 +29,11 @@ from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
-from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
+from tests.utils.connector import (
+    AioTarConnector,
+    FailureConnector,
+    ParameterizableHardwareConnector,
+)
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager, ReverseTargetsBindingFilter
 
@@ -299,6 +303,10 @@ class InjectPlugin(AbstractContextManager):
 
     def __enter__(self) -> None:
         match self.plugin_name:
+            case "aiotar":
+                streamflow.deployment.connector.connector_classes.update(
+                    {"aiotar": AioTarConnector}
+                )
             case "custom-data":
                 streamflow.data.data_manager_classes.update(
                     {"custom-data": CustomDataManager}
@@ -309,15 +317,11 @@ class InjectPlugin(AbstractContextManager):
                 )
             case "failure-connector":
                 streamflow.deployment.connector.connector_classes.update(
-                    {
-                        "failure-connector": FailureConnector,
-                    }
+                    {"failure-connector": FailureConnector}
                 )
             case "parameterizable-hardware":
                 streamflow.deployment.connector.connector_classes.update(
-                    {
-                        "parameterizable-hardware": ParameterizableHardwareConnector,
-                    }
+                    {"parameterizable-hardware": ParameterizableHardwareConnector}
                 )
             case "reverse":
                 streamflow.deployment.filter.binding_filter_classes.update(
@@ -333,6 +337,8 @@ class InjectPlugin(AbstractContextManager):
         traceback: TracebackType | None,
     ) -> None:
         match self.plugin_name:
+            case "aiotar":
+                streamflow.deployment.connector.connector_classes.pop("aiotar")
             case "custom-data":
                 streamflow.data.data_manager_classes.pop("custom-data")
             case "custom-deployment":

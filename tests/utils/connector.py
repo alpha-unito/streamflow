@@ -5,6 +5,7 @@ import json
 import os
 import tarfile
 from collections.abc import MutableMapping, MutableSequence
+from types import TracebackType
 from typing import Any, AsyncContextManager, cast
 
 import asyncssh
@@ -25,7 +26,7 @@ from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrappe
 from streamflow.log_handler import logger
 
 
-def get_path(command: MutableSequence[str]) -> str:
+def _get_path_from_cmd(command: MutableSequence[str]) -> str:
     match command[0]:
         case "tee":
             return command[1]
@@ -38,7 +39,7 @@ def get_path(command: MutableSequence[str]) -> str:
             raise NotImplementedError(command)
 
 
-class TarStreamReaderWrapper(StreamReaderWrapper):
+class AioTarStreamReaderWrapper(StreamReaderWrapper):
     async def close(self) -> None:
         if self.stream:
             os.close(self.stream)
@@ -48,7 +49,7 @@ class TarStreamReaderWrapper(StreamReaderWrapper):
         return os.read(self.stream, size)
 
 
-class TarStreamWriterWrapper(StreamWriterWrapper):
+class AioTarStreamWriterWrapper(StreamWriterWrapper):
     async def close(self) -> None:
         self.stream.close()
 
@@ -56,8 +57,8 @@ class TarStreamWriterWrapper(StreamWriterWrapper):
         self.stream.write(data)
 
 
-class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
-    def __init__(self, fileobj: Any, mode: str, tar_format: str):
+class AioTarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
+    def __init__(self, fileobj: Any, mode: str, tar_format: str) -> None:
         super().__init__()
         self.fileobj: Any = fileobj
         self.stream: StreamWrapper | None = None
@@ -70,7 +71,7 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
         # - ustar         POSIX 1003.1 - 1988 (ustar) format.
         # - v7            Old V7 tar format.
         match tar_format:
-            case "gnu":  # FIXME: oldgnu?
+            case "gnu":
                 self.tar_format: int = tarfile.GNU_FORMAT
             case "pax" | "posix":
                 self.tar_format: int = tarfile.PAX_FORMAT
@@ -81,23 +82,28 @@ class TarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
 
     async def __aenter__(self) -> StreamWrapper:
         if self.mode == "w":
-            self.stream = TarStreamWriterWrapper(self.fileobj)
+            self.stream = AioTarStreamWriterWrapper(self.fileobj)
         else:
             read_fd, write_fd = os.pipe()
             with os.fdopen(write_fd, "wb") as f:
                 with tarfile.open(fileobj=f, mode="w|", dereference=True) as tar:
                     tar.add(self.fileobj, arcname=os.path.basename(self.fileobj))
-            self.stream = TarStreamReaderWrapper(read_fd)
+            self.stream = AioTarStreamReaderWrapper(read_fd)
         return self.stream
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         if self.stream:
             await self.stream.close()
         if not isinstance(self.fileobj, str):
             self.fileobj.close()
 
 
-class TarConnector(BaseConnector):
+class AioTarConnector(BaseConnector):
 
     def __init__(
         self,
@@ -105,7 +111,7 @@ class TarConnector(BaseConnector):
         config_dir: str,
         tar_format: str,
         transferBufferSize: int = 64,
-    ):
+    ) -> None:
         super().__init__(
             deployment_name=deployment_name,
             config_dir=config_dir,
@@ -125,7 +131,7 @@ class TarConnector(BaseConnector):
                 deployment=self.deployment_name,
                 service=service,
                 hostname="localhost",
-                local=False,
+                local=False,  # to simulate remote location
                 slots=1,
                 hardware=None,
             )
@@ -133,21 +139,31 @@ class TarConnector(BaseConnector):
 
     @classmethod
     def get_schema(cls) -> str:
-        return ""
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/connector/aiotar_connector.json",
+                "type": "object",
+                "properties": {
+                    "tar_format": {"type": "string", "description": "Tar format"}
+                },
+                "additionalProperties": False,
+            }
+        )
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
-        path = get_path(command)
-        return TarStreamWrapperContextManager(
+        path = _get_path_from_cmd(command)
+        return AioTarStreamWrapperContextManager(
             fileobj=path, mode="r", tar_format=self.tar_format
         )
 
     async def get_stream_writer(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
-        path = get_path(command)
-        return TarStreamWrapperContextManager(
+        path = _get_path_from_cmd(command)
+        return AioTarStreamWrapperContextManager(
             fileobj=open(path, "wb"), mode="w", tar_format=self.tar_format
         )
 
@@ -170,7 +186,7 @@ class TarConnector(BaseConnector):
         # because of the system commands that are executed.
         # For example, all commands within RemoteStreamFlowPath are Linux-specific.
         # Executing these commands on Mac or Windows will lead to errors.
-        raise NotImplementedError("TarConnector run")
+        raise NotImplementedError("AioTarConnector run")
 
     async def undeploy(self, external: bool) -> None:
         pass

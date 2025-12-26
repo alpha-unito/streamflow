@@ -9,7 +9,7 @@ from tests.utils.deployment import (
     get_local_deployment_config,
     get_location,
 )
-from tests.utils.utils import compare_remote_dirs
+from tests.utils.utils import InjectPlugin, compare_remote_dirs
 
 
 def _get_content(min_length: int, text: str = "") -> str:
@@ -23,7 +23,8 @@ def _get_content(min_length: int, text: str = "") -> str:
 @pytest.mark.parametrize("tar_format", ["gnu", "pax", "posix", "ustar", "v7"])
 async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
     src_deployment_config = get_aiotar_deployment_config(tar_format)
-    await context.deployment_manager.deploy(src_deployment_config)
+    with InjectPlugin("aiotar"):
+        await context.deployment_manager.deploy(src_deployment_config)
     src_connector = context.deployment_manager.get_connector(src_deployment_config.name)
     locations = await src_connector.get_available_locations()
     src_location = next(iter(locations.values())).location
@@ -84,3 +85,4 @@ async def test_tar_format(context: StreamFlowContext, tar_format: str) -> None:
     )
     # Check if the data are equals
     await compare_remote_dirs(src_path, dst_path / src_path.name)
+    await context.deployment_manager.undeploy(src_deployment_config.name)
