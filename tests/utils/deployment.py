@@ -108,14 +108,6 @@ async def get_deployment_config(
                     "test-fs-volatile",
                 ),
             )
-        case "docker":
-            return get_docker_deployment_config()
-        case "docker-compose":
-            return get_docker_compose_deployment_config()
-        case "docker-wrapper":
-            return await get_docker_wrapper_deployment_config(_context)
-        case "kubernetes":
-            return get_kubernetes_deployment_config()
         case "parameterizable-hardware":
             return get_parameterizable_hardware_deployment_config()
         case "singularity":

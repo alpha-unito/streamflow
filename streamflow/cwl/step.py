@@ -27,15 +27,7 @@ from streamflow.core.workflow import (
     Token,
 )
 from streamflow.cwl import utils
-from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.utils import (
-    LoadListing,
-    get_file_token,
-    get_path_from_token,
-    get_token_class,
-    is_literal_file,
-    register_data,
-)
+from streamflow.cwl.utils import LoadListing, build_token
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data import remotepath
 from streamflow.data.remotepath import StreamFlowPath
@@ -50,7 +42,7 @@ from streamflow.workflow.step import (
     ScheduleStep,
     TransferStep,
 )
-from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
+from streamflow.workflow.token import IterationTerminationToken, ListToken
 from streamflow.workflow.utils import get_job_token
 
 
@@ -76,149 +68,6 @@ async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
             return next(iter(filepaths))
     except Exception:
         raise WorkflowExecutionException("Error downloading file from " + url)
-
-
-async def _process_file_token(
-    job: Job,
-    token_value: Any,
-    cwl_version: str,
-    streamflow_context: StreamFlowContext,
-) -> MutableMapping[str, Any]:
-    is_literal = is_literal_file(get_token_class(token_value), token_value, job.name)
-    connector = streamflow_context.scheduler.get_connector(job.name)
-    locations = streamflow_context.scheduler.get_locations(job.name)
-    path_processor = get_path_processor(connector)
-    new_token_value = token_value
-    if filepath := get_path_from_token(token_value):
-        if not path_processor.isabs(filepath):
-            filepath = path_processor.join(job.output_directory, filepath)
-        new_token_value = await get_file_token(
-            context=streamflow_context,
-            connector=connector,
-            cwl_version=cwl_version,
-            locations=locations,
-            token_class=get_token_class(token_value),
-            filepath=filepath,
-            file_format=token_value.get("format"),
-            basename=token_value.get("basename"),
-            contents=token_value.get("contents"),
-            is_literal=is_literal,
-        )
-    if "secondaryFiles" in token_value:
-        new_token_value["secondaryFiles"] = await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    _process_file_token(
-                        job=job,
-                        token_value=sf,
-                        cwl_version=cwl_version,
-                        streamflow_context=streamflow_context,
-                    )
-                )
-                for sf in token_value["secondaryFiles"]
-            )
-        )
-    elif "listing" in token_value:
-        new_token_value |= {
-            "listing": await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        _process_file_token(job, t, cwl_version, streamflow_context)
-                    )
-                    for t in token_value["listing"]
-                )
-            )
-        }
-    if not is_literal:
-        await register_data(
-            context=streamflow_context,
-            connector=connector,
-            locations=locations,
-            base_path=job.output_directory,
-            token_value=new_token_value,
-        )
-    return new_token_value
-
-
-async def build_token(
-    cwl_version: str,
-    inputs: MutableMapping[str, Any],
-    streamflow_context: StreamFlowContext,
-    token_value: Any,
-    job: Job | None = None,
-    recoverable: bool = False,
-) -> Token:
-    match token_value:
-        case MutableSequence():
-            return ListToken(
-                tag=get_tag(inputs.values()),
-                value=await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            build_token(
-                                cwl_version=cwl_version,
-                                inputs=inputs,
-                                streamflow_context=streamflow_context,
-                                token_value=v,
-                                job=job,
-                                recoverable=recoverable,
-                            )
-                        )
-                        for v in token_value
-                    )
-                ),
-            )
-        case MutableMapping():
-            if get_token_class(token_value) in ["File", "Directory"]:
-                return CWLFileToken(
-                    tag=get_tag(inputs.values()),
-                    value=(
-                        await _process_file_token(
-                            job=job,
-                            token_value=token_value,
-                            cwl_version=cwl_version,
-                            streamflow_context=streamflow_context,
-                        )
-                        if job is not None
-                        else token_value
-                    ),
-                    recoverable=recoverable,
-                )
-            else:
-                return ObjectToken(
-                    tag=get_tag(inputs.values()),
-                    value=dict(
-                        zip(
-                            token_value.keys(),
-                            await asyncio.gather(
-                                *(
-                                    asyncio.create_task(
-                                        build_token(
-                                            cwl_version=cwl_version,
-                                            inputs=inputs,
-                                            streamflow_context=streamflow_context,
-                                            token_value=v,
-                                            job=job,
-                                            recoverable=recoverable,
-                                        )
-                                    )
-                                    for v in token_value.values()
-                                )
-                            ),
-                            strict=True,
-                        )
-                    ),
-                )
-        case Token():
-            token = token_value.retag(tag=get_tag(inputs.values()))
-            token.recoverable = recoverable
-            return token
-        case _:
-            return Token(
-                tag=get_tag(inputs.values()),
-                value=token_value,
-                recoverable=recoverable,
-            )
 
 
 class CWLBaseConditionalStep(ConditionalStep, ABC):
