@@ -192,7 +192,7 @@ jobs:
         run: |
           python3 -m venv /tmp/venv
           . /tmp/venv/bin/activate
-          pip install . 
+          pip install .
           pip install --upgrade --force-reinstall attrs lockfile
           which streamflow
       - name: Start Flux and Test Workflow
@@ -225,7 +225,7 @@ jobs:
     name: "StreamFlow unit tests"
     strategy:
       matrix:
-        on: [ "ubuntu-24.04"]
+        on: [ "ubuntu-24.04" ]
         python: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
         include:
           - on: "macos-15-intel"

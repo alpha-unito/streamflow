@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import os
 from collections.abc import MutableMapping, MutableSequence
 from contextlib import AbstractContextManager
 from types import TracebackType
@@ -16,6 +18,7 @@ import streamflow.deployment.filter
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.utils import contains_persistent_id
 from streamflow.core.workflow import Port, Step, Token, Workflow
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import (
     DefaultDatabaseLoadingContext,
@@ -26,7 +29,11 @@ from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
-from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
+from tests.utils.connector import (
+    AioTarConnector,
+    FailureConnector,
+    ParameterizableHardwareConnector,
+)
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager, ReverseTargetsBindingFilter
 
@@ -102,6 +109,37 @@ def check_persistent_id(
     assert new_elem.persistent_id is not None
     assert original_elem.persistent_id != new_elem.persistent_id
     assert new_elem.workflow.persistent_id == new_workflow.persistent_id
+
+
+async def compare_remote_dirs(
+    src_path: StreamFlowPath, dst_path: StreamFlowPath
+) -> None:
+    # The two directories must have the same order of elements
+    src_path, src_dirs, src_files = await src_path.walk(
+        follow_symlinks=True
+    ).__anext__()
+    dst_path, dst_dirs, dst_files = await dst_path.walk(
+        follow_symlinks=True
+    ).__anext__()
+    assert len(src_files) == len(dst_files)
+    for src_file, dst_file in zip(sorted(src_files), sorted(dst_files), strict=True):
+        assert await (dst_path / dst_file).exists()
+        assert src_file == dst_file
+        assert (
+            await (src_path / src_file).checksum()
+            == await (dst_path / dst_file).checksum()
+        )
+    assert len(src_dirs) == len(dst_dirs)
+    tasks = []
+    for src_dir, dst_dir in zip(sorted(src_dirs), sorted(dst_dirs), strict=True):
+        assert await (dst_path / dst_dir).exists()
+        assert os.path.basename(src_dir) == os.path.basename(dst_dir)
+        tasks.append(
+            asyncio.create_task(
+                compare_remote_dirs(src_path / src_dir, dst_path / dst_dir)
+            )
+        )
+    await asyncio.gather(*tasks)
 
 
 async def create_and_run_step(
@@ -265,6 +303,10 @@ class InjectPlugin(AbstractContextManager):
 
     def __enter__(self) -> None:
         match self.plugin_name:
+            case "aiotar":
+                streamflow.deployment.connector.connector_classes.update(
+                    {"aiotar": AioTarConnector}
+                )
             case "custom-data":
                 streamflow.data.data_manager_classes.update(
                     {"custom-data": CustomDataManager}
@@ -275,15 +317,11 @@ class InjectPlugin(AbstractContextManager):
                 )
             case "failure-connector":
                 streamflow.deployment.connector.connector_classes.update(
-                    {
-                        "failure-connector": FailureConnector,
-                    }
+                    {"failure-connector": FailureConnector}
                 )
             case "parameterizable-hardware":
                 streamflow.deployment.connector.connector_classes.update(
-                    {
-                        "parameterizable-hardware": ParameterizableHardwareConnector,
-                    }
+                    {"parameterizable-hardware": ParameterizableHardwareConnector}
                 )
             case "reverse":
                 streamflow.deployment.filter.binding_filter_classes.update(
@@ -299,6 +337,8 @@ class InjectPlugin(AbstractContextManager):
         traceback: TracebackType | None,
     ) -> None:
         match self.plugin_name:
+            case "aiotar":
+                streamflow.deployment.connector.connector_classes.pop("aiotar")
             case "custom-data":
                 streamflow.data.data_manager_classes.pop("custom-data")
             case "custom-deployment":

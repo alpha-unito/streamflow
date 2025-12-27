@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import tempfile
 
 import pytest
@@ -12,46 +11,7 @@ from streamflow.core.data import DataType
 from streamflow.core.deployment import ExecutionLocation
 from streamflow.data.remotepath import StreamFlowPath
 from tests.utils.deployment import get_location
-
-
-async def _compare_remote_dirs(
-    context: StreamFlowContext,
-    src_location: ExecutionLocation,
-    src_path: StreamFlowPath,
-    dst_location: ExecutionLocation,
-    dst_path: StreamFlowPath,
-) -> None:
-    assert await dst_path.exists()
-
-    # The two directories must have the same order of elements
-    src_path, src_dirs, src_files = await src_path.walk(
-        follow_symlinks=True
-    ).__anext__()
-    dst_path, dst_dirs, dst_files = await dst_path.walk(
-        follow_symlinks=True
-    ).__anext__()
-    assert len(src_files) == len(dst_files)
-    for src_file, dst_file in zip(sorted(src_files), sorted(dst_files), strict=True):
-        assert (
-            await (src_path / src_file).checksum()
-            == await (dst_path / dst_file).checksum()
-        )
-    assert len(src_dirs) == len(dst_dirs)
-    tasks = []
-    for src_dir, dst_dir in zip(sorted(src_dirs), sorted(dst_dirs), strict=True):
-        assert os.path.basename(src_dir) == os.path.basename(dst_dir)
-        tasks.append(
-            asyncio.create_task(
-                _compare_remote_dirs(
-                    context,
-                    src_location,
-                    src_path / src_dir,
-                    dst_location,
-                    dst_path / dst_dir,
-                )
-            )
-        )
-    await asyncio.gather(*tasks)
+from tests.utils.utils import compare_remote_dirs
 
 
 async def _create_tmp_dir(
@@ -130,6 +90,16 @@ async def test_directory_to_directory(
                     n_files=2,
                     lvl=f"{i}-0",
                 )
+        await (src_path / "mylnkfile").hardlink_to(
+            next(iter([p async for p in src_path.glob("file-0-*")]))
+        )
+        await (src_path / "mysymfile").symlink_to(
+            next(iter([p async for p in src_path.glob("file-1-*")]))
+        )
+        await (src_path / "mysymdir").symlink_to(
+            next(iter([p async for p in src_path.glob("dir-0-*")])),
+            target_is_directory=True,
+        )
         src_path = await src_path.resolve()
         assert src_path is not None
         # Transfer from `src_path` on `src_location` to `dst_path` directory on `dst_location`
@@ -155,13 +125,7 @@ async def test_directory_to_directory(
         await dst_path.exists()
 
         # Check that the source and destination have the same subdirectories and files
-        await _compare_remote_dirs(
-            context,
-            src_location,
-            src_path,
-            dst_location,
-            dst_path,
-        )
+        await compare_remote_dirs(src_path, dst_path)
     finally:
         if src_path is not None:
             await src_path.rmtree()

@@ -74,12 +74,13 @@ class LocalConnector(BaseConnector):
         )
 
     def _get_shell(self) -> str:
-        if sys.platform == "win32":
-            return "cmd"
-        elif sys.platform == "darwin":
-            return "bash"
-        else:
-            return "sh"
+        match sys.platform:
+            case "win32":
+                return "cmd"
+            case "darwin":
+                return "bash"
+            case _:
+                return "sh"
 
     async def copy_local_to_remote(
         self,

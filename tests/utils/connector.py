@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import tarfile
 from collections.abc import MutableMapping, MutableSequence
+from types import TracebackType
 from typing import Any, AsyncContextManager, cast
 
 import asyncssh
@@ -12,13 +15,181 @@ from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector import LocalConnector, SSHConnector
+from streamflow.deployment.connector.base import BaseConnector
 from streamflow.deployment.connector.ssh import (
     SSHConfig,
     SSHContext,
     get_param_from_file,
     parse_hostname,
 )
+from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
 from streamflow.log_handler import logger
+
+
+def _get_path_from_cmd(command: MutableSequence[str]) -> str:
+    match command[0]:
+        case "tee":
+            return command[1]
+        case "tar":
+            if command[1] == "chf" and len(command) == 6:
+                return str(os.path.join(*command[-2:]))
+            else:
+                raise NotImplementedError(command)
+        case _:
+            raise NotImplementedError(command)
+
+
+class AioTarStreamReaderWrapper(StreamReaderWrapper):
+    async def close(self) -> None:
+        if self.stream:
+            os.close(self.stream)
+            self.stream = None
+
+    async def read(self, size: int | None = None):
+        return os.read(self.stream, size)
+
+
+class AioTarStreamWriterWrapper(StreamWriterWrapper):
+    async def close(self) -> None:
+        self.stream.close()
+
+    async def write(self, data: Any) -> None:
+        self.stream.write(data)
+
+
+class AioTarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
+    def __init__(self, fileobj: Any, mode: str, tar_format: str) -> None:
+        super().__init__()
+        self.fileobj: Any = fileobj
+        self.stream: StreamWrapper | None = None
+        self.mode: str = mode
+        # TODO: add type (in particular to test `sparse`)
+        # FORMATS:
+        # - gnu           GNU tar 1.13.x format.
+        # - oldgnu        GNU format as per tar <= 1.12.
+        # - pax, posix    POSIX 1003.1 - 2001 (pax) format.
+        # - ustar         POSIX 1003.1 - 1988 (ustar) format.
+        # - v7            Old V7 tar format.
+        match tar_format:
+            case "gnu":
+                self.tar_format: int = tarfile.GNU_FORMAT
+            case "pax" | "posix":
+                self.tar_format: int = tarfile.PAX_FORMAT
+            case "ustar" | "v7":
+                self.tar_format: int = tarfile.USTAR_FORMAT
+            case _:
+                raise ValueError(f"Unknown format: {tar_format}")
+
+    async def __aenter__(self) -> StreamWrapper:
+        if self.mode == "w":
+            self.stream = AioTarStreamWriterWrapper(self.fileobj)
+        else:
+            read_fd, write_fd = os.pipe()
+            with os.fdopen(write_fd, "wb") as f:
+                with tarfile.open(fileobj=f, mode="w|", dereference=True) as tar:
+                    tar.add(self.fileobj, arcname=os.path.basename(self.fileobj))
+            self.stream = AioTarStreamReaderWrapper(read_fd)
+        return self.stream
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if self.stream:
+            await self.stream.close()
+        if not isinstance(self.fileobj, str):
+            self.fileobj.close()
+
+
+class AioTarConnector(BaseConnector):
+
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        tar_format: str,
+        transferBufferSize: int = 64,
+    ) -> None:
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            transferBufferSize=transferBufferSize,
+        )
+        self.tar_format: str = tar_format
+
+    async def deploy(self, external: bool) -> None:
+        pass
+
+    async def get_available_locations(
+        self, service: str | None = None
+    ) -> MutableMapping[str, AvailableLocation]:
+        return {
+            f"aiotar-{self.tar_format}": AvailableLocation(
+                name=f"aiotar-{self.tar_format}",
+                deployment=self.deployment_name,
+                service=service,
+                hostname="localhost",
+                local=False,  # to simulate remote location
+                slots=1,
+                hardware=None,
+            )
+        }
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/connector/aiotar_connector.json",
+                "type": "object",
+                "properties": {
+                    "tar_format": {"type": "string", "description": "Tar format"}
+                },
+                "additionalProperties": False,
+            }
+        )
+
+    async def get_stream_reader(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> AsyncContextManager[StreamWrapper]:
+        path = _get_path_from_cmd(command)
+        return AioTarStreamWrapperContextManager(
+            fileobj=path, mode="r", tar_format=self.tar_format
+        )
+
+    async def get_stream_writer(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> AsyncContextManager[StreamWrapper]:
+        path = _get_path_from_cmd(command)
+        return AioTarStreamWrapperContextManager(
+            fileobj=open(path, "wb"), mode="w", tar_format=self.tar_format
+        )
+
+    async def run(
+        self,
+        location: ExecutionLocation,
+        command: MutableSequence[str],
+        environment: MutableMapping[str, str] | None = None,
+        workdir: str | None = None,
+        stdin: int | str | None = None,
+        stdout: int | str = asyncio.subprocess.STDOUT,
+        stderr: int | str = asyncio.subprocess.STDOUT,
+        capture_output: bool = False,
+        timeout: int | None = None,
+        job_name: str | None = None,
+    ) -> tuple[str, int] | None:
+        # The connector simulates a remote location, but it manipulates the files
+        # on the local filesystem.
+        # However, the remote location assumed by StreamFlow must be a Linux OS,
+        # because of the system commands that are executed.
+        # For example, all commands within RemoteStreamFlowPath are Linux-specific.
+        # Executing these commands on Mac or Windows will lead to errors.
+        raise NotImplementedError("AioTarConnector run")
+
+    async def undeploy(self, external: bool) -> None:
+        pass
 
 
 class FailureConnectorException(Exception):
