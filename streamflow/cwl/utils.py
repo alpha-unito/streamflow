@@ -1132,28 +1132,24 @@ async def register_data(
         path_processor = get_path_processor(connector)
         # Extract paths from token
         paths = []
-        if "path" in token_value and token_value["path"] is not None:
-            paths.append(token_value["path"])
-        elif "location" in token_value and token_value["location"] is not None:
-            paths.append(token_value["location"])
-        elif "listing" in token_value:
-            paths.extend(
-                [
-                    t.get("path", t["location"])
-                    for t in token_value["listing"]
-                    if "path" in t or "location" in t
-                ]
+        if (main_path := get_path_from_token(token_value)) is not None:
+            paths.append(main_path)
+        else:
+            raise WorkflowExecutionException(
+                f"Impossible to retrieve path from: {token_value}"
             )
-        if "secondaryFiles" in token_value:
+        if "listing" in token_value:
+            paths.extend(
+                l_path
+                for listed in token_value["listing"]
+                if (l_path := get_path_from_token(listed))
+            )
+        elif "secondaryFiles" in token_value:
             paths.extend(
                 sf_path
                 for sf in token_value["secondaryFiles"]
                 if (sf_path := get_path_from_token(sf))
             )
-        # Remove `file` protocol if present
-        paths = [
-            urllib.parse.unquote(p[7:]) if p.startswith("file://") else p for p in paths
-        ]
         # Register paths to the `DataManager`
         for path in (path_processor.normpath(p) for p in paths):
             relpath = (
