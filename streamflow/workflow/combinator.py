@@ -186,6 +186,21 @@ class LoopCombinator(DotProductCombinator):
                 for k, t in schema.items()
             }
 
+    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+        # Resume the iteration counters.
+        for tags_list in on_tags.values():
+            for tag in tags_list:
+                parts = tag.split(".")
+                if len(parts) >= 2:
+                    prefix = ".".join(parts[:-1])
+                    iteration_num = int(parts[-1])
+                    if prefix not in self.iteration_map:
+                        self.iteration_map[prefix] = iteration_num
+                    else:
+                        self.iteration_map[prefix] = max(
+                            self.iteration_map[prefix], iteration_num
+                        )
+
 
 class LoopTerminationCombinator(DotProductCombinator):
     def __init__(self, name: str, workflow: Workflow):
