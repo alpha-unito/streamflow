@@ -4,9 +4,10 @@ import os
 import posixpath
 import tempfile
 import uuid
-from collections.abc import AsyncGenerator, MutableMapping, MutableSequence
+from collections.abc import AsyncGenerator, Iterable
 from typing import Any
 
+import cwl_utils.types
 import pytest
 import pytest_asyncio
 
@@ -72,7 +73,7 @@ async def _assert_token_result(
 
 async def _create_file(
     context: StreamFlowContext, location: ExecutionLocation
-) -> MutableMapping[str, Any]:
+) -> cwl_utils.types.CWLFileType:
     path = StreamFlowPath(
         tempfile.gettempdir() if location.local else "/tmp",
         utils.random_name(),
@@ -81,18 +82,20 @@ async def _create_file(
     )
     await path.write_text("StreamFlow fault tolerance")
     path = await path.resolve()
-    return {
-        "basename": os.path.basename(path),
-        "checksum": f"sha1${await path.checksum()}",
-        "class": "File",
-        "path": str(path),
-        "size": await path.size(),
-    }
+    return cwl_utils.types.CWLFileType(
+        **{
+            "basename": os.path.basename(path),
+            "checksum": f"sha1${await path.checksum()}",
+            "class": "File",
+            "path": str(path),
+            "size": await path.size(),
+        }
+    )
 
 
 @pytest_asyncio.fixture(scope="module")
 async def fault_tolerant_context(
-    chosen_deployment_types: MutableSequence[str],
+    chosen_deployment_types: Iterable[str],
 ) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
@@ -135,9 +138,9 @@ async def test_execute(
     num_of_failures: int,
     num_of_steps: int,
     token_type: str,
-):
+) -> None:
     deployment_t = "local-fs-volatile"
-    workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
+    workflow, _ = await create_workflow(fault_tolerant_context, num_port=0)
     translator = RecoveryTranslator(workflow)
     deployment_config = await get_deployment_config(
         fault_tolerant_context, deployment_t
@@ -145,6 +148,7 @@ async def test_execute(
     execution_location = await get_location(fault_tolerant_context, deployment_t)
     translator.deployment_configs = {deployment_config.name: deployment_config}
     input_ports = {}
+    token_value: cwl_utils.types.CWLOutputType
     if token_type == "primitive":
         token_value = 100
     elif token_type == "file":
@@ -258,10 +262,10 @@ async def test_execute(
 
 
 @pytest.mark.asyncio
-async def test_scatter(fault_tolerant_context: StreamFlowContext):
+async def test_scatter(fault_tolerant_context: StreamFlowContext) -> None:
     num_of_failures = 1
     deployment_t = "local-fs-volatile"
-    workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
+    workflow, _ = await create_workflow(fault_tolerant_context, num_port=0)
     translator = RecoveryTranslator(workflow)
     deployment_config = await get_deployment_config(
         fault_tolerant_context, deployment_t
@@ -353,13 +357,13 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_synchro(fault_tolerant_context: StreamFlowContext):
+async def test_synchro(fault_tolerant_context: StreamFlowContext) -> None:
     step_t = "execute"
     num_of_steps = 1
     num_of_failures = 1
     token_t = "file"
     deployment_t = "local-fs-volatile"
-    workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
+    workflow, _ = await create_workflow(fault_tolerant_context, num_port=0)
     translator = RecoveryTranslator(workflow)
     deployment_config = await get_deployment_config(
         fault_tolerant_context, deployment_t
@@ -367,6 +371,7 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
     execution_location = await get_location(fault_tolerant_context, deployment_t)
     translator.deployment_configs = {deployment_config.name: deployment_config}
     input_ports = {}
+    token_value: cwl_utils.types.CWLOutputType
     if token_t == "default":
         token_value = 100
     elif token_t == "file":

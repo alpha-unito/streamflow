@@ -145,7 +145,7 @@ class DummyFailureManager(FailureManager):
         )
 
     def get_request(self, job_name: str) -> RetryRequest:
-        pass
+        return RetryRequest()
 
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None:
         if logger.isEnabledFor(logging.WARNING):

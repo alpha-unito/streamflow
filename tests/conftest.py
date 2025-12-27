@@ -4,7 +4,13 @@ import argparse
 import os
 import platform
 from asyncio.locks import Lock
-from collections.abc import AsyncGenerator, Callable, Collection, MutableSequence
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Collection,
+    Iterable,
+    MutableSequence,
+)
 from typing import Any
 
 import pytest
@@ -17,10 +23,10 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from tests.utils.deployment import get_deployment_config
 
 
-def csvtype(choices):
+def csvtype(choices: Collection[str]) -> Callable[[str], Collection[str]]:
     """Return a function that splits and checks comma-separated values."""
 
-    def splitarg(arg):
+    def splitarg(arg: str):
         values = arg.split(",")
         for value in values:
             if value not in choices:
@@ -34,7 +40,7 @@ def csvtype(choices):
     return splitarg
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser) -> None:
     parser.addoption(
         "--deploys",
         type=csvtype(all_deployment_types()),
@@ -45,7 +51,7 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session")
-def chosen_deployment_types(request):
+def chosen_deployment_types(request) -> Iterable[str]:
     return request.config.getoption("--deploys")
 
 
@@ -119,7 +125,7 @@ def pytest_generate_tests(metafunc):
         )
 
 
-def all_deployment_types():
+def all_deployment_types() -> Collection[str]:
     deployments_ = ["local", "docker", "docker-compose", "docker-wrapper", "slurm"]
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity", "ssh"])
@@ -128,7 +134,7 @@ def all_deployment_types():
 
 @pytest_asyncio.fixture(scope="session")
 async def context(
-    chosen_deployment_types: MutableSequence[str],
+    chosen_deployment_types: Iterable[str],
 ) -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
@@ -167,7 +173,9 @@ def object_to_dict(obj):
     }
 
 
-def are_equals(elem1, elem2, obj_compared=None):
+def are_equals(
+    elem1: Any, elem2: Any, obj_compared: MutableSequence[Any] | None = None
+) -> bool:
     """
     The function return True if the elems are the same, otherwise False
     The param obj_compared is useful to break a circul reference inside the objects
@@ -183,7 +191,7 @@ def are_equals(elem1, elem2, obj_compared=None):
         return True
 
     if is_primitive_type(elem1):
-        return elem1 == elem2
+        return bool(elem1 == elem2)
 
     if isinstance(elem1, Collection) and not isinstance(elem1, dict):
         if len(elem1) != len(elem2):
@@ -231,7 +239,9 @@ def are_equals(elem1, elem2, obj_compared=None):
     return True
 
 
-async def save_load_and_test(elem: PersistableEntity, context):
+async def save_load_and_test(
+    elem: PersistableEntity, context: StreamFlowContext
+) -> None:
     assert elem.persistent_id is None
     await elem.save(context)
     assert elem.persistent_id is not None

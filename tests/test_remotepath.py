@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tempfile
-from collections.abc import MutableSequence
+from collections.abc import Iterable
 
 import pytest
 import pytest_asyncio
@@ -16,12 +16,14 @@ from tests.utils.deployment import get_docker_deployment_config, get_location
 
 
 @pytest_asyncio.fixture(scope="session")
-async def location(context, deployment_src) -> ExecutionLocation:
+async def location(
+    context: StreamFlowContext, deployment_src: str
+) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
 
 @pytest.fixture(scope="session")
-def connector(context, location) -> Connector:
+def connector(context: StreamFlowContext, location: ExecutionLocation) -> Connector:
     return context.deployment_manager.get_connector(location.deployment)
 
 
@@ -176,7 +178,7 @@ async def test_glob(
 
 @pytest.mark.asyncio
 async def test_mkdir_failure(
-    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+    chosen_deployment_types: Iterable[str], context: StreamFlowContext
 ) -> None:
     """Test on `mkdir` function failure"""
     if "docker" not in chosen_deployment_types:
