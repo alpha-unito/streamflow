@@ -170,7 +170,7 @@ def test_ext_fail_unsupported_extension_point():
         SfValidator().validate(config)
 
 
-def test_ext_fail_unsupoorted_type():
+def test_ext_fail_unsupported_type():
     """Check that validation fails when an extension point with unsupported type is specified."""
     config = {
         "version": "v1.0",

@@ -33,6 +33,7 @@ from streamflow.cwl.command import (
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
+    CWLExpressionToolOutputProcessor,
     CWLFileToken,
     CWLObjectCommandOutputProcessor,
     CWLTokenProcessor,
@@ -297,7 +298,8 @@ async def test_cwl_expression_command(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "output_type", ["no_output", "default", "primitive", "object", "union"]
+    "output_type",
+    ["no_output", "default", "expression", "primitive", "object", "union"],
 )
 async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
     """Test saving and loading CWLExecuteStep from database"""
@@ -324,6 +326,18 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
         match output_type:
             case "default":
                 processor = None
+            case "expression":
+                processor = get_full_instantiation(
+                    cls_=CWLExpressionToolOutputProcessor,
+                    name=utils.random_name(),
+                    workflow=workflow,
+                    target=get_full_instantiation(cls_=LocalTarget, workdir="/home"),
+                    token_type=["string"],
+                    enum_symbols=["test"],
+                    file_format="file",
+                    optional=True,
+                    streamable=True,
+                )
             case "primitive":
                 processor = _create_cwl_command_output_processor(
                     name=utils.random_name(), workflow=workflow
