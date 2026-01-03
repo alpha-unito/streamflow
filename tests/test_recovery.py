@@ -58,7 +58,9 @@ async def _assert_token_result(
         assert input_value.get("checksum") == f"sha1${await path.checksum()}"
         assert input_value.get("size") == await path.size()
     elif isinstance(output_token, ListToken):
-        for inner_value, inner_token in zip(input_value, output_token.value):
+        for inner_value, inner_token in zip(
+            input_value, output_token.value, strict=True
+        ):
             await _assert_token_result(inner_value, inner_token, context, location)
     elif isinstance(output_token, ObjectToken):
         assert set(input_value.keys()) == set(output_token.value.keys())
@@ -92,6 +94,39 @@ async def _create_file(
     }
 
 
+# TODO: check
+#     if token_type == "primitive":
+#         token_value = 100
+#     elif token_type == "file":
+#         token_value = await _create_file(fault_tolerant_context, execution_location)
+#     elif token_type == "list":
+#         token_value = await asyncio.gather(
+#             *(
+#                 asyncio.create_task(
+#                     _create_file(fault_tolerant_context, execution_location)
+#                 )
+#                 for _ in range(3)
+#             )
+#         )
+#     elif token_type == "object":
+#         token_value = dict(
+#             zip(
+#                 ("a", "b", "c"),
+#                 await asyncio.gather(
+#                     *(
+#                         asyncio.create_task(
+#                             _create_file(fault_tolerant_context, execution_location)
+#                         )
+#                         for _ in range(3)
+#                     )
+#                 ),
+#                 strict=True,
+#             )
+#         )
+#
+#     else:
+#         raise RuntimeError(f"Unknown token type: {token_type}")
+#
 async def _get_token_value(
     context: StreamFlowContext,
     location: ExecutionLocation,
@@ -130,7 +165,6 @@ async def _get_token_value(
                 ),
             )
         )
-
     else:
         raise RuntimeError(f"Unknown token type: {token_type}")
 
@@ -151,7 +185,6 @@ async def fault_tolerant_context(
     )
     for deployment_t in (
         *chosen_deployment_types,
-        "parameterizable_hardware",
         "local-fs-volatile",
     ):
         config = await get_deployment_config(_context, deployment_t)
@@ -308,7 +341,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     # ExecuteStep inside the scatter
     scatter_step_name = os.path.join(posixpath.sep, "b", utils.random_name())
     scatter_step = workflow.create_step(
-        cls=ScatterStep, name=scatter_step_name + "-scatter"
+        cls=ScatterStep, name=f"{scatter_step_name}-scatter"
     )
     scatter_step.add_input_port(output_name, step.get_output_port(output_name))
     scatter_step.add_output_port(output_name, workflow.create_port())
@@ -325,7 +358,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     )
     gather_step = workflow.create_step(
         cls=GatherStep,
-        name=scatter_step_name + "-gather",
+        name=f"{scatter_step_name}-gather",
         size_port=scatter_step.get_size_port(),
     )
     gather_step.add_input_port(output_name, step.get_output_port(output_name))

@@ -218,7 +218,9 @@ def create_schedule_step(
         job_prefix=name_prefix,
         connector_ports={
             target.deployment.name: deploy_step.get_output_port()
-            for target, deploy_step in zip(binding_config.targets, deploy_steps)
+            for target, deploy_step in zip(
+                binding_config.targets, deploy_steps, strict=True
+            )
         },
         binding_config=binding_config,
         hardware_requirement=hardware_requirement,
@@ -265,21 +267,22 @@ def get_combinator_step(
 ) -> CombinatorStep:
     combinator_step_cls = CombinatorStep
     name = utils.random_name()
-    if combinator_type == "cartesian_product_combinator":
-        combinator = get_cartesian_product_combinator(workflow, name)
-    elif combinator_type == "dot_combinator":
-        combinator = get_dot_combinator(workflow, name)
-    elif combinator_type == "loop_combinator":
-        combinator_step_cls = LoopCombinatorStep
-        combinator = get_loop_combinator(workflow, name)
-    elif combinator_type == "loop_termination_combinator":
-        combinator = get_loop_terminator_combinator(workflow, name)
-    elif combinator_type == "nested_crossproduct":
-        combinator = get_nested_crossproduct(workflow, name)
-    else:
-        raise ValueError(
-            f"Invalid input combinator type: {combinator_type} is not supported"
-        )
+    match combinator_type:
+        case "cartesian_product_combinator":
+            combinator = get_cartesian_product_combinator(workflow, name)
+        case "dot_combinator":
+            combinator = get_dot_combinator(workflow, name)
+        case "loop_combinator":
+            combinator_step_cls = LoopCombinatorStep
+            combinator = get_loop_combinator(workflow, name)
+        case "loop_termination_combinator":
+            combinator = get_loop_terminator_combinator(workflow, name)
+        case "nested_crossproduct":
+            combinator = get_nested_crossproduct(workflow, name)
+        case _:
+            raise ValueError(
+                f"Invalid input combinator type: {combinator_type} is not supported"
+            )
     if inner_combinator:
         if combinator_type == "nested_crossproduct":
             raise ValueError("Nested crossproduct already has inner combinators")
@@ -353,63 +356,67 @@ def random_job_name(step_name: str | None = None):
 async def build_token(
     job: Job, token_value: Any, context: StreamFlowContext, recoverable: bool = False
 ) -> Token:
-    if isinstance(token_value, MutableSequence):
-        return ListToken(
-            tag=get_tag(job.inputs.values()),
-            value=await asyncio.gather(
-                *(
-                    asyncio.create_task(build_token(job, v, context, recoverable))
-                    for v in token_value
-                )
-            ),
-        )
-    elif isinstance(token_value, MutableMapping):
-        if get_token_class(token_value) in ["File", "Directory"]:
-            connector = context.scheduler.get_connector(job.name)
-            locations = context.scheduler.get_locations(job.name)
-            relpath = (
-                os.path.relpath(token_value["path"], job.output_directory)
-                if job.output_directory
-                and token_value["path"].startswith(job.output_directory)
-                else os.path.basename(token_value["path"])
-            )
-            await _register_path(
-                context,
-                connector,
-                next(iter(locations)),
-                token_value["path"],
-                relpath,
-            )
-            return BaseFileToken(
+    match token_value:
+        case MutableSequence():
+            return ListToken(
                 tag=get_tag(job.inputs.values()),
-                value=token_value["path"],
-                recoverable=recoverable,
-            )
-        else:
-            return ObjectToken(
-                tag=get_tag(job.inputs.values()),
-                value=dict(
-                    zip(
-                        token_value.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(
-                                    build_token(job, v, context, recoverable)
-                                )
-                                for v in token_value.values()
-                            )
-                        ),
+                value=await asyncio.gather(
+                    *(
+                        asyncio.create_task(build_token(job, v, context, recoverable))
+                        for v in token_value
                     )
                 ),
             )
-    elif isinstance(token_value, (FileToken, Token)):
-        token = token_value.update(token_value.value)
-        token.recoverable = recoverable
-        return token
-    else:
-        return Token(
-            tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
-        )
+        case MutableMapping():
+            if get_token_class(token_value) in ["File", "Directory"]:
+                connector = context.scheduler.get_connector(job.name)
+                locations = context.scheduler.get_locations(job.name)
+                relpath = (
+                    os.path.relpath(token_value["path"], job.output_directory)
+                    if job.output_directory
+                    and token_value["path"].startswith(job.output_directory)
+                    else os.path.basename(token_value["path"])
+                )
+                await _register_path(
+                    context,
+                    connector,
+                    next(iter(locations)),
+                    token_value["path"],
+                    relpath,
+                )
+                return BaseFileToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=token_value["path"],
+                    recoverable=recoverable,
+                )
+            else:
+                return ObjectToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=dict(
+                        zip(
+                            token_value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        build_token(job, v, context, recoverable)
+                                    )
+                                    for v in token_value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    ),
+                )
+        case Token():
+            token = token_value.update(token_value.value)
+            token.recoverable = recoverable
+            return token
+        case _:
+            return Token(
+                tag=get_tag(job.inputs.values()),
+                value=token_value,
+                recoverable=recoverable,
+            )
 
 
 class BaseFileToken(FileToken):
@@ -556,45 +563,50 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
     ) -> Token | None:
         context = self.workflow.context
         value = (await command_output).value
-        if self.value_type == "file":
-            locations = context.scheduler.get_locations(job.name)
-            connector = connector or context.scheduler.get_connector(job.name)
-            if not await StreamFlowPath(
-                value, context=context, location=locations[0]
-            ).exists():
-                raise WorkflowExecutionException(
-                    f"Job {job.name} output does not exist: File {value}"
+        match self.value_type:
+            case "file":
+                locations = context.scheduler.get_locations(job.name)
+                connector = connector or context.scheduler.get_connector(job.name)
+                if not await StreamFlowPath(
+                    value, context=context, location=locations[0]
+                ).exists():
+                    raise WorkflowExecutionException(
+                        f"Job {job.name} output does not exist: File {value}"
+                    )
+                await _register_path(
+                    context=context,
+                    connector=connector,
+                    location=next(iter(locations)),
+                    path=value,
+                    relpath=os.path.relpath(value, job.output_directory),
                 )
-            await _register_path(
-                context=context,
-                connector=connector,
-                location=next(iter(locations)),
-                path=value,
-                relpath=os.path.relpath(value, job.output_directory),
-            )
-            return BaseFileToken(
-                tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
-            )
-        elif self.value_type == "list":
-            return ListToken(
-                tag=get_tag(job.inputs.values()),
-                value=[
-                    await build_token(job, v, context, recoverable=recoverable)
-                    for v in value
-                ],
-            )
-        elif self.value_type == "object":
-            return ObjectToken(
-                tag=get_tag(job.inputs.values()),
-                value={
-                    k: await build_token(job, v, context, recoverable=recoverable)
-                    for k, v in value.items()
-                },
-            )
-        else:
-            return Token(
-                tag=get_tag(job.inputs.values()), value=value, recoverable=recoverable
-            )
+                return BaseFileToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=value,
+                    recoverable=recoverable,
+                )
+            case "list":
+                return ListToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=[
+                        await build_token(job, v, context, recoverable=recoverable)
+                        for v in value
+                    ],
+                )
+            case "object":
+                return ObjectToken(
+                    tag=get_tag(job.inputs.values()),
+                    value={
+                        k: await build_token(job, v, context, recoverable=recoverable)
+                        for k, v in value.items()
+                    },
+                )
+            case _:
+                return Token(
+                    tag=get_tag(job.inputs.values()),
+                    value=value,
+                    recoverable=recoverable,
+                )
 
 
 class InjectorFailureCommand(Command):
@@ -663,16 +675,17 @@ class InjectorFailureCommand(Command):
         if (
             max_failures := self.failure_tags.get(tag, None)
         ) is not None and num_executions < max_failures:
-            if self.failure_type == InjectorFailureCommand.INJECT_TOKEN:
-                output_tokens = {}
-                for k, t in job.inputs.items():
-                    output_tokens[k] = t.update(t.value)
-                    output_tokens[k].recoverable = True
-                context.failure_manager.get_request(job.name).output_tokens = (
-                    output_tokens
-                )
-            elif self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                await _delete_job_workdir(context, job)
+            match self.failure_type:
+                case InjectorFailureCommand.INJECT_TOKEN:
+                    output_tokens = {}
+                    for k, t in job.inputs.items():
+                        output_tokens[k] = t.update(t.value)
+                        output_tokens[k].recoverable = True
+                    context.failure_manager.get_request(job.name).output_tokens = (
+                        output_tokens
+                    )
+                case InjectorFailureCommand.FAIL_STOP:
+                    await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
             try:
@@ -945,36 +958,41 @@ class InjectorFailureTransferStep(TransferStep):
                 await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         # Execute the transfer
-        if isinstance(token, ListToken):
-            return token.update(
-                value=await asyncio.gather(
-                    *(asyncio.create_task(self.transfer(job, t)) for t in token.value)
-                ),
-            )
-        elif isinstance(token, ObjectToken):
-            return token.update(
-                value=dict(
-                    zip(
-                        token.value.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(self.transfer(job, t))
-                                for t in token.value.values()
-                            )
-                        ),
-                    )
-                ),
-            )
-        elif isinstance(token, FileToken):
-            token = token.update(
-                await self._transfer_path(job, token.value),
-            )
-            token.recoverable = False
-            return token
-        else:
-            token = token.update(token.value)
-            token.recoverable = False
-            return token
+        match token:
+            case ListToken():
+                return token.update(
+                    value=await asyncio.gather(
+                        *(
+                            asyncio.create_task(self.transfer(job, t))
+                            for t in token.value
+                        )
+                    ),
+                )
+            case ObjectToken():
+                return token.update(
+                    value=dict(
+                        zip(
+                            token.value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(self.transfer(job, t))
+                                    for t in token.value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    ),
+                )
+            case FileToken():
+                token = token.update(
+                    await self._transfer_path(job, token.value),
+                )
+                token.recoverable = False
+                return token
+            case _:
+                token = token.update(token.value)
+                token.recoverable = False
+                return token
 
 
 class RecoveryTranslator:

@@ -331,7 +331,7 @@ class AioTarInfo(tarfile.TarInfo):
             number, buf = buf.split(b"\n", 1)
             sparse.append(int(number))
         next.offset_data = tarstream.stream.tell()
-        next.sparse = list(zip(sparse[::2], sparse[1::2]))
+        next.sparse = list(zip(sparse[::2], sparse[1::2], strict=True))
 
     async def _proc_member(self, tarstream):
         if self.type in (tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK):
@@ -488,6 +488,8 @@ class AioTarStream:
         self.members = []
         self._loaded = False
         self.inodes = {}
+        self._unames = {}  # Cached mappings of uid -> uname
+        self._gnames = {}  # Cached mappings of gid -> gname
 
     async def __aenter__(self):
         self._check()
@@ -597,7 +599,7 @@ class AioTarStream:
         targetpath = targetpath.replace("/", os.sep)
         upperdirs = os.path.dirname(targetpath)
         if upperdirs and not os.path.exists(upperdirs):
-            os.makedirs(upperdirs)
+            os.makedirs(upperdirs, exist_ok=True)
         if tarinfo.islnk() or tarinfo.issym():
             self._dbg(1, f"{tarinfo.name} -> {tarinfo.linkname}")
         else:
@@ -780,9 +782,7 @@ class AioTarStream:
 
     async def extractall(self, path=".", members=None, *, numeric_owner=False):
         directories = []
-        if members is None:
-            members = self
-        for tarinfo in members:
+        for tarinfo in members or self:
             if tarinfo.isdir():
                 directories.append(tarinfo)
                 tarinfo = copy.copy(tarinfo)
@@ -793,8 +793,7 @@ class AioTarStream:
                 set_attrs=not tarinfo.isdir(),
                 numeric_owner=numeric_owner,
             )
-        directories.sort(key=lambda a: a.name)
-        directories.reverse()
+        directories.sort(key=lambda a: a.name, reverse=True)
         for tarinfo in directories:
             dirpath = os.path.join(path, tarinfo.name)
             try:
@@ -888,17 +887,19 @@ class AioTarStream:
         tarinfo.type = type
         tarinfo.linkname = linkname
         if pwd:
-            try:
-                tarinfo.uname = pwd.getpwuid(tarinfo.uid)[0]
-            except KeyError:
-                # If user is not defined, do nothing
-                pass
+            if tarinfo.uid not in self._unames:
+                try:
+                    self._unames[tarinfo.uid] = pwd.getpwuid(tarinfo.uid)[0]
+                except KeyError:
+                    self._unames[tarinfo.uid] = ""
+            tarinfo.uname = self._unames[tarinfo.uid]
         if grp:
-            try:
-                tarinfo.gname = grp.getgrgid(tarinfo.gid)[0]
-            except KeyError:
-                # If group is not defined, do nothing
-                pass
+            if tarinfo.gid not in self._gnames:
+                try:
+                    self._gnames[tarinfo.gid] = grp.getgrgid(tarinfo.gid)[0]
+                except KeyError:
+                    self._gnames[tarinfo.gid] = ""
+            tarinfo.gname = self._gnames[tarinfo.gid]
 
         if type in (tarfile.CHRTYPE, tarfile.BLKTYPE):
             if hasattr(os, "major") and hasattr(os, "minor"):
@@ -949,7 +950,8 @@ class AioTarStream:
             os.mkdir(targetpath, 0o700)
         except FileExistsError:
             # If file doesn't exist, do nothing
-            pass
+            if not os.path.isdir(targetpath):
+                raise
 
     def makefifo(self, tarinfo, targetpath):
         if hasattr(os, "mkfifo"):
@@ -977,6 +979,9 @@ class AioTarStream:
                 os.symlink(tarinfo.linkname, targetpath)
             else:
                 if os.path.exists(tarinfo._link_target):
+                    if os.path.lexists(targetpath):
+                        # Avoid FileExistsError on following os.link.
+                        os.unlink(targetpath)
                     os.link(tarinfo._link_target, targetpath)
                 else:
                     await self._extract_member(

@@ -63,10 +63,11 @@ def _replace_refs(contents: Any, resolver: Resolver) -> None:
         path = PurePosixPath(k)
         element = contents
         for part in path.parts[1:]:
-            if isinstance(element, MutableMapping):
-                element = element[part]
-            elif isinstance(element, MutableSequence):
-                element = element[int(part)]
+            match element:
+                case MutableMapping():
+                    element = element[part]
+                case MutableSequence():
+                    element = element[int(part)]
         element.update(v)
 
 

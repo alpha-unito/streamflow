@@ -85,12 +85,13 @@ def _is_parent_tag(tag: str, parent: str) -> bool:
 def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
     num_skipped = 0
     for status in statuses:
-        if status == Status.FAILED:
-            return Status.FAILED
-        elif status == Status.CANCELLED:
-            return Status.CANCELLED
-        elif status == Status.SKIPPED:
-            num_skipped += 1
+        match status:
+            case Status.FAILED:
+                return Status.FAILED
+            case Status.CANCELLED:
+                return Status.CANCELLED
+            case Status.SKIPPED:
+                num_skipped += 1
     if num_skipped == len(statuses):
         return Status.SKIPPED
     else:
@@ -115,6 +116,7 @@ class BaseStep(Step, ABC):
                         for port_name, p in input_ports.items()
                     )
                 ),
+                strict=True,
             )
         }
         if logger.isEnabledFor(logging.DEBUG):
@@ -211,6 +213,7 @@ class Combinator(ABC):
                             for comb in self.combinators.values()
                         )
                     ),
+                    strict=True,
                 )
             },
             "combinators_map": self.combinators_map,
@@ -263,6 +266,7 @@ class Combinator(ABC):
                         for c in row["params"]["combinators"].values()
                     )
                 ),
+                strict=True,
             )
         )
         return combinator
@@ -609,7 +613,7 @@ class ExecuteStep(BaseStep):
         input_ports: MutableMapping[str, Port],
         inputs_map: MutableMapping[str, MutableMapping[str, Token]],
         connectors: MutableMapping[str, Connector],
-        unfinished: MutableSet[asyncio.Task[MutableMapping[str, Token]]],
+        unfinished: MutableSet[asyncio.Task[MutableMapping[str, Token] | Status]],
     ) -> None:
         if (
             job := await cast(JobPort, self.get_input_port("__job__")).get_job(
@@ -665,6 +669,7 @@ class ExecuteStep(BaseStep):
                         for p in params["output_processors"].values()
                     )
                 ),
+                strict=True,
             )
         }
         if params["command"]:
@@ -797,6 +802,7 @@ class ExecuteStep(BaseStep):
                             for p in self.output_processors.values()
                         )
                     ),
+                    strict=True,
                 )
             },
             "command": await self.command.save(context) if self.command else None,
@@ -837,6 +843,7 @@ class ExecuteStep(BaseStep):
                         for port_name, p in connector_ports.items()
                     )
                 ),
+                strict=True,
             )
         }
         # If there are input ports create jobs until termination token are received

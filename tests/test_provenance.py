@@ -192,7 +192,7 @@ async def test_combinator_step_dot_product(context: StreamFlowContext):
     )
     step = workflow.create_step(
         cls=CombinatorStep,
-        name=utils.random_name() + "-combinator",
+        name=f"{utils.random_name()}-combinator",
         combinator=DotProductCombinator(name=utils.random_name(), workflow=workflow),
     )
     port_name = "test"
@@ -240,7 +240,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext):
     )
     step = workflow.create_step(
         cls=CombinatorStep,
-        name=utils.random_name() + "-combinator",
+        name=f"{utils.random_name()}-combinator",
         combinator=CartesianProductCombinator(
             name=utils.random_name(), workflow=workflow
         ),
@@ -359,7 +359,7 @@ async def test_loop_termination_combinator(context: StreamFlowContext):
     await executor.run()
 
     assert len(out_port.token_list) == 3
-    for out_token, in_token in zip(out_port.token_list[:-1], list_token):
+    for out_token, in_token in zip(out_port.token_list[:-1], list_token, strict=True):
         await verify_dependency_tokens(
             token=out_token,
             port=out_port,

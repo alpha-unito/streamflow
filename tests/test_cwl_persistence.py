@@ -33,6 +33,7 @@ from streamflow.cwl.command import (
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
+    CWLExpressionToolOutputProcessor,
     CWLFileToken,
     CWLObjectCommandOutputProcessor,
     CWLTokenProcessor,
@@ -213,55 +214,56 @@ async def test_cwl_command(context: StreamFlowContext, processor_t: str):
     )
     job_port = workflow.create_port(JobPort)
     await workflow.save(context)
-    if processor_t == "none":
-        processors = None
-    elif processor_t == "primitive":
-        processors = [
-            _create_cwl_command_token_processor(
-                expression=DoubleQuotedScalarString("60")
-            ),
-            _create_cwl_command_token_processor(
-                expression=LiteralScalarString("${ return 10 + 20 - (5 * 4) }")
-            ),
-        ]
-    elif processor_t == "map":
-        processors = [
-            get_full_instantiation(
-                cls_=CWLMapCommandTokenProcessor,
-                name="test1",
-                processor=_create_cwl_command_token_processor(expression="z"),
-            ),
-            get_full_instantiation(
-                cls_=CWLMapCommandTokenProcessor,
-                name="test2",
-                processor=_create_cwl_command_token_processor(expression="xy"),
-            ),
-        ]
-    elif processor_t == "object":
-        processors = [
-            get_full_instantiation(
-                cls_=CWLObjectCommandTokenProcessor,
-                name="test",
-                processors={
-                    "a": _create_cwl_command_token_processor(expression=10),
-                    "b": _create_cwl_command_token_processor(expression=234),
-                },
-            )
-        ]
-    elif processor_t == "union":
-        processors = [
-            get_full_instantiation(
-                cls_=UnionCommandTokenProcessor,
-                name="test",
-                processors=[
-                    _create_cwl_command_token_processor(expression="qwerty"),
-                    _create_cwl_command_token_processor(expression=987),
-                    _create_cwl_command_token_processor(expression="qaz"),
-                ],
-            )
-        ]
-    else:
-        raise Exception(f"Unknown processor type: {processor_t}")
+    match processor_t:
+        case "none":
+            processors = None
+        case "primitive":
+            processors = [
+                _create_cwl_command_token_processor(
+                    expression=DoubleQuotedScalarString("60")
+                ),
+                _create_cwl_command_token_processor(
+                    expression=LiteralScalarString("${ return 10 + 20 - (5 * 4) }")
+                ),
+            ]
+        case "map":
+            processors = [
+                get_full_instantiation(
+                    cls_=CWLMapCommandTokenProcessor,
+                    name="test1",
+                    processor=_create_cwl_command_token_processor(expression="z"),
+                ),
+                get_full_instantiation(
+                    cls_=CWLMapCommandTokenProcessor,
+                    name="test2",
+                    processor=_create_cwl_command_token_processor(expression="xy"),
+                ),
+            ]
+        case "object":
+            processors = [
+                get_full_instantiation(
+                    cls_=CWLObjectCommandTokenProcessor,
+                    name="test",
+                    processors={
+                        "a": _create_cwl_command_token_processor(expression=10),
+                        "b": _create_cwl_command_token_processor(expression=234),
+                    },
+                )
+            ]
+        case "union":
+            processors = [
+                get_full_instantiation(
+                    cls_=UnionCommandTokenProcessor,
+                    name="test",
+                    processors=[
+                        _create_cwl_command_token_processor(expression="qwerty"),
+                        _create_cwl_command_token_processor(expression=987),
+                        _create_cwl_command_token_processor(expression="qaz"),
+                    ],
+                )
+            ]
+        case _:
+            raise Exception(f"Unknown processor type: {processor_t}")
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
@@ -296,7 +298,8 @@ async def test_cwl_expression_command(context: StreamFlowContext):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "output_type", ["no_output", "default", "primitive", "object", "union"]
+    "output_type",
+    ["no_output", "default", "expression", "primitive", "object", "union"],
 )
 async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
     """Test saving and loading CWLExecuteStep from database"""
@@ -320,49 +323,63 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str):
     workflow.steps[step.name] = step
 
     if output_type != "no_output":
-        if output_type == "default":
-            processor = None
-        elif output_type == "primitive":
-            processor = _create_cwl_command_output_processor(
-                name=utils.random_name(), workflow=workflow
-            )
-        elif output_type == "object":
-            processor = get_full_instantiation(
-                cls_=CWLObjectCommandOutputProcessor,
-                name=utils.random_name(),
-                workflow=workflow,
-                processors={
-                    "attr_a": _create_cwl_command_output_processor(
-                        name=utils.random_name(), workflow=workflow
-                    ),
-                },
-                expression_lib=["a", "b"],
-                full_js=True,
-                output_eval="$(1 == 1)",
-                target=LocalTarget("/shared"),
-            )
-        elif output_type == "union":
-            inner_p = _create_cwl_command_output_processor(
-                name=utils.random_name(), workflow=workflow
-            )
-            processor = get_full_instantiation(
-                cls_=UnionCommandOutputProcessor,
-                name=utils.random_name(),
-                workflow=workflow,
-                processors=[
-                    get_full_instantiation(
-                        cls_=PopCommandOutputProcessor,
-                        name=utils.random_name(),
-                        workflow=workflow,
-                        processor=inner_p,
-                        target=LocalTarget("/shared"),
-                    ),
-                    inner_p,
-                ],
-                target=LocalTarget("/shared"),
-            )
-        else:
-            raise Exception(f"Unknown output type: {output_type}")
+        match output_type:
+            case "default":
+                processor = None
+            case "expression":
+                processor = get_full_instantiation(
+                    cls_=CWLExpressionToolOutputProcessor,
+                    name=utils.random_name(),
+                    workflow=workflow,
+                    target=get_full_instantiation(cls_=LocalTarget, workdir="/home"),
+                    token_type=["string"],
+                    enum_symbols=["test"],
+                    file_format="file",
+                    optional=True,
+                    streamable=True,
+                )
+            case "primitive":
+                processor = _create_cwl_command_output_processor(
+                    name=utils.random_name(), workflow=workflow
+                )
+            case "object":
+                processor = get_full_instantiation(
+                    cls_=CWLObjectCommandOutputProcessor,
+                    name=utils.random_name(),
+                    workflow=workflow,
+                    processors={
+                        "attr_a": _create_cwl_command_output_processor(
+                            name=utils.random_name(), workflow=workflow
+                        ),
+                    },
+                    expression_lib=["a", "b"],
+                    full_js=True,
+                    output_eval="$(1 == 1)",
+                    target=LocalTarget("/shared"),
+                    single=True,
+                )
+            case "union":
+                inner_p = _create_cwl_command_output_processor(
+                    name=utils.random_name(), workflow=workflow
+                )
+                processor = get_full_instantiation(
+                    cls_=UnionCommandOutputProcessor,
+                    name=utils.random_name(),
+                    workflow=workflow,
+                    processors=[
+                        get_full_instantiation(
+                            cls_=PopCommandOutputProcessor,
+                            name=utils.random_name(),
+                            workflow=workflow,
+                            processor=inner_p,
+                            target=LocalTarget("/shared"),
+                        ),
+                        inner_p,
+                    ],
+                    target=LocalTarget("/shared"),
+                )
+            case _:
+                raise Exception(f"Unknown output type: {output_type}")
         step.add_output_port("my_output", port, processor)
     await save_load_and_test(step, context)
 
@@ -407,7 +424,7 @@ async def test_default_transformer(context: StreamFlowContext):
     workflow, (port,) = await create_workflow(context=context, num_port=1)
     step = get_full_instantiation(
         cls_=DefaultTransformer,
-        name=utils.random_name() + "-transformer",
+        name=f"{utils.random_name()}-transformer",
         default_port=port,
         workflow=workflow,
     )
@@ -421,7 +438,7 @@ async def test_default_retag_transformer(context: StreamFlowContext):
     workflow, (port,) = await create_workflow(context=context, num_port=1)
     step = get_full_instantiation(
         cls_=DefaultRetagTransformer,
-        name=utils.random_name() + "-transformer",
+        name=f"{utils.random_name()}-transformer",
         default_port=port,
         primary_port="prime",
         workflow=workflow,
@@ -443,47 +460,48 @@ async def test_cwl_token_transformer(context: StreamFlowContext, processor_t: st
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
-
-    if processor_t == "primitive":
-        processor = _create_cwl_token_processor(port.name, workflow)
-    elif processor_t == "map":
-        processor = get_full_instantiation(
-            cls_=MapTokenProcessor,
-            name=port.name,
-            workflow=workflow,
-            processor=_create_cwl_token_processor(port.name, workflow),
-        )
-    elif processor_t == "object":
-        processor = get_full_instantiation(
-            cls_=ObjectTokenProcessor,
-            name=port.name,
-            workflow=workflow,
-            processors={
-                f"p_{i}": _create_cwl_token_processor(port.name, workflow)
-                for i in range(2)
-            },
-        )
-    elif processor_t == "union" or processor_t == "optional":
-        processor = get_full_instantiation(
-            cls_=UnionTokenProcessor,
-            name=port.name,
-            workflow=workflow,
-            processors=[
-                (
-                    get_full_instantiation(
-                        cls_=NullTokenProcessor, name=port.name, workflow=workflow
+    processor = None
+    match processor_t:
+        case "primitive":
+            processor = _create_cwl_token_processor(port.name, workflow)
+        case "map":
+            processor = get_full_instantiation(
+                cls_=MapTokenProcessor,
+                name=port.name,
+                workflow=workflow,
+                processor=_create_cwl_token_processor(port.name, workflow),
+            )
+        case "object":
+            processor = get_full_instantiation(
+                cls_=ObjectTokenProcessor,
+                name=port.name,
+                workflow=workflow,
+                processors={
+                    f"p_{i}": _create_cwl_token_processor(port.name, workflow)
+                    for i in range(2)
+                },
+            )
+        case "union" | "optional":
+            processor = get_full_instantiation(
+                cls_=UnionTokenProcessor,
+                name=port.name,
+                workflow=workflow,
+                processors=[
+                    (
+                        get_full_instantiation(
+                            cls_=NullTokenProcessor, name=port.name, workflow=workflow
+                        )
+                        if i == 0 and processor_t == "optional"
+                        else _create_cwl_token_processor(port.name, workflow)
                     )
-                    if i == 0 and processor_t == "optional"
-                    else _create_cwl_token_processor(port.name, workflow)
-                )
-                for i in range(2)
-            ],
-        )
-    else:
-        raise Exception(f"Unknown processor type: {processor_t}")
+                    for i in range(2)
+                ],
+            )
+        case _:
+            raise Exception(f"Unknown processor type: {processor_t}")
     step = get_full_instantiation(
         cls_=CWLTokenTransformer,
-        name=utils.random_name() + "-transformer",
+        name=f"{utils.random_name()}-transformer",
         port_name=port.name,
         processor=processor,
         workflow=workflow,
@@ -499,20 +517,18 @@ async def test_value_from_transformer(context: StreamFlowContext):
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     port = workflow.create_port()
-    job_port = workflow.create_port(JobPort)
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
 
     step = get_full_instantiation(
         cls_=ValueFromTransformer,
-        name=utils.random_name() + "-value-from-transformer",
+        name=f"{utils.random_name()}-value-from-transformer",
         processor=_create_cwl_token_processor(port.name, workflow),
         port_name=port.name,
         expression_lib=True,
         full_js=True,
         value_from="$(1 + 1)",
-        job_port=job_port,
         workflow=workflow,
     )
     workflow.steps[step.name] = step
@@ -525,23 +541,27 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     workflow = CWLWorkflow(
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
-    port = workflow.create_port()
-    job_port = workflow.create_port(JobPort)
+    ports = [workflow.create_port() for _ in range(2)]
+    port_name = utils.random_name()
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
 
-    step = get_full_instantiation(
-        cls_=LoopValueFromTransformer,
-        name=utils.random_name() + "-loop-value-from-transformer",
-        processor=_create_cwl_token_processor(port.name, workflow),
-        port_name=port.name,
-        expression_lib=True,
-        full_js=True,
-        value_from="$(1 + 1 == 0)",
-        job_port=job_port,
-        workflow=workflow,
+    step = cast(
+        LoopValueFromTransformer,
+        get_full_instantiation(
+            cls_=LoopValueFromTransformer,
+            name=f"{utils.random_name()}-loop-value-from-transformer",
+            processor=_create_cwl_token_processor(port_name, workflow),
+            port_name=port_name,
+            expression_lib=True,
+            full_js=True,
+            value_from="$(1 + 1 == 0)",
+            workflow=workflow,
+        ),
     )
+    step.add_loop_input_port(port_name, ports[0])
+    step.add_loop_source_port(port_name, ports[1])
     workflow.steps[step.name] = step
     await save_load_and_test(step, context)
 
@@ -649,7 +669,7 @@ async def test_cwl_conditional_step(context: StreamFlowContext):
     workflow, (skip_port,) = await create_workflow(context=context, num_port=1)
     step = get_full_instantiation(
         cls_=CWLConditionalStep,
-        name=utils.random_name() + "-when",
+        name=f"{utils.random_name()}-when",
         expression="$(inputs.name.length == 10)",
         expression_lib=[],
         full_js=True,
@@ -666,7 +686,7 @@ async def test_cwl_loop_conditional_step(context: StreamFlowContext):
     workflow, (skip_port,) = await create_workflow(context=context, num_port=1)
     step = get_full_instantiation(
         cls_=CWLLoopConditionalStep,
-        name=utils.random_name() + "-when",
+        name=f"{utils.random_name()}-when",
         expression="$(inputs.name.length == 10)",
         expression_lib=[],
         full_js=True,

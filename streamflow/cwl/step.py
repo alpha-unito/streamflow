@@ -27,14 +27,7 @@ from streamflow.core.workflow import (
     Token,
 )
 from streamflow.cwl import utils
-from streamflow.cwl.token import CWLFileToken
-from streamflow.cwl.utils import (
-    LoadListing,
-    get_file_token,
-    get_path_from_token,
-    get_token_class,
-    register_data,
-)
+from streamflow.cwl.utils import LoadListing, build_token
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data import remotepath
 from streamflow.data.remotepath import StreamFlowPath
@@ -49,7 +42,7 @@ from streamflow.workflow.step import (
     ScheduleStep,
     TransferStep,
 )
-from streamflow.workflow.token import IterationTerminationToken, ListToken, ObjectToken
+from streamflow.workflow.token import IterationTerminationToken, ListToken
 from streamflow.workflow.utils import get_job_token
 
 
@@ -75,150 +68,6 @@ async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
             return next(iter(filepaths))
     except Exception:
         raise WorkflowExecutionException("Error downloading file from " + url)
-
-
-async def _process_file_token(
-    job: Job,
-    token_value: Any,
-    cwl_version: str,
-    streamflow_context: StreamFlowContext,
-    check_contents: bool = False,
-) -> MutableMapping[str, Any]:
-    connector = streamflow_context.scheduler.get_connector(job.name)
-    locations = streamflow_context.scheduler.get_locations(job.name)
-    path_processor = get_path_processor(connector)
-    new_token_value = token_value
-    if filepath := get_path_from_token(token_value):
-        if not path_processor.isabs(filepath):
-            filepath = path_processor.join(job.output_directory, filepath)
-        new_token_value = await get_file_token(
-            context=streamflow_context,
-            connector=connector,
-            cwl_version=cwl_version,
-            locations=locations,
-            token_class=get_token_class(token_value),
-            filepath=filepath,
-            file_format=token_value.get("format"),
-            basename=token_value.get("basename"),
-            check_content=check_contents,
-            contents=token_value.get("contents"),
-        )
-        if "secondaryFiles" in token_value:
-            new_token_value["secondaryFiles"] = await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        _process_file_token(
-                            job=job,
-                            token_value=sf,
-                            cwl_version=cwl_version,
-                            streamflow_context=streamflow_context,
-                            check_contents=check_contents,
-                        )
-                    )
-                    for sf in token_value["secondaryFiles"]
-                )
-            )
-    elif (
-        get_token_class(token_value) == "File"
-        and check_contents
-        and (
-            token_value.get("basename") is not None
-            and token_value.get("contents") is None
-        )
-    ):
-        raise WorkflowExecutionException(
-            f"Job {job.name} cannot process file. Anonymous file object must have 'contents' and 'basename' fields."
-        )
-    if "listing" in token_value:
-        new_token_value |= {
-            "listing": await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        _process_file_token(job, t, cwl_version, streamflow_context)
-                    )
-                    for t in token_value["listing"]
-                )
-            )
-        }
-    await register_data(
-        context=streamflow_context,
-        connector=connector,
-        locations=locations,
-        base_path=job.output_directory,
-        token_value=new_token_value,
-    )
-    return new_token_value
-
-
-async def build_token(
-    job: Job,
-    token_value: Any,
-    cwl_version: str,
-    streamflow_context: StreamFlowContext,
-    recoverable: bool = False,
-) -> Token:
-    if isinstance(token_value, MutableSequence):
-        return ListToken(
-            tag=get_tag(job.inputs.values()),
-            value=await asyncio.gather(
-                *(
-                    asyncio.create_task(
-                        build_token(
-                            job=job,
-                            token_value=v,
-                            cwl_version=cwl_version,
-                            streamflow_context=streamflow_context,
-                            recoverable=recoverable,
-                        )
-                    )
-                    for v in token_value
-                )
-            ),
-        )
-    elif isinstance(token_value, MutableMapping):
-        if get_token_class(token_value) in ["File", "Directory"]:
-            return CWLFileToken(
-                tag=get_tag(job.inputs.values()),
-                value=await _process_file_token(
-                    job=job,
-                    token_value=token_value,
-                    cwl_version=cwl_version,
-                    streamflow_context=streamflow_context,
-                    check_contents=True,
-                ),
-                recoverable=recoverable,
-            )
-        else:
-            return ObjectToken(
-                tag=get_tag(job.inputs.values()),
-                value=dict(
-                    zip(
-                        token_value.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(
-                                    build_token(
-                                        job=job,
-                                        token_value=v,
-                                        cwl_version=cwl_version,
-                                        streamflow_context=streamflow_context,
-                                        recoverable=recoverable,
-                                    )
-                                )
-                                for v in token_value.values()
-                            )
-                        ),
-                    )
-                ),
-            )
-    elif isinstance(token_value, Token):
-        token = token_value.retag(tag=get_tag(job.inputs.values()))
-        token.recoverable = recoverable
-        return token
-    else:
-        return Token(
-            tag=get_tag(job.inputs.values()), value=token_value, recoverable=recoverable
-        )
 
 
 class CWLBaseConditionalStep(ConditionalStep, ABC):
@@ -328,6 +177,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
                     for port_id in params["skip_ports"].values()
                 )
             ),
+            strict=True,
         ):
             step.add_skip_port(k, port)
         return step
@@ -542,6 +392,7 @@ class CWLExecuteStep(ExecuteStep):
                         for p in params["output_processors"].values()
                     )
                 ),
+                strict=True,
             )
         }
         if params["command"]:
@@ -558,6 +409,7 @@ class CWLInputInjectorStep(InputInjectorStep):
     async def process_input(self, job: Job, token_value: Any) -> Token:
         return await build_token(
             job=job,
+            inputs=job.inputs,
             token_value=token_value,
             cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
             streamflow_context=self.workflow.context,
@@ -640,36 +492,40 @@ class CWLTransferStep(TransferStep):
         }
 
     async def _transfer_value(self, job: Job, token_value: Any) -> Any:
-        if isinstance(token_value, Token):
-            token = token_value.update(
-                await self._transfer_value(job, token_value.value)
-            )
-            token.recoverable = False
-            return token
-        elif isinstance(token_value, MutableSequence):
-            return await asyncio.gather(
-                *(
-                    asyncio.create_task(self._transfer_value(job, element))
-                    for element in token_value
+        match token_value:
+            case Token():
+                token = token_value.update(
+                    await self._transfer_value(job, token_value.value)
                 )
-            )
-        elif isinstance(token_value, MutableMapping):
-            if utils.get_token_class(token_value) in ["File", "Directory"]:
-                return await self._update_file_token(job, token_value)
-            else:
-                return dict(
-                    zip(
-                        token_value.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(self._transfer_value(job, element))
-                                for element in token_value.values()
-                            )
-                        ),
+                token.recoverable = False
+                return token
+            case MutableSequence():
+                return await asyncio.gather(
+                    *(
+                        asyncio.create_task(self._transfer_value(job, element))
+                        for element in token_value
                     )
                 )
-        else:
-            return token_value
+            case MutableMapping():
+                if utils.get_token_class(token_value) in ["File", "Directory"]:
+                    return await self._update_file_token(job, token_value)
+                else:
+                    return dict(
+                        zip(
+                            token_value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        self._transfer_value(job, element)
+                                    )
+                                    for element in token_value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    )
+            case _:
+                return token_value
 
     async def _update_listing(
         self,
@@ -732,11 +588,17 @@ class CWLTransferStep(TransferStep):
         location = token_value.get("location", token_value.get("path"))
         if location and "://" in location:
             # Manage remote files
-            scheme = urllib.parse.urlsplit(location).scheme
-            if scheme in ["http", "https"]:
-                location = await _download_file(job, location, self.workflow.context)
-            elif scheme == "file":
-                location = urllib.parse.unquote(location[7:])
+            match urllib.parse.urlsplit(location).scheme:
+                case "http" | "https":
+                    location = await _download_file(
+                        job, location, self.workflow.context
+                    )
+                case "file":
+                    location = urllib.parse.unquote(location[7:])
+                case scheme:
+                    raise WorkflowExecutionException(
+                        f"Unsupported scheme `{scheme}` in location `{location}`"
+                    )
         # If basename is explicitly stated in the token, use it as destination path
         if "basename" in token_value:
             dst_path = (dst_path or dst_dir) / token_value["basename"]
@@ -746,23 +608,23 @@ class CWLTransferStep(TransferStep):
                 path=location, dst_deployment=dst_connector.deployment_name
             )
         ):
+            # Build unique destination path and transfer file
+            filepath = dst_path or (dst_dir / selected_location.relpath)
             try:
-                # Build unique destination path
-                filepath = dst_path or (dst_dir / selected_location.relpath)
-                if not self.prefix_path:
-                    filepath = cast(CWLWorkflow, self.workflow).get_unique_output_path(
-                        path=filepath, src_location=selected_location
+                async with await cast(CWLWorkflow, self.workflow).get_output_path(
+                    unique=not self.prefix_path,
+                    path=filepath,
+                    src_location=selected_location,
+                ) as filepath:
+                    await self.workflow.context.data_manager.transfer_data(
+                        src_location=selected_location.location,
+                        src_path=selected_location.path,
+                        dst_locations=dst_locations,
+                        dst_path=str(filepath),
+                        writable=self.writable,
                     )
-                # Perform and transfer
-                await self.workflow.context.data_manager.transfer_data(
-                    src_location=selected_location.location,
-                    src_path=selected_location.path,
-                    dst_locations=dst_locations,
-                    dst_path=str(filepath),
-                    writable=self.writable,
-                )
             except FileExistsError:
-                filepath = dst_path or (dst_dir / selected_location.relpath)
+                pass
             # Transform token value
             new_token_value = {
                 "class": token_class,
@@ -838,56 +700,54 @@ class CWLTransferStep(TransferStep):
         # Otherwise, create elements remotely
         else:
             # Build unique destination path
-            filepath = dst_path or dst_dir
-            if not self.prefix_path:
-                filepath = cast(CWLWorkflow, self.workflow).get_unique_output_path(
-                    path=filepath
-                )
-            # If the token contains a directory, simply create it
-            if token_class == "Directory":  # nosec
-                await utils.create_remote_directory(
-                    context=self.workflow.context,
-                    locations=dst_locations,
-                    path=str(filepath),
-                    relpath=(
-                        str(filepath.relative_to(job.output_directory))
-                        if filepath.is_relative_to(job.output_directory)
-                        else (
-                            str(filepath.relative_to(dst_dir))
-                            if filepath != dst_dir
-                            else str(dst_dir)
-                        )
-                    ),
-                )
-            # Otherwise, create the parent directories structure and write file contents
-            else:
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            StreamFlowPath(
-                                str(filepath.parent),
-                                context=self.workflow.context,
-                                location=location,
-                            ).mkdir(mode=0o777, exist_ok=True)
-                        )
-                        for location in dst_locations
+            async with await cast(CWLWorkflow, self.workflow).get_output_path(
+                unique=not self.prefix_path, path=dst_path or dst_dir
+            ) as filepath:
+                # If the token contains a directory, simply create it
+                if token_class == "Directory":  # nosec
+                    await utils.create_remote_directory(
+                        context=self.workflow.context,
+                        locations=dst_locations,
+                        path=str(filepath),
+                        relpath=(
+                            str(filepath.relative_to(job.output_directory))
+                            if filepath.is_relative_to(job.output_directory)
+                            else (
+                                str(filepath.relative_to(dst_dir))
+                                if filepath != dst_dir
+                                else str(dst_dir)
+                            )
+                        ),
                     )
-                )
-                await utils.write_remote_file(
-                    context=self.workflow.context,
-                    locations=dst_locations,
-                    content=token_value.get("contents", ""),
-                    path=str(filepath),
-                    relpath=(
-                        str(filepath.relative_to(job.output_directory))
-                        if filepath.is_relative_to(job.output_directory)
-                        else (
-                            str(filepath.relative_to(dst_dir))
-                            if filepath != dst_dir
-                            else str(dst_dir)
+                # Otherwise, create the parent directories structure and write file contents
+                else:
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                StreamFlowPath(
+                                    str(filepath.parent),
+                                    context=self.workflow.context,
+                                    location=location,
+                                ).mkdir(mode=0o777, exist_ok=True)
+                            )
+                            for location in dst_locations
                         )
-                    ),
-                )
+                    )
+                    await utils.write_remote_file(
+                        context=self.workflow.context,
+                        locations=dst_locations,
+                        content=token_value.get("contents", ""),
+                        path=str(filepath),
+                        relpath=(
+                            str(filepath.relative_to(job.output_directory))
+                            if filepath.is_relative_to(job.output_directory)
+                            else (
+                                str(filepath.relative_to(dst_dir))
+                                if filepath != dst_dir
+                                else str(dst_dir)
+                            )
+                        ),
+                    )
             # Build file token
             new_token_value = await utils.get_file_token(
                 context=self.workflow.context,
@@ -899,7 +759,6 @@ class CWLTransferStep(TransferStep):
                 load_contents="contents" in token_value,
                 load_listing=LoadListing.no_listing,
             )
-
             if (
                 "checksum" in token_value
                 and new_token_value["checksum"] != token_value["checksum"]
@@ -909,6 +768,20 @@ class CWLTransferStep(TransferStep):
                         token_value["path"],
                         new_token_value["path"],
                         [str(loc) for loc in dst_locations],
+                    )
+                )
+            # Check secondary files
+            if "secondaryFiles" in token_value:
+                new_token_value["secondaryFiles"] = await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            self._update_file_token(
+                                job=job,
+                                token_value=element,
+                                dst_path=filepath.parent,
+                            )
+                        )
+                        for element in token_value["secondaryFiles"]
                     )
                 )
 

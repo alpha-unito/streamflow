@@ -119,7 +119,7 @@ class DefaultFailureManager(FailureManager):
             retry_request.version += 1
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
-                    f"Updated Job {job_name} at {retry_request.version} times (max retries {self.max_retries})"
+                    f"Updated Job {job_name} after {retry_request.version} retries (max retries {self.max_retries})"
                 )
             await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
         else:
