@@ -505,10 +505,6 @@ class ValueFromTransformer(ManyToOneTransformer):
                 recoverable=True,
             )
         }
-        await self.workflow.context.scheduler.notify_status(
-            job_name=job_token.value.name, status=Status.COMPLETED
-        )
-        return result
 
 
 class LoopValueFromTransformer(ValueFromTransformer):
@@ -595,11 +591,6 @@ class LoopValueFromTransformer(ValueFromTransformer):
         context = cast(dict[str, Any], utils.build_context(loop_inputs)) | {
             "self": get_token_value(self_token)
         }
-        job_token = await self.get_input_port("__job__").get(self.name)
-        inputs["__job__"] = job_token
-        await self.workflow.context.scheduler.notify_status(
-            job_name=job_token.value.name, status=Status.COMPLETED
-        )
         return {
             self.get_output_name(): await build_token(
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,

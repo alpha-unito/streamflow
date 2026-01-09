@@ -94,39 +94,6 @@ async def _create_file(
     }
 
 
-# TODO: check
-#     if token_type == "primitive":
-#         token_value = 100
-#     elif token_type == "file":
-#         token_value = await _create_file(fault_tolerant_context, execution_location)
-#     elif token_type == "list":
-#         token_value = await asyncio.gather(
-#             *(
-#                 asyncio.create_task(
-#                     _create_file(fault_tolerant_context, execution_location)
-#                 )
-#                 for _ in range(3)
-#             )
-#         )
-#     elif token_type == "object":
-#         token_value = dict(
-#             zip(
-#                 ("a", "b", "c"),
-#                 await asyncio.gather(
-#                     *(
-#                         asyncio.create_task(
-#                             _create_file(fault_tolerant_context, execution_location)
-#                         )
-#                         for _ in range(3)
-#                     )
-#                 ),
-#                 strict=True,
-#             )
-#         )
-#
-#     else:
-#         raise RuntimeError(f"Unknown token type: {token_type}")
-#
 async def _get_token_value(
     context: StreamFlowContext,
     location: ExecutionLocation,

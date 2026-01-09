@@ -101,6 +101,13 @@ class DirectGraph:
     def get_roots(self) -> MutableSet[Any]:
         return self.graph[DirectGraph.ROOT]
 
+    def get_nodes(self) -> MutableSequence[Any]:
+        return [
+            k
+            for k in self.graph.keys()
+            if k not in [DirectGraph.ROOT, DirectGraph.LEAF]
+        ]
+
     def items(self):
         return self.graph.items()
 
@@ -513,6 +520,8 @@ class GraphMapper:
             return
         elif logger.isEnabledFor(logging.INFO):
             logger.info(f"Replacing {old_token_id} with {token.persistent_id}")
+        if port_name in [DirectGraph.ROOT, DirectGraph.LEAF]:
+            raise FailureHandlingException("Erroneous retrieve in the graph.")
         # Replace
         self.dag_tokens.replace(old_token_id, token.persistent_id)
         # Remove old token
@@ -566,6 +575,17 @@ class ProvenanceGraph:
             port_row = await self.context.database.get_port_from_token(
                 token.persistent_id
             )
+            step_names = [
+                s["name"]
+                for s in await asyncio.gather(
+                    *(
+                        asyncio.create_task(self.context.database.get_step(row["step"]))
+                        for row in await self.context.database.get_input_steps(
+                            port_row["id"]
+                        )
+                    )
+                )
+            ]
             # The token is a `JobToken` and its job is running on another recovered workflow
             if (
                 isinstance(token, JobToken)
@@ -573,8 +593,14 @@ class ProvenanceGraph:
                 == TokenAvailability.FutureAvailable
             ):
                 is_available = False
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(
+                        f"Token with id {token.persistent_id} will be available"
+                    )
                 self.add(None, token)
             elif is_available := await token.is_available(context=self.context):
+                if logger.isEnabledFor(logging.DEBUG):
+                    logger.debug(f"Token with id {token.persistent_id} is available")
                 self.add(None, token)
             else:
                 # Token is not available, get previous tokens
@@ -596,14 +622,13 @@ class ProvenanceGraph:
                             f"Token with id {token.persistent_id} is not available, "
                             f"its previous tokens are {[t.persistent_id for t in prev_tokens]}"
                         )
+                        logger.debug(
+                            f"Token with id {token.persistent_id} arrives {step_names}"
+                        )
                 else:
                     raise FailureHandlingException(
                         f"Token with id {token.persistent_id} is not available and it does not have previous tokens"
                     )
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Token id {token.persistent_id} is {'' if is_available else 'not '}available"
-                )
             self.info_tokens.setdefault(
                 token.persistent_id,
                 ProvenanceToken(

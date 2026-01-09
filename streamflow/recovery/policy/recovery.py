@@ -15,13 +15,11 @@ from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.utils import (
-    DirectGraph,
     GraphMapper,
     ProvenanceGraph,
     TokenAvailability,
     create_graph_mapper,
 )
-
 # from streamflow.token_printer import dag_workflow
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
@@ -64,17 +62,12 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
 
 
 async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for port_name in mapper.dcg_port.get_roots():  # mapper.dcg_port[DirectGraph.ROOT]:
+    for port_name in mapper.dcg_port.get_nodes():
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
                 for token_id in mapper.port_tokens[port_name]
-                if token_id
-                not in (
-                    DirectGraph.ROOT,
-                    DirectGraph.LEAF,
-                )  # fixme: root and leaf must not be in the port_tokens attribute
-                and mapper.token_available[token_id]
+                if mapper.token_available[token_id]
             ],
             key=lambda x: x.tag,
         )
@@ -96,14 +89,37 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
         port = new_workflow.ports[port_name]
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Injecting token {token.tag} of port {port.name}")
+                logger.debug(
+                    f"Injecting token {token.persistent_id} {token.tag} of port {port.name}"
+                )
             port.put(token)
         if len(port.token_list) > 0 and len(port.token_list) == len(
             mapper.port_tokens[port_name]
         ):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
-            port.put(TerminationToken(Status.SKIPPED))
+            port.put(TerminationToken(Status.RECOVERED))
+            # port.put(TerminationToken(Status.SKIPPED))
+    # if ss := [
+    #     s
+    #     for s in new_workflow.steps.values()
+    #     if (
+    #         any(
+    #             len(p.token_list) > 2
+    #             for p in s.get_input_ports().values()
+    #             if isinstance(p, InterWorkflowPort)
+    #         )
+    #         and len(
+    #             {
+    #                 len(p.token_list)
+    #                 for p in s.get_input_ports().values()
+    #                 if isinstance(p, InterWorkflowPort)
+    #             }
+    #         )
+    #         > 1
+    #     )
+    # ]:
+    #     pass
 
 
 async def _populate_workflow(
@@ -280,7 +296,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 ).add_inter_port(
                     workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
                     boundary_tag=get_job_tag(job_token.value.name),
-                    inter_terminate=False,
+                    inter_terminate=True,
                     intra_terminate=False,
                 )
                 mapper.move_token_to_root(job_token.persistent_id)
