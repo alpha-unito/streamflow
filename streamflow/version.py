@@ -1,1 +1,3 @@
-VERSION = "0.2.0.dev13"
+from importlib.metadata import version
+
+VERSION = version("streamflow")
