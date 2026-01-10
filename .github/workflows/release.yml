@@ -20,8 +20,18 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.16"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.14
+      - name: "Install StreamFlow"
+        run: uv sync --locked --no-dev
       - name: "Get StreamFlow version"
-        run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
+        run: |
+          source .venv/bin/activate
+          echo "STREAMFLOW_VERSION=$(python -c "from streamflow.version import VERSION; print(VERSION)")" >> $GITHUB_ENV
       - name: "Check if Docker image already exists"
         run: echo "NEW_IMAGE=$(docker buildx imagetools inspect alphaunito/streamflow:${STREAMFLOW_VERSION} > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
       - name: "Build Docker image"
@@ -42,8 +52,18 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.16"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: 3.14
+      - name: "Install StreamFlow"
+        run: uv sync --locked --no-dev
       - name: "Get StreamFlow version"
-        run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
+        run: |
+          source .venv/bin/activate
+          echo "STREAMFLOW_VERSION=$(python -c "from streamflow.version import VERSION; print(VERSION)")" >> $GITHUB_ENV
       - name: "Check tag existence"
         uses: mukunku/tag-exists-action@v1.7.0
         id: check-tag
@@ -71,11 +91,18 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.16"
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: 3.14
+      - name: "Install StreamFlow"
+        run: uv sync --locked --no-dev
       - name: "Get StreamFlow version"
-        run: echo "STREAMFLOW_VERSION=$(cat streamflow/version.py | grep -oP '(?<=VERSION = \")(.*)(?=\")')" >> $GITHUB_ENV
+        run: |
+          source .venv/bin/activate
+          echo "STREAMFLOW_VERSION=$(python -c "from streamflow.version import VERSION; print(VERSION)")" >> $GITHUB_ENV
       - name: "Get PyPI version"
         run: echo "PYPI_VERSION=$(pip index versions --pre streamflow | grep streamflow | sed 's/.*(\(.*\))/\1/')" >> $GITHUB_ENV
       - name: "Build Python packages"
