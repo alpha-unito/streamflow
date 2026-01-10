@@ -17,7 +17,7 @@ uv sync --all-extras
 ## Continuous Integration
 
 StreamFlow relies on [GitHub Actions](https://github.com/features/actions) for Continuous Integration (CI) and Continuous Distribution (CD).
-Only maintainers take care of the CD pipeline. In order to publish a new version of the software on PyPI and Docker Hub distributions, a maintainer only has to augment the version number in the `version.py` file.
+Only maintainers take care of the CD pipeline. In order to publish a new version of the software on PyPI and Docker Hub distributions, a maintainer only has to augment the version number in the `pyproject.tmol` file.
 
 Instead, everyone in the community can contribute to the StreamFlow codebase by opening a Pull Request (PR). Running the entire suite of StreamFlow tests is part of the CI pipeline.
 However, it is also possible (and advisable) to run tests locally before opening a PR, as explained [below](#streamflow-tests).

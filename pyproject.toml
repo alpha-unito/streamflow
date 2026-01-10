@@ -46,7 +46,7 @@ dependencies = [
     "typing-extensions==4.15.0",
     "yattag==1.16.1"
 ]
-dynamic = ["version"]
+version = "0.2.0.dev13"
 
 [project.optional-dependencies]
 report = [
@@ -132,9 +132,6 @@ zip-safe = true
 "streamflow.recovery" = ["schemas/*.json"]
 "streamflow.scheduling" = ["schemas/*.json"]
 "streamflow.scheduling.policy" = ["schemas/*.json"]
-
-[tool.setuptools.dynamic]
-version = {attr = "streamflow.version.VERSION"}
 
 [tool.codespell]
 ignore-words-list = "Crate,crate,NotIn,notin"
