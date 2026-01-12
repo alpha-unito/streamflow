@@ -276,7 +276,7 @@ class Combinator(ABC):
         return combinator
 
     async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
-        return None
+        return
 
     async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
@@ -1259,10 +1259,10 @@ class LoopCombinatorStep(CombinatorStep):
                             ins = [
                                 id_ for t in schema.values() for id_ in t["input_ids"]
                             ]
-                            for port_name, token in schema.items():
+                            for port_name, new_token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=token["token"],
+                                        token=new_token["token"],
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )
@@ -1291,6 +1291,19 @@ class LoopCombinatorStep(CombinatorStep):
         # or an intermediate tag. For example, if the input tag is `0.1`, the next tag must be
         # either `0.2` or `0.1.0`. To make this distinction, we use the port history by retrieving
         # all the tokens from the previous execution.
+
+        # Input port tags: ['0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0']
+        # Input method tags: ['0.1', '0.2']
+        # Input combinator tags: [['0.0']]
+
+        # Input port tags: ['0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0']
+        # Input method tags: ['0.1']
+        # Input combinator tags: [['0.0']]
+
+        # Input port tags: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        # Input method tags: ['0.0']
+        # Input combinator tags: [['0']]
+
         from_tags = {}
         loading_context = DefaultDatabaseLoadingContext()
         for name, tokens in on_tokens.items():
@@ -1299,15 +1312,12 @@ class LoopCombinatorStep(CombinatorStep):
                 token = min(
                     tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
                 )
-                # for token in tokens:
-                prev_tags = {
-                    t.tag
-                    for t in await load_dependee_tokens(
-                        persistent_id=token.persistent_id,
-                        context=self.workflow.context,
-                        loading_context=loading_context,
-                    )
-                }
+                tokens = await load_dependee_tokens(
+                    persistent_id=token.persistent_id,
+                    context=self.workflow.context,
+                    loading_context=loading_context,
+                )
+                prev_tags = {t.tag for t in tokens}
                 if len(prev_tags) == 0:
                     raise WorkflowDefinitionException(
                         "Output token must have previous tokens."
@@ -1324,6 +1334,16 @@ class LoopCombinatorStep(CombinatorStep):
                 else:
                     tags |= prev_tags
                 from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
+        input_port_tags = [
+            t.tag for p in self.get_input_ports().values() for t in p.token_list
+        ]
+        input_method_tags = [t.tag for ts in on_tokens.values() for t in ts]
+        input_combinator_tags = list(from_tags.values())
+        logger.info(
+            f"TAGS\nInput port tags: {input_port_tags}\n"
+            f"Input method tags: {input_method_tags}\n"
+            f"Input combinator tags: {input_combinator_tags}\n"
+        )
         await self.combinator.resume(from_tags)
 
 

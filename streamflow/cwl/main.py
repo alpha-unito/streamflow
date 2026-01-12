@@ -90,13 +90,13 @@ async def main(
     # import posixpath
     #
     # from streamflow.token_printer import dag_workflow
-
+    #
     # dag_workflow(
     #     workflow,
     #     title=posixpath.join(
     #         os.getcwd(),
     #         "dev",
-    #         str(datetime.datetime.now()).replace(" ", "_"),
+    #         str(datetime.datetime.now()).replace(" ", "_").replace(":", "."),
     #         "wf",
     #     ),
     # )

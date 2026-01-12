@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import datetime
 import logging
-import os
 import posixpath
 from collections.abc import Iterable, MutableSequence, MutableSet
 from typing import cast
@@ -20,7 +18,6 @@ from streamflow.recovery.utils import (
     TokenAvailability,
     create_graph_mapper,
 )
-# from streamflow.token_printer import dag_workflow
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
@@ -62,7 +59,7 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
 
 
 async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for port_name in mapper.dcg_port.get_nodes():
+    for port_name in mapper.port_tokens.keys():
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
@@ -99,27 +96,6 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
             port.put(TerminationToken(Status.RECOVERED))
-            # port.put(TerminationToken(Status.SKIPPED))
-    # if ss := [
-    #     s
-    #     for s in new_workflow.steps.values()
-    #     if (
-    #         any(
-    #             len(p.token_list) > 2
-    #             for p in s.get_input_ports().values()
-    #             if isinstance(p, InterWorkflowPort)
-    #         )
-    #         and len(
-    #             {
-    #                 len(p.token_list)
-    #                 for p in s.get_input_ports().values()
-    #                 if isinstance(p, InterWorkflowPort)
-    #             }
-    #         )
-    #         > 1
-    #     )
-    # ]:
-    #     pass
 
 
 async def _populate_workflow(
@@ -208,12 +184,18 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         for job_name in job_names:
             self.context.failure_manager.get_request(job_name).workflow_ready.set()
+
+        # import datetime
+        # import os
+        #
+        # from streamflow.token_printer import dag_workflow
+        #
         # dag_workflow(
         #     new_workflow,
         #     title=posixpath.join(
         #         os.getcwd(),
         #         "dev",
-        #         str(datetime.datetime.now()).replace(" ", "_"),
+        #         str(datetime.datetime.now()).replace(" ", "_").replace(":", "."),
         #         "wf" + failed_job.name.replace(posixpath.sep, "."),
         #     ),
         # )
@@ -231,19 +213,21 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     if port.name in mapper.port_tokens.keys()
                 }
             )
+        # DEBUG
         for port in (
             p
             for p in new_workflow.ports.values()
             if len(p.get_input_steps()) == 0 and p.name not in sync_port_names
         ):
             if len(port.token_list) == 0:
-                raise FailureHandlingException(f"Port {port.name} has no tokens")
+                logger.info(f"Port {port.name} has no tokens")
+                # raise FailureHandlingException(f"Port {port.name} has no tokens")
             elif len(port.token_list) == 1:
-                raise FailureHandlingException(f"Port {port.name} has 1 token")
-            elif not isinstance(port.token_list[-1], TerminationToken):
-                raise FailureHandlingException(
-                    f"Port {port.name} has no termination token as last token"
-                )
+                logger.info(f"Port {port.name} has 1 token")
+                # raise FailureHandlingException(f"Port {port.name} has 1 token")
+            # Some ports do not have a termination token because they can have
+            # available tokens and must wait until a recovery step of another
+            # recovery workflow generates the missing token.
         for p in new_workflow.ports.values():
             if len(steps := p.get_input_steps()) == 1:
                 for s in steps:
@@ -251,7 +235,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         logger.debug(
                             f"Step {s.name} has no input token in its input port {p.name}"
                         )
-                        # raise FailureHandlingException("The back prop is an input port and is empty")
+                        # raise FailureHandlingException(
+                        #     "The back prop is an input port and is empty"
+                        # )
         return new_workflow
 
     async def _sync_workflows(
@@ -299,21 +285,11 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     inter_terminate=True,
                     intra_terminate=False,
                 )
+                # Synchronized schedule step
                 mapper.move_token_to_root(job_token.persistent_id)
                 sync_port_names.append(port_name)
-                # for port_name in await mapper.get_output_ports(job_token):
-                #     if port_name in retry_request.workflow.ports.keys():
-                #         cast(
-                #             InterWorkflowPort, retry_request.workflow.ports[port_name]
-                #         ).add_inter_port(
-                #             workflow.create_port(cls=InterWorkflowPort, name=port_name),
-                #             boundary_tag=get_job_tag(job_token.value.name),
-                #             inter_terminate=True,
-                #             intra_terminate=False,
-                #         )
-                # # Remove tokens that will be recovered in other workflows
-                # for token_id in await mapper.get_output_tokens(job_token.persistent_id):
-                #     mapper.remove_token(token_id, preserve_token=True)
+                # TODO: Handle the synchronous execution step if it is present in both the
+                #  running recovery workflow and the current recovery workflow
             elif is_available == TokenAvailability.Available:
                 job_token = get_job_token(job_name, job_tokens)
                 if logger.isEnabledFor(logging.DEBUG):
