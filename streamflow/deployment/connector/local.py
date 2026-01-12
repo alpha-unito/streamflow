@@ -130,7 +130,11 @@ class LocalConnector(BaseConnector):
 
     async def deploy(self, external: bool) -> None:
         os.makedirs(
-            os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow"),
+            os.path.join(
+                os.path.realpath(tempfile.gettempdir()),
+                utils.get_local_username(),
+                "streamflow",
+            ),
             exist_ok=True,
         )
 
