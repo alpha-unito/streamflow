@@ -1208,7 +1208,7 @@ wheels = [
 
 [[package]]
 name = "kubernetes-asyncio"
-version = "33.3.0"
+version = "34.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1218,9 +1218,9 @@ dependencies = [
     { name = "six" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/41/5f/c175f86b92ff5f19444e3be1423819491ae9859d1f6f7d83d404eab8b10d/kubernetes_asyncio-33.3.0.tar.gz", hash = "sha256:4c59cd4c99b197995ef38ef0c8ff45aab24b84830ebf0ddcb67355caea9674c9", size = 1124931, upload-time = "2025-08-11T21:39:37.825Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/29/5e2cb1428a71ce2c2d965474a5e936f981aeff5a5a82d2db13a01377890a/kubernetes_asyncio-34.3.2.tar.gz", hash = "sha256:7d878db0fac29f0d9fd6635d9769a65134798a646918109771c4ee1e9c75aa01", size = 1274665, upload-time = "2026-01-11T17:16:41.054Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/20/90985f53c141e6f3464b7295a617ffd36574168861882f9291847d09f9b1/kubernetes_asyncio-33.3.0-py3-none-any.whl", hash = "sha256:25e6e265932ebb1aeecbdb30a107dbef3ee0bcd388ed12d092be70915733982b", size = 2174591, upload-time = "2025-08-11T21:39:35.697Z" },
+    { url = "https://files.pythonhosted.org/packages/19/73/6da257342920cd65188b6c1da9fffd0a0a2bf115a115029591cf186465c0/kubernetes_asyncio-34.3.2-py3-none-any.whl", hash = "sha256:5c4e7874a1733dcc1fad8d9cc4e0a078841a9863149d60e03bbda7436740b667", size = 2664448, upload-time = "2026-01-11T17:16:39.078Z" },
 ]
 
 [[package]]
@@ -3105,7 +3105,7 @@ requires-dist = [
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "jsonschema", specifier = "==4.25.1" },
     { name = "kaleido", marker = "extra == 'report'", specifier = "==1.2.0" },
-    { name = "kubernetes-asyncio", specifier = "==33.3.0" },
+    { name = "kubernetes-asyncio", specifier = "==34.3.2" },
     { name = "pandas", marker = "extra == 'report'", specifier = "==2.3.3" },
     { name = "plotly", marker = "extra == 'report'", specifier = "==6.5.1" },
     { name = "psutil", specifier = "==7.1.3" },
