@@ -53,12 +53,7 @@ from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
 from streamflow.workflow.port import ConnectorPort, FilterTokenPort, JobPort
-from streamflow.workflow.token import (
-    IterationTerminationToken,
-    JobToken,
-    ListToken,
-    TerminationToken,
-)
+from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
     check_termination,
@@ -395,11 +390,15 @@ class CombinatorStep(BaseStep):
                             AsyncIterable,
                             self.combinator.combine(task_name, token),
                         ):
-                            ins = [id for t in schema.values() for id in t["input_ids"]]
-                            for port_name, token in schema.items():
+                            ins = [
+                                in_id
+                                for t in schema.values()
+                                for in_id in t["input_ids"]
+                            ]
+                            for port_name, new_token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=token["token"],
+                                        token=new_token["token"],
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )
@@ -1292,12 +1291,14 @@ class LoopCombinatorStep(CombinatorStep):
 
                         async for schema in self.combinator.combine(task_name, token):
                             ins = [
-                                id_ for t in schema.values() for id_ in t["input_ids"]
+                                in_id
+                                for t in schema.values()
+                                for in_id in t["input_ids"]
                             ]
-                            for port_name, token in schema.items():
+                            for port_name, new_token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=token["token"],
+                                        token=new_token["token"],
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )

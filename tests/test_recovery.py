@@ -344,11 +344,9 @@ async def test_resume_loop_combinator_step(
     await new_combinator_step.resume(
         on_tokens={
             name: [
-                port.token_list[i]
-                for i in range(restart_idx, len(port.token_list))
-                if not isinstance(
-                    port.token_list[i], (TerminationToken, IterationTerminationToken)
-                )
+                token
+                for token in port.token_list[restart_idx : len(port.token_list)]
+                if not isinstance(token, (TerminationToken, IterationTerminationToken))
             ]
             for name, port in combinator_step.get_output_ports().items()
         }
