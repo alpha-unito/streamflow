@@ -5,13 +5,6 @@ ENV VIRTUAL_ENV="/opt/streamflow"
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 COPY ./pyproject.toml ./MANIFEST.in ./LICENSE ./README.md /build/
-COPY ./requirements.txt           \
-     ./bandit-requirements.txt    \
-     ./lint-requirements.txt      \
-     ./report-requirements.txt    \
-     ./test-requirements.txt      \
-     /build/
-COPY ./docs/requirements.txt /build/docs
 COPY ./streamflow /build/streamflow
 
 RUN apt update -y \

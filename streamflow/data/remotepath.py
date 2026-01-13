@@ -22,6 +22,11 @@ from typing_extensions import Self
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
 
+if sys.version_info >= (3, 13):
+    from pathlib import UnsupportedOperation
+else:
+    UnsupportedOperation = NotImplementedError
+
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
@@ -193,6 +198,9 @@ class StreamFlowPath(PurePath, ABC):
 
     @abstractmethod
     async def symlink_to(self, target, target_is_directory=False) -> None: ...
+
+    @abstractmethod
+    async def hardlink_to(self, target) -> None: ...
 
     @abstractmethod
     def walk(
@@ -403,6 +411,12 @@ class LocalStreamFlowPath(
         return cast(Path, super()).symlink_to(
             target=target, target_is_directory=target_is_directory
         )
+
+    async def hardlink_to(self, target) -> None:
+        try:
+            return cast(Path, super()).hardlink_to(target=target)
+        except UnsupportedOperation as err:
+            raise WorkflowExecutionException(err)
 
     async def walk(
         self, top_down=True, on_error=None, follow_symlinks=False
@@ -695,6 +709,16 @@ class RemoteStreamFlowPath(
             await inner_path.symlink_to(target, target_is_directory=target_is_directory)
         else:
             command = ["ln", "-snf", str(target), self.__str__()]
+            result, status = await self.connector.run(
+                location=self.location, command=command, capture_output=True
+            )
+            _check_status(command, self.location, result, status)
+
+    async def hardlink_to(self, target) -> None:
+        if (inner_path := await self._get_inner_path()) != self:
+            await inner_path.hardlink_to(target)
+        else:
+            command = ["ln", "-nf", str(target), self.__str__()]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
             )

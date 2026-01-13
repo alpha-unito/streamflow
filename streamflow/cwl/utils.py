@@ -25,12 +25,14 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.scheduling import Hardware
-from streamflow.core.utils import random_name
+from streamflow.core.utils import get_tag, random_name
 from streamflow.core.workflow import Job, Token, Workflow
 from streamflow.cwl.expression import DependencyResolver
+from streamflow.cwl.token import CWLFileToken
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
+from streamflow.workflow.token import ListToken, ObjectToken
 from streamflow.workflow.utils import get_token_value
 
 
@@ -78,6 +80,36 @@ async def _check_glob_path(
             raise WorkflowDefinitionException(
                 "Globs outside the job's output folder are not allowed"
             )
+
+
+async def _create_remote_directory(
+    context: StreamFlowContext,
+    location: ExecutionLocation,
+    path: str,
+    relpath: str,
+) -> None:
+    if not await (
+        path := StreamFlowPath(path, context=context, location=location)
+    ).exists():
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Creating {path} {location}".format(
+                    path=str(path),
+                    location=(
+                        "on local file-system"
+                        if location.local
+                        else f"on location {location}"
+                    ),
+                )
+            )
+        await path.mkdir(mode=0o777, parents=True, exist_ok=True)
+        await _register_path(
+            context=context,
+            connector=context.deployment_manager.get_connector(location.deployment),
+            location=location,
+            path=str(path),
+            relpath=relpath,
+        )
 
 
 async def _get_contents(
@@ -294,6 +326,37 @@ async def _register_path(
     return None
 
 
+async def _write_remote_file(
+    context: StreamFlowContext,
+    location: ExecutionLocation,
+    content: str,
+    path: str,
+    relpath: str,
+) -> None:
+    if not await (
+        path := StreamFlowPath(path, context=context, location=location)
+    ).exists():
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(
+                "Creating {path} {location}".format(
+                    path=str(path),
+                    location=(
+                        "on local file-system"
+                        if location.local
+                        else f"on location {location}"
+                    ),
+                )
+            )
+        await path.write_text(content)
+        await _register_path(
+            context=context,
+            connector=context.deployment_manager.get_connector(location.deployment),
+            location=location,
+            path=str(path),
+            relpath=relpath,
+        )
+
+
 def build_context(
     inputs: MutableMapping[str, Token],
     output_directory: str | None = None,
@@ -313,6 +376,149 @@ def build_context(
         context["runtime"]["tmpdirSize"] = hardware.storage["__tmpdir__"].size
         context["runtime"]["outdirSize"] = hardware.storage["__outdir__"].size
     return context
+
+
+async def _process_file_token(
+    job: Job,
+    token_value: Any,
+    cwl_version: str,
+    streamflow_context: StreamFlowContext,
+) -> MutableMapping[str, Any]:
+    is_literal = is_literal_file(get_token_class(token_value), token_value, job.name)
+    connector = streamflow_context.scheduler.get_connector(job.name)
+    locations = streamflow_context.scheduler.get_locations(job.name)
+    path_processor = get_path_processor(connector)
+    new_token_value = token_value
+    if filepath := get_path_from_token(token_value):
+        if not path_processor.isabs(filepath):
+            filepath = path_processor.join(job.output_directory, filepath)
+        new_token_value = await get_file_token(
+            context=streamflow_context,
+            connector=connector,
+            cwl_version=cwl_version,
+            locations=locations,
+            token_class=get_token_class(token_value),
+            filepath=filepath,
+            file_format=token_value.get("format"),
+            basename=token_value.get("basename"),
+            contents=token_value.get("contents"),
+            is_literal=is_literal,
+        )
+    if "secondaryFiles" in token_value:
+        new_token_value["secondaryFiles"] = await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    _process_file_token(
+                        job=job,
+                        token_value=sf,
+                        cwl_version=cwl_version,
+                        streamflow_context=streamflow_context,
+                    )
+                )
+                for sf in token_value["secondaryFiles"]
+            )
+        )
+    elif "listing" in token_value:
+        new_token_value |= {
+            "listing": await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        _process_file_token(job, t, cwl_version, streamflow_context)
+                    )
+                    for t in token_value["listing"]
+                )
+            )
+        }
+    if not is_literal:
+        await register_data(
+            context=streamflow_context,
+            connector=connector,
+            locations=locations,
+            base_path=job.output_directory,
+            token_value=new_token_value,
+        )
+    return new_token_value
+
+
+async def build_token(
+    cwl_version: str,
+    inputs: MutableMapping[str, Any],
+    streamflow_context: StreamFlowContext,
+    token_value: Any,
+    job: Job | None = None,
+    recoverable: bool = False,
+) -> Token:
+    match token_value:
+        case MutableSequence():
+            return ListToken(
+                tag=get_tag(inputs.values()),
+                value=await asyncio.gather(
+                    *(
+                        asyncio.create_task(
+                            build_token(
+                                cwl_version=cwl_version,
+                                inputs=inputs,
+                                streamflow_context=streamflow_context,
+                                token_value=v,
+                                job=job,
+                                recoverable=recoverable,
+                            )
+                        )
+                        for v in token_value
+                    )
+                ),
+            )
+        case MutableMapping():
+            if get_token_class(token_value) in ["File", "Directory"]:
+                return CWLFileToken(
+                    tag=get_tag(inputs.values()),
+                    value=(
+                        await _process_file_token(
+                            job=job,
+                            token_value=token_value,
+                            cwl_version=cwl_version,
+                            streamflow_context=streamflow_context,
+                        )
+                        if job is not None
+                        else token_value
+                    ),
+                    recoverable=recoverable,
+                )
+            else:
+                return ObjectToken(
+                    tag=get_tag(inputs.values()),
+                    value=dict(
+                        zip(
+                            token_value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        build_token(
+                                            cwl_version=cwl_version,
+                                            inputs=inputs,
+                                            streamflow_context=streamflow_context,
+                                            token_value=v,
+                                            job=job,
+                                            recoverable=recoverable,
+                                        )
+                                    )
+                                    for v in token_value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    ),
+                )
+        case Token():
+            token = token_value.retag(tag=get_tag(inputs.values()))
+            token.recoverable = recoverable
+            return token
+        case _:
+            return Token(
+                tag=get_tag(inputs.values()),
+                value=token_value,
+                recoverable=recoverable,
+            )
 
 
 async def build_token_value(
@@ -490,33 +696,17 @@ async def create_remote_directory(
     locations: MutableSequence[ExecutionLocation],
     path: str,
     relpath: str,
-):
-    tasks = []
-    for location in locations:
-        path = StreamFlowPath(path, context=context, location=location)
-        if not await path.exists():
-            if logger.isEnabledFor(logging.INFO):
-                logger.info(
-                    "Creating {path} {location}".format(
-                        path=str(path),
-                        location=(
-                            "on local file-system"
-                            if location.local
-                            else f"on location {location}"
-                        ),
-                    )
+) -> None:
+    await asyncio.gather(
+        *(
+            asyncio.create_task(
+                _create_remote_directory(
+                    context=context, location=location, path=path, relpath=relpath
                 )
-            tasks.append(
-                asyncio.create_task(path.mkdir(mode=0o777, parents=True, exist_ok=True))
             )
-            await _register_path(
-                context=context,
-                connector=context.deployment_manager.get_connector(location.deployment),
-                location=location,
-                path=str(path),
-                relpath=relpath,
-            )
-    await asyncio.gather(*tasks)
+            for location in locations
+        )
+    )
 
 
 def eval_expression(
@@ -942,28 +1132,24 @@ async def register_data(
         path_processor = get_path_processor(connector)
         # Extract paths from token
         paths = []
-        if "path" in token_value and token_value["path"] is not None:
-            paths.append(token_value["path"])
-        elif "location" in token_value and token_value["location"] is not None:
-            paths.append(token_value["location"])
-        elif "listing" in token_value:
-            paths.extend(
-                [
-                    t.get("path", t["location"])
-                    for t in token_value["listing"]
-                    if "path" in t or "location" in t
-                ]
+        if (main_path := get_path_from_token(token_value)) is not None:
+            paths.append(main_path)
+        else:
+            raise WorkflowExecutionException(
+                f"Impossible to retrieve path from: {token_value}"
             )
-        if "secondaryFiles" in token_value:
+        if "listing" in token_value:
+            paths.extend(
+                l_path
+                for listed in token_value["listing"]
+                if (l_path := get_path_from_token(listed))
+            )
+        elif "secondaryFiles" in token_value:
             paths.extend(
                 sf_path
                 for sf in token_value["secondaryFiles"]
                 if (sf_path := get_path_from_token(sf))
             )
-        # Remove `file` protocol if present
-        paths = [
-            urllib.parse.unquote(p[7:]) if p.startswith("file://") else p for p in paths
-        ]
         # Register paths to the `DataManager`
         for path in (path_processor.normpath(p) for p in paths):
             relpath = (
@@ -1246,25 +1432,17 @@ async def write_remote_file(
     path: str,
     relpath: str,
 ):
-    for location in locations:
-        path = StreamFlowPath(path, context=context, location=location)
-        if not await path.exists():
-            if logger.isEnabledFor(logging.INFO):
-                logger.info(
-                    "Creating {path} {location}".format(
-                        path=str(path),
-                        location=(
-                            "on local file-system"
-                            if location.local
-                            else f"on location {location}"
-                        ),
-                    )
+    await asyncio.gather(
+        *(
+            asyncio.create_task(
+                _write_remote_file(
+                    context=context,
+                    location=location,
+                    content=content,
+                    path=path,
+                    relpath=relpath,
                 )
-            await path.write_text(content)
-            await _register_path(
-                context=context,
-                connector=context.deployment_manager.get_connector(location.deployment),
-                location=location,
-                path=str(path),
-                relpath=relpath,
             )
+            for location in locations
+        )
+    )

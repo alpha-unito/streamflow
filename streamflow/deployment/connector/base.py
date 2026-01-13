@@ -72,7 +72,13 @@ async def extract_tar_stream(
         # Otherwise, if copying a directory, modify the member path to
         # move all the file hierarchy inside `dst`
         else:
-            member.path = posixpath.relpath(member.path, posixpath.basename(src))
+            # `member.path` is an alias of `member.name` and updates automatically.
+            member.name = posixpath.relpath(member.name, posixpath.basename(src))
+            if member.linkname:
+                # `member.linkpath` is an alias of `member.linkname` and updates automatically.
+                member.linkname = posixpath.relpath(
+                    member.linkname, posixpath.basename(src)
+                )
             await tar.extract(
                 member, os.path.normpath(os.path.join(dst, os.path.curdir))
             )

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/filter/matching.json",
+  "type": "object",
+  "$defs": {
+    "filter": {
+      "type": "object",
+      "title": "Filter",
+      "description": "A filter defines the conditions under which a job can be scheduled on the target deployment.",
+      "properties": {
+        "target": {
+          "title": "Target",
+          "oneOf": [
+            {
+              "type": "string",
+              "title": "Deployment"
+            },
+            {
+              "type": "object",
+              "$ref": "#/$defs/target"
+            }
+          ]
+        },
+        "job": {
+          "type": "array",
+          "title": "Job inputs",
+          "description": "A list of ports and values that the port data must match.",
+          "items": {
+            "$ref": "#/$defs/job",
+            "title": "Job"
+          }
+        }
+      },
+      "required": [
+        "target",
+        "job"
+      ],
+      "additionalProperties": false
+    },
+    "job": {
+      "type": "object",
+      "title": "Job",
+      "description": "The input port and the value that the port data must match.",
+      "properties": {
+        "port": {
+          "type": "string",
+          "title": "Input port name",
+          "description": "The input port of the binding step."
+        },
+        "match": {
+          "type": "string",
+          "title": "Expected value",
+          "description": "The desiderated value that the input must match."
+        }
+      },
+      "required": [
+        "port",
+        "match"
+      ],
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "title": "Target",
+      "description": "The target execution environment.",
+      "properties": {
+        "deployment": {
+          "type": "string",
+          "title": "Deployment",
+          "description": "Deployment name"
+        },
+        "service": {
+          "type": "string",
+          "title": "Service",
+          "description": "Service name"
+        }
+      },
+      "required": [
+        "deployment"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "filters": {
+      "type": "array",
+      "title": "Filters",
+      "description": "A list of filters for each target deployment.",
+      "items": {
+        "$ref": "#/$defs/filter"
+      }
+    }
+  },
+  "required": [
+    "filters"
+  ],
+  "additionalProperties": false
+}

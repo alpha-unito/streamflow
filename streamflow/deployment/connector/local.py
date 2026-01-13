@@ -36,6 +36,17 @@ def _local_copy(src: str, dst: str, read_only: bool) -> None:
             shutil.copy(src, dst)
 
 
+if sys.platform != "darwin":
+
+    def _max_cores() -> int:
+        return len(psutil.Process().cpu_affinity())
+
+else:
+
+    def _max_cores() -> int:
+        return psutil.cpu_count() or 1
+
+
 class LocalConnector(BaseConnector):
     def __init__(
         self, deployment_name: str, config_dir: str, transferBufferSize: int = 2**16
@@ -57,18 +68,19 @@ class LocalConnector(BaseConnector):
                         f"for deployment {self.deployment_name}: {e}"
                     )
         self._hardware: Hardware = Hardware(
-            cores=float(psutil.cpu_count()),
+            cores=float(_max_cores()),
             memory=float(psutil.virtual_memory().total / 2**20),
             storage=storage,
         )
 
     def _get_shell(self) -> str:
-        if sys.platform == "win32":
-            return "cmd"
-        elif sys.platform == "darwin":
-            return "bash"
-        else:
-            return "sh"
+        match sys.platform:
+            case "win32":
+                return "cmd"
+            case "darwin":
+                return "bash"
+            case _:
+                return "sh"
 
     async def copy_local_to_remote(
         self,

@@ -191,7 +191,7 @@ class DefaultScheduler(Scheduler):
     def _get_binding_filter(self, config: FilterConfig):
         if config.name not in self.binding_filter_map:
             self.binding_filter_map[config.name] = binding_filter_classes[config.type](
-                **config.config
+                config.name, **config.config
             )
         return self.binding_filter_map[config.name]
 
