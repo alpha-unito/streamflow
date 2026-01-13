@@ -341,11 +341,7 @@ class LocalStreamFlowPath(
         except FileNotFoundError:
             if not parents or self.parent == self:
                 raise
-            try:
-                await self.parent.mkdir(parents=True, exist_ok=True)
-            except PermissionError:
-                if not await self.parent.is_dir():
-                    raise
+            await self.parent.mkdir(parents=True, exist_ok=True)
             await self.mkdir(mode, parents=False, exist_ok=exist_ok)
         except OSError:
             if not exist_ok or not await self.is_dir():
