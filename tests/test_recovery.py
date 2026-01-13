@@ -320,19 +320,8 @@ async def test_resume_loop_combinator_step(
             restart_idx = num_iter // 2
         case _:
             raise NotImplementedError
-    await new_combinator_step.resume(
-        on_tokens={
-            name: [
-                port.token_list[i]
-                for i in range(restart_idx + 1)
-                if not isinstance(
-                    port.token_list[i], (TerminationToken, IterationTerminationToken)
-                )
-            ]
-            for name, port in combinator_step.get_output_ports().items()
-        }
-    )
-    # Inject same input tokens and execute the new workflow
+
+    # Inject input tokens, resume and execute the new workflow
     for port_name, port in new_combinator_step.get_input_ports().items():
         tokens = [
             t
@@ -351,6 +340,19 @@ async def test_resume_loop_combinator_step(
             in_port=port,
             context=context,
         )
+
+    await new_combinator_step.resume(
+        on_tokens={
+            name: [
+                port.token_list[i]
+                for i in range(restart_idx, len(port.token_list))
+                if not isinstance(
+                    port.token_list[i], (TerminationToken, IterationTerminationToken)
+                )
+            ]
+            for name, port in combinator_step.get_output_ports().items()
+        }
+    )
     await new_workflow.save(context)
     executor = StreamFlowExecutor(new_workflow)
     await executor.run()

@@ -186,9 +186,15 @@ class LoopCombinator(DotProductCombinator):
                 for k, t in schema.items()
             }
 
-    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
-        # Resume the iteration counters.
-        for tags_list in on_tags.values():
+    async def resume(
+        self, from_tags: MutableMapping[str, MutableSequence[str]]
+    ) -> None:
+        """
+        Resume the iteration counters.
+        For each port, the input is a list of tags where the first tag is the prefix,
+        and the second tag contains the iteration from the resume.
+        """
+        for tags_list in from_tags.values():
             for tag in tags_list:
                 parts = tag.split(".")
                 if len(parts) >= 2:
