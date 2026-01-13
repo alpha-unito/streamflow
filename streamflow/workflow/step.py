@@ -53,7 +53,12 @@ from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
 from streamflow.workflow.port import ConnectorPort, FilterTokenPort, JobPort
-from streamflow.workflow.token import JobToken, ListToken, TerminationToken
+from streamflow.workflow.token import (
+    IterationTerminationToken,
+    JobToken,
+    ListToken,
+    TerminationToken,
+)
 from streamflow.workflow.utils import (
     check_iteration_termination,
     check_termination,
@@ -271,13 +276,13 @@ class Combinator(ABC):
         )
         return combinator
 
-    async def resume(  # noqa: B027
-        self, on_tags: MutableMapping[str, MutableSequence[str]]
+    async def resume(
+        self, from_tags: MutableMapping[str, MutableSequence[str]]
     ) -> None:
         """
         Resume the combinator's internal state based on the provided tags.
         """
-        pass
+        return
 
     async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
@@ -1192,40 +1197,40 @@ class LoopCombinatorStep(CombinatorStep):
         # The `on_tokens` parameter contains the output tokens, and the iteration begins from the
         # token with the smallest tag. First, we need to determine whether a tag is a starting tag
         # or an intermediate tag. For example, if the input tag is `0.1`, the next tag must be
-        # either `0.2` or `0.1.0`. To make this distinction, we use the port history by retrieving
-        # all the tokens from the previous execution.
+        # either `0.2` or `0.1.0`. To make this distinction, we use the provenance by retrieving
+        # all the tokens from the previous iteration.
         from_tags = {}
         loading_context = DefaultDatabaseLoadingContext()
         for name, tokens in on_tokens.items():
-            tags = set()
-            token = max(tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag)))
-            # for token in tokens:
-            prev_tags = {
-                t.tag
-                for t in await load_dependee_tokens(
-                    persistent_id=token.persistent_id,
-                    context=self.workflow.context,
-                    loading_context=loading_context,
+            if tokens:
+                tags = set()
+                token = min(
+                    tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
                 )
-            }
-            if len(prev_tags) == 0:
-                raise WorkflowDefinitionException(
-                    "Output token must have previous tokens."
-                )
-            prev_iter = iter(prev_tags)
-            fst = next(prev_iter)
-            if len(prev_tags) > 1 and any(
-                len(fst.split(".")) != len(t.split(".")) for t in prev_iter
-            ):
-                raise WorkflowDefinitionException(
-                    "Input of a LoopCombinatorStep must have the same tag depth level"
-                )
-            # If tags are different, it means that it is necessary to restart from the first iteration
-            if len(fst.split(".")) != len(token.tag.split(".")):
-                tags.add(token.tag)
-            else:
-                tags |= prev_tags
-            from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
+                prev_tags = {
+                    t.tag
+                    for t in await load_dependee_tokens(
+                        persistent_id=token.persistent_id,
+                        context=self.workflow.context,
+                        loading_context=loading_context,
+                    )
+                }
+                if len(prev_tags) == 0:
+                    raise WorkflowDefinitionException(
+                        "Output token must have previous tokens."
+                    )
+                prev_iter = iter(prev_tags)
+                fst = next(prev_iter)
+                if any(len(fst.split(".")) != len(t.split(".")) for t in prev_iter):
+                    raise WorkflowDefinitionException(
+                        f"LoopCombinatorStep must have inputs with the same tag depth level. Got: {prev_tags}"
+                    )
+                # If tags are different, it means that it is necessary to restart from the first iteration
+                if len(fst.split(".")) != len(token.tag.split(".")):
+                    tags.add(token.tag)
+                else:
+                    tags |= prev_tags
+                from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
         await self.combinator.resume(from_tags)
 
     async def run(self) -> None:
