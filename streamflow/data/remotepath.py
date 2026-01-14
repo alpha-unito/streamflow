@@ -22,6 +22,11 @@ from typing_extensions import Self
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
 
+if sys.version_info >= (3, 13):
+    from pathlib import UnsupportedOperation
+else:
+    UnsupportedOperation = NotImplementedError
+
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
     from streamflow.core.data import DataLocation
@@ -195,6 +200,9 @@ class StreamFlowPath(PurePath, ABC):
     async def symlink_to(self, target, target_is_directory=False) -> None: ...
 
     @abstractmethod
+    async def hardlink_to(self, target) -> None: ...
+
+    @abstractmethod
     def walk(
         self, top_down=True, on_error=None, follow_symlinks=False
     ) -> AsyncIterator[
@@ -221,7 +229,7 @@ class classinstancemethod(classmethod):
 class __LegacyStreamFlowPath(StreamFlowPath, ABC):
 
     @classinstancemethod
-    def _from_parts(self, args, init=sys.version_info < (3, 10)) -> StreamFlowPath:
+    def _from_parts(self, args) -> StreamFlowPath:
         obj = (
             object.__new__(self)
             if isinstance(self, type)
@@ -234,8 +242,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         obj._drv = drv
         obj._root = root
         obj._parts = parts
-        if init:
-            obj._init()
         return obj
 
     @classinstancemethod
@@ -244,7 +250,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         drv,
         root,
         parts,
-        init=sys.version_info < (3, 10),
     ):
         obj = (
             object.__new__(self)
@@ -257,8 +262,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         obj._drv = drv
         obj._root = root
         obj._parts = parts
-        if init:
-            obj._init()
         return obj
 
     def _scandir(self):
@@ -373,8 +376,7 @@ class LocalStreamFlowPath(
             return super().parents
 
     async def read_text(self, n=-1, encoding=None, errors=None) -> str:
-        if sys.version_info >= (3, 10):
-            encoding = io.text_encoding(encoding)
+        encoding = io.text_encoding(encoding)
         with self.open(mode="r", encoding=encoding, errors=errors) as f:
             return f.read(n)
 
@@ -409,6 +411,12 @@ class LocalStreamFlowPath(
         return cast(Path, super()).symlink_to(
             target=target, target_is_directory=target_is_directory
         )
+
+    async def hardlink_to(self, target) -> None:
+        try:
+            return cast(Path, super()).hardlink_to(target=target)
+        except UnsupportedOperation as err:
+            raise WorkflowExecutionException(err)
 
     async def walk(
         self, top_down=True, on_error=None, follow_symlinks=False
@@ -706,6 +714,16 @@ class RemoteStreamFlowPath(
             )
             _check_status(command, self.location, result, status)
 
+    async def hardlink_to(self, target) -> None:
+        if (inner_path := await self._get_inner_path()) != self:
+            await inner_path.hardlink_to(target)
+        else:
+            command = ["ln", "-nf", str(target), self.__str__()]
+            result, status = await self.connector.run(
+                location=self.location, command=command, capture_output=True
+            )
+            _check_status(command, self.location, result, status)
+
     async def walk(
         self, top_down=True, on_error=None, follow_symlinks=False
     ) -> AsyncIterator[
@@ -871,5 +889,6 @@ async def get_storage_usages(
                     for storage in hardware.storage.values()
                 )
             ),
+            strict=True,
         )
     )

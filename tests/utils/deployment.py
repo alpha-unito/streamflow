@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import socket
 import tempfile
@@ -16,7 +17,9 @@ from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     BindingFilter,
+    Connector,
     DeploymentConfig,
+    DeploymentManager,
     ExecutionLocation,
     Target,
     WrapsConfig,
@@ -38,64 +41,83 @@ def _get_free_tcp_port() -> int:
     return port
 
 
+def get_aiotar_deployment_config(tar_format: str) -> DeploymentConfig:
+    workdir = os.path.join(
+        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
+    )
+    os.makedirs(workdir, exist_ok=True)
+    return DeploymentConfig(
+        name=f"aiotar-{tar_format}",
+        type="aiotar",
+        config={"tar_format": tar_format, "transferBufferSize": 16},
+        external=False,
+        lazy=False,
+        workdir=workdir,
+    )
+
+
 def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
-    if deployment_t == "local":
-        return "__LOCAL__"
-    elif deployment_t == "docker":
-        return "alpine-docker"
-    elif deployment_t == "docker-wrapper":
-        return "alpine-docker-wrapper"
-    elif deployment_t == "docker-compose":
-        return "alpine-docker-compose"
-    elif deployment_t == "kubernetes":
-        return "alpine-kubernetes"
-    elif deployment_t == "parameterizable_hardware":
-        return "custom-hardware"
-    elif deployment_t == "singularity":
-        return "alpine-singularity"
-    elif deployment_t == "slurm":
-        return "docker-slurm"
-    elif deployment_t == "ssh":
-        return "linuxserver-ssh"
-    elif deployment_t == "local-fs-volatile":
-        return "local-fs-volatile"
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
+    match deployment_t:
+        case "aiotar":
+            return "aiotar"
+        case "docker":
+            return "alpine-docker"
+        case "docker-wrapper":
+            return "alpine-docker-wrapper"
+        case "docker-compose":
+            return "alpine-docker-compose"
+        case "kubernetes":
+            return "alpine-kubernetes"
+        case "local":
+            return "__LOCAL__"
+        case "local-fs-volatile":
+            return "local-fs-volatile"
+        case "parameterizable_hardware":
+            return "custom-hardware"
+        case "singularity":
+            return "alpine-singularity"
+        case "slurm":
+            return "docker-slurm"
+        case "ssh":
+            return "linuxserver-ssh"
+        case _:
+            raise Exception(f"{deployment_t} deployment type not supported")
 
 
 async def get_deployment_config(
     _context: StreamFlowContext, deployment_t: str
 ) -> DeploymentConfig:
-    if deployment_t == "local":
-        return get_local_deployment_config()
-    elif deployment_t == "local-fs-volatile":
-        return get_local_deployment_config(
-            name="local-fs-volatile",
-            workdir=os.path.join(
-                os.path.realpath(tempfile.gettempdir()),
-                "streamflow-test",
-                random_name(),
-                "test-fs-volatile",
-            ),
-        )
-    elif deployment_t == "docker":
-        return get_docker_deployment_config()
-    elif deployment_t == "docker-compose":
-        return get_docker_compose_deployment_config()
-    elif deployment_t == "docker-wrapper":
-        return await get_docker_wrapper_deployment_config(_context)
-    elif deployment_t == "kubernetes":
-        return get_kubernetes_deployment_config()
-    elif deployment_t == "parameterizable_hardware":
-        return get_parameterizable_hardware_deployment_config()
-    elif deployment_t == "singularity":
-        return get_singularity_deployment_config()
-    elif deployment_t == "slurm":
-        return await get_slurm_deployment_config(_context)
-    elif deployment_t == "ssh":
-        return await get_ssh_deployment_config(_context)
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
+    match deployment_t:
+        case "docker":
+            return get_docker_deployment_config()
+        case "docker-compose":
+            return get_docker_compose_deployment_config()
+        case "docker-wrapper":
+            return await get_docker_wrapper_deployment_config(_context)
+        case "kubernetes":
+            return get_kubernetes_deployment_config()
+        case "local":
+            return get_local_deployment_config()
+        case "local-fs-volatile":
+            return get_local_deployment_config(
+                name="local-fs-volatile",
+                workdir=os.path.join(
+                    os.path.realpath(tempfile.gettempdir()),
+                    "streamflow-test",
+                    random_name(),
+                    "test-fs-volatile",
+                ),
+            )
+        case "parameterizable-hardware":
+            return get_parameterizable_hardware_deployment_config()
+        case "singularity":
+            return get_singularity_deployment_config()
+        case "slurm":
+            return await get_slurm_deployment_config(_context)
+        case "ssh":
+            return await get_ssh_deployment_config(_context)
+        case _:
+            raise Exception(f"{deployment_t} deployment type not supported")
 
 
 def get_docker_compose_deployment_config():
@@ -153,7 +175,7 @@ async def get_docker_wrapper_deployment_config(_context: StreamFlowContext):
 def get_failure_deployment_config():
     return DeploymentConfig(
         name="failure-test",
-        type="failure",
+        type="failure-connector",
         config={"transferBufferSize": 0},
         external=False,
         lazy=True,
@@ -207,7 +229,7 @@ def get_parameterizable_hardware_deployment_config():
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
         name="custom-hardware",
-        type="parameterizable_hardware",
+        type="parameterizable-hardware",
         config={},
         external=True,
         lazy=False,
@@ -216,24 +238,26 @@ def get_parameterizable_hardware_deployment_config():
 
 
 def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
-    if deployment_t in (
-        "local",
-        "docker",
-        "docker-wrapper",
-        "parameterizable_hardware",
-        "singularity",
-        "ssh",
-        "local-fs-volatile",
-    ):
-        return None
-    elif deployment_t == "docker-compose":
-        return "alpine"
-    elif deployment_t == "kubernetes":
-        return "sf-test"
-    elif deployment_t == "slurm":
-        return "test"
-    else:
-        raise Exception(f"{deployment_t} deployment type not supported")
+    match deployment_t:
+        case (
+            "aiotar"
+            | "docker"
+            | "docker-wrapper"
+            | "local"
+            | "local-fs-volatile"
+            | "parameterizable-hardware"
+            | "singularity"
+            | "ssh"
+        ):
+            return None
+        case "docker-compose":
+            return "alpine"
+        case "kubernetes":
+            return "sf-test"
+        case "slurm":
+            return "test"
+        case _:
+            raise Exception(f"{deployment_t} deployment type not supported")
 
 
 def get_singularity_deployment_config():
@@ -321,6 +345,41 @@ async def get_ssh_deployment_config(_context: StreamFlowContext):
     )
 
 
+class CustomDeploymentManager(DeploymentManager):
+    def __init__(self, context: StreamFlowContext, my_arg: str) -> None:
+        super().__init__(context)
+        self.my_arg: str = my_arg
+
+    async def close(self) -> None:
+        raise NotImplementedError
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/deployment/custom_deployment_manager.json",
+                "type": "object",
+                "properties": {
+                    "my_arg": {"type": "string", "description": "No description"}
+                },
+                "additionalProperties": False,
+            }
+        )
+
+    async def deploy(self, deployment_config: DeploymentConfig) -> None:
+        raise NotImplementedError
+
+    def get_connector(self, deployment_name: str) -> Connector | None:
+        raise NotImplementedError
+
+    async def undeploy(self, deployment_name: str) -> None:
+        raise NotImplementedError
+
+    async def undeploy_all(self) -> None:
+        raise NotImplementedError
+
+
 class ReverseTargetsBindingFilter(BindingFilter):
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
@@ -329,4 +388,12 @@ class ReverseTargetsBindingFilter(BindingFilter):
 
     @classmethod
     def get_schema(cls) -> str:
-        return ""
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/deployment/reverse_targets.json",
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            }
+        )

@@ -1,17 +1,10 @@
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 ARG HELM_VERSION
 
 ENV VIRTUAL_ENV="/opt/streamflow"
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 COPY ./pyproject.toml ./MANIFEST.in ./LICENSE ./README.md /build/
-COPY ./requirements.txt           \
-     ./bandit-requirements.txt    \
-     ./lint-requirements.txt      \
-     ./report-requirements.txt    \
-     ./test-requirements.txt      \
-     /build/
-COPY ./docs/requirements.txt /build/docs
 COPY ./streamflow /build/streamflow
 
 RUN apt update -y \
@@ -28,7 +21,7 @@ RUN apt update -y \
     && python -m venv ${VIRTUAL_ENV} \
     && pip install .
 
-FROM python:3.13-slim
+FROM python:3.14-slim
 LABEL maintainer="iacopo.colonnelli@unito.it"
 
 ENV VIRTUAL_ENV="/opt/streamflow"

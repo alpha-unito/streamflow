@@ -90,7 +90,7 @@ class SqliteDatabase(CachedDatabase):
         self.connection = None
 
     @classmethod
-    def get_schema(cls):
+    def get_schema(cls) -> str:
         return (
             files(__package__)
             .joinpath("schemas")

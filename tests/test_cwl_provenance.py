@@ -80,7 +80,9 @@ async def _run_many_to_one_transformer(
         name=f"{utils.random_name()}-scatter-size-transformer",
     )
     step.add_output_port("test", out_port)
-    for i, (token_list, input_port) in enumerate(zip(token_lists, input_ports)):
+    for i, (token_list, input_port) in enumerate(
+        zip(token_lists, input_ports, strict=True)
+    ):
         await inject_tokens(token_list, input_port, context)
         step.add_input_port(f"param{i}", input_port)
 
@@ -316,11 +318,9 @@ async def test_cwl_token_transformer(context: StreamFlowContext):
 async def test_value_from_transformer(context: StreamFlowContext):
     """Test token provenance for ValueFromTransformer"""
     workflow, (in_port, out_port) = await create_workflow(context)
-    deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, deploy_steps=[deploy_step])
     port_name = "test"
     token_list = [Token(10)]
-    transformer = await create_and_run_step(
+    await create_and_run_step(
         context=context,
         workflow=workflow,
         in_port=in_port,
@@ -336,14 +336,10 @@ async def test_value_from_transformer(context: StreamFlowContext):
             "port_name": in_port.name,
             "full_js": True,
             "value_from": f"$(inputs.{port_name} + 1)",
-            "job_port": schedule_step.get_output_port(),
         },
         token_list=token_list,
         port_name=port_name,
     )
-    job_token = transformer.get_input_port("__job__").token_list[0]
-    await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
-
     assert len(out_port.token_list) == 2
     await verify_dependency_tokens(
         token=out_port.token_list[0],
@@ -648,7 +644,9 @@ async def test_empty_scatter_conditional_step(context: StreamFlowContext):
     )
 
     assert len(out_port.token_list) == 5
-    for in_token, out_token in zip(in_port.token_list[:-1], out_port.token_list[:-1]):
+    for in_token, out_token in zip(
+        in_port.token_list[:-1], out_port.token_list[:-1], strict=True
+    ):
         await verify_dependency_tokens(
             token=out_token,
             port=out_port,
@@ -698,14 +696,13 @@ async def test_list_merge_combinator(context: StreamFlowContext):
 @pytest.mark.asyncio
 async def test_loop_value_from_transformer(context: StreamFlowContext):
     """Test token provenance for LoopValueFromTransformer"""
-    workflow, (in_port, out_port) = await create_workflow(context)
-    deploy_step = create_deploy_step(workflow)
-    schedule_step = create_schedule_step(workflow, deploy_steps=[deploy_step])
-    name = utils.random_name()
+    workflow, (in_port, out_port, loop_port) = await create_workflow(
+        context, num_port=3
+    )
     port_name = "test"
     transformer = workflow.create_step(
         cls=LoopValueFromTransformer,
-        name=name + "-loop-value-from-transformer",
+        name=f"{utils.random_name()}-loop-value-from-transformer",
         processor=CWLTokenProcessor(
             name=in_port.name,
             workflow=cast(CWLWorkflow, workflow),
@@ -714,9 +711,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
         port_name=port_name,
         full_js=True,
         value_from=f"$(inputs.{port_name} + 1)",
-        job_port=schedule_step.get_output_port(),
     )
-    loop_port = workflow.create_port()
     transformer.add_loop_input_port(port_name, in_port)
     transformer.add_loop_source_port(port_name, loop_port)
     transformer.add_output_port(port_name, out_port)
@@ -728,8 +723,6 @@ async def test_loop_value_from_transformer(context: StreamFlowContext):
     await workflow.save(context)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
-    job_token = transformer.get_input_port("__job__").token_list[0]
-    await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
 
     assert len(transformer.get_output_port(port_name).token_list) == 2
     await verify_dependency_tokens(

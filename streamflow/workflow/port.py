@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import MutableSequence
-from typing import Callable
+from collections.abc import Callable, MutableSequence
 
 from streamflow.core.deployment import Connector
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
