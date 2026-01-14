@@ -27,6 +27,7 @@ async def create_graph_mapper(
     while queue:
         token_id = queue.popleft()
         visited.add(token_id)
+        mapper.add(provenance.info_tokens.get(token_id, None), None)
         for prev_token_id in provenance.dag_tokens.predecessors(token_id):
             if prev_token_id not in visited and prev_token_id not in queue:
                 queue.append(prev_token_id)

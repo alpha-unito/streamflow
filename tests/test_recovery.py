@@ -15,6 +15,7 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ExecutionLocation
+from streamflow.core.utils import compare_tags, get_job_tag
 from streamflow.core.workflow import Job, Token
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.main import build_context
@@ -365,12 +366,15 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("iteration", [1, 3])
-async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
-    num_of_failures = 0
+@pytest.mark.parametrize("failure_on_iteration", [0, 1, 3])
+async def test_loop(
+    fault_tolerant_context: StreamFlowContext, failure_on_iteration: int
+):
+    num_of_failures = 1
     task = "execute"
     error_t = InjectorFailureCommand.FAIL_STOP
     deployment_t = "local-fs-volatile"
+    max_iterations = 4
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
     translator.deployment_configs = {
@@ -382,7 +386,11 @@ async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
     token_value = await _get_token_value(
         fault_tolerant_context, execution_location, token_type
     )
-    for input_name, value in {"test": token_value, "counter": 0, "limit": 3}.items():
+    for input_name, value in {
+        "test": token_value,
+        "counter": 0,
+        "limit": max_iterations,
+    }.items():
         injector_step = translator.get_base_injector_step(
             [deployment_t],
             input_name,
@@ -417,7 +425,9 @@ async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
         workflow=workflow,
         failure_type=error_t,
         failure_step=task,
-        failure_tags={f"0.{iteration}": num_of_failures + iteration},
+        failure_tags={
+            f"0.{failure_on_iteration}": num_of_failures + failure_on_iteration
+        },
     )
     output_ports = translator.get_output_loop(
         step_name,
@@ -442,21 +452,20 @@ async def test_loop(fault_tolerant_context: StreamFlowContext, iteration: int):
     )
     assert isinstance(result_token[1], TerminationToken)
 
-    # for job in map(
-    #     lambda t: t.value.name,
-    #     filter(
-    #         lambda t: isinstance(t, JobToken),
-    #         execute_step.get_input_port("__job__").token_list,
-    #     ),
-    # ):
-    #     # One job was recovered, the others did not raise any failure
-    #     attempts = 1 + (
-    #         num_of_failures if get_job_tag(job.name) == f"0.{iteration}" else 0
-    #     )
-    #     assert (
-    #         fault_tolerant_context.failure_manager.get_request(job.name).version
-    #         == attempts
-    #     )
+    for job_name in map(
+        lambda t: t.value.name,
+        filter(
+            lambda t: isinstance(t, JobToken),
+            execute_step.get_input_port("__job__").token_list,
+        ),
+    ):
+        attempts = 1  # every job starts from 1
+        if compare_tags(f"0.{failure_on_iteration}", get_job_tag(job_name)) > -1:
+            attempts += num_of_failures + failure_on_iteration
+        assert (
+            fault_tolerant_context.failure_manager.get_request(job_name).version
+            == attempts
+        )
 
 
 @pytest.mark.asyncio
