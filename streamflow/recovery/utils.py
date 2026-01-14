@@ -14,7 +14,7 @@ from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.workflow.step import ExecuteStep, TransferStep
+from streamflow.workflow.step import ExecuteStep, TransferStep, ScheduleStep
 from streamflow.workflow.token import JobToken
 
 
@@ -131,7 +131,6 @@ class GraphMapper:
         # port name : token ids
         self.port_tokens: MutableMapping[str, MutableSet[int]] = {}
         self.token_available: MutableMapping[int, bool] = {}
-        # token id : token instance
         self.token_instances: MutableMapping[int, Token] = {}
         self.context: StreamFlowContext = context
 
@@ -296,42 +295,83 @@ class GraphMapper:
             step_ids.remove(step_id)
         return step_ids
 
-    def remove_port(self, port_name: str) -> None:
+    async def get_schedule_port_name(self, job_token: JobToken) -> str:
+        port_name = next(
+            port
+            for port, token_ids in self.port_tokens.items()
+            if job_token.persistent_id in token_ids
+        )
+        # Get newest port
+        port_id = max(self.port_name_ids[port_name])
+        step_rows = await self.context.database.get_input_steps(port_id)
+        step_rows = await asyncio.gather(
+            *(
+                asyncio.create_task(self.context.database.get_step(row["step"]))
+                for row in step_rows
+            )
+        )
+        if len(step_rows) != 1:
+            raise FailureHandlingException(
+                f"Job {job_token.value.name} with token {job_token.persistent_id} has multiple steps"
+            )
+        if not issubclass(get_class_from_name(step_rows[0]["type"]), ScheduleStep):
+            raise FailureHandlingException(
+                f"Job {job_token.value.name} with token {job_token.persistent_id} must have a schedule step. Got {step_rows[0]['type']}"
+            )
+        return port_name
+
+    def remove_port(self, port_name: str) -> MutableSequence[str]:
         if logger.isEnabledFor(logging.INFO):
-            logger.info(f"Remove port {port_name}")
+            logger.info(f"Removing port {port_name}")
         orphan_tokens = set()
+        removed_ports = self.dcg_port.remove(port_name)
+        if logger.isEnabledFor(logging.DEBUG):
+            for next_port_name in removed_ports:
+                if next_port_name != port_name:
+                    logger.debug(
+                        f"Removed port {next_port_name} by deleting port {port_name}"
+                    )
         for next_port_name in self.dcg_port.remove(port_name):
             for token_id in self.port_tokens.pop(next_port_name, []):
                 orphan_tokens.add(token_id)
             self.port_name_ids.pop(next_port_name, None)
         for token_id in orphan_tokens:
             self.remove_token(token_id)
+        return removed_ports
 
-    def remove_token(self, token_id: int, preserve_token: bool = True) -> None:
+    def move_token_to_root(self, token_id: int) -> None:
         if logger.isEnabledFor(logging.INFO):
-            logger.info(f"Remove token id {token_id}")
-        if token_id == DirectGraph.ROOT:
-            return
-        # Remove previous links
-        token_leaves = set()
-        for prev_token_id in self.dag_tokens.prev(token_id):
-            self.dag_tokens[prev_token_id].remove(token_id)
-            if len(self.dag_tokens[prev_token_id]) == 0 or (
-                isinstance(self.token_instances.get(prev_token_id, None), JobToken)
-            ):
-                if prev_token_id == DirectGraph.ROOT:
-                    raise FailureHandlingException(
-                        "Impossible execute a workflow without a ROOT"
-                    )
-                token_leaves.add(prev_token_id)
-        # Delete end-road branches
-        for leaf_id in token_leaves:
-            self.remove_token(leaf_id, preserve_token=False)
-        # Delete token (if needed)
-        if not preserve_token:
+            logger.info(f"Moving token {token_id} to root")
+        empty_ports = set()
+        for removed_token_id in self.dag_tokens.promote_to_source(token_id):
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    f"Removed token {removed_token_id} caused by moving {token_id} to root"
+                )
+            self.token_available.pop(removed_token_id, None)
+            self.token_instances.pop(removed_token_id, None)
+            # Remove ports
+            for port_name, token_list in self.port_tokens.items():
+                if removed_token_id in token_list:
+                    self.port_tokens[port_name].remove(removed_token_id)
+                if len(self.port_tokens[port_name]) == 0:
+                    empty_ports.add(port_name)
+        removed_ports = []
+        for port_name in empty_ports:
+            if port_name not in removed_ports:
+                removed_ports.extend(self.remove_port(port_name))
+
+    def remove_token(self, token_id: int) -> None:
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"Removing token {token_id}")
+        removed = {token_id, *self.dag_tokens.remove(token_id)}
+        for removed_token_id in removed:
+            if removed_token_id != token_id and logger.isEnabledFor(logging.INFO):
+                logger.info(
+                    f"Removed token with id {removed_token_id} by deleting token with id {token_id}"
+                )
             self.token_available.pop(token_id, None)
             self.token_instances.pop(token_id, None)
-            self.dag_tokens.remove(token_id)
             # Remove ports
             empty_ports = set()
             for port_name, token_list in self.port_tokens.items():
@@ -370,8 +410,6 @@ class GraphMapper:
         self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
         self.token_instances[token.persistent_id] = token
         self.token_available[token.persistent_id] = is_available
-        # Remove previous dependencies
-        self.remove_token(token.persistent_id, preserve_token=True)
 
 
 class ProvenanceGraph:
