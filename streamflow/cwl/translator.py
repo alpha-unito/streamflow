@@ -2604,6 +2604,18 @@ class CWLTranslator:
                     conditional_step.add_output_port(
                         port_name, self.input_ports[global_name]
                     )
+            if missing_inputs := [
+                dep
+                for dep in utils.resolve_dependencies(
+                    expression=cwl_condition,
+                    full_js=full_js,
+                    expression_lib=expression_lib,
+                )
+                if dep not in conditional_step.get_input_ports().keys()
+            ]:
+                raise WorkflowDefinitionException(
+                    f"Step {step_name} requires the following inputs for condition evaluation: {missing_inputs}"
+                )
         # Process outputs
         external_output_ports = {}
         internal_output_ports = {}
