@@ -148,35 +148,31 @@ class _RemotePathMapper:
                     self.invalidate_location(data_loc.location, data_loc.path)
 
     def put(
-        self, path: str, data_location: DataLocation, recursive: bool = False
+        self, path: StreamFlowPath, data_location: DataLocation, recursive: bool = False
     ) -> DataLocation:
-        path = PurePosixPath(Path(path).as_posix())
-        path_processor = get_path_processor(
-            self.context.deployment_manager.get_connector(data_location.deployment)
-        )
         node = self._filesystem
         nodes = {}
         # Create or navigate hierarchy
         for i, token in enumerate(path.parts):
             node = node.children.setdefault(token, _RemotePathNode())
             if recursive:
-                nodes[path_processor.join(*path.parts[: i + 1])] = node
+                nodes[path.parents[len(path.parts) - (i + 2)]] = node
         if not recursive:
-            nodes[str(path)] = node
+            nodes[path] = node
         # Process hierarchy bottom-up to add parent locations
         relpath = data_location.relpath
         for node_path in reversed(nodes):
             node = nodes[node_path]
-            if node_path == str(path):
+            if node_path == path:
                 location = data_location
             else:
                 location = DataLocation(
                     location=data_location.location,
-                    path=node_path,
+                    path=str(node_path),
                     relpath=(
                         relpath
-                        if relpath and node_path.endswith(relpath)
-                        else path_processor.basename(node_path)
+                        if relpath and str(node_path).endswith(relpath)
+                        else node_path.stem
                     ),
                     data_type=DataType.PRIMARY,
                     available=True,
@@ -191,7 +187,11 @@ class _RemotePathMapper:
                 break
             else:
                 node.locations[location.deployment][location.name].append(location)
-                relpath = path_processor.dirname(relpath)
+                relpath = str(
+                    StreamFlowPath(
+                        relpath, context=self.context, location=data_location.location
+                    ).parent
+                )
         # Return location
         return data_location
 
@@ -278,25 +278,24 @@ class DefaultDataManager(DataManager):
                 available=False,
             )
         ]
-        self.path_mapper.put(path=path, data_location=data_locations[0], recursive=True)
+        sf_path = StreamFlowPath(path, context=self.context, location=location)
+        self.path_mapper.put(
+            path=sf_path, data_location=data_locations[0], recursive=True
+        )
         self.context.checkpoint_manager.register(data_locations[0])
         # Process wrapped locations if any
-        while (
-            path := get_inner_path(
-                path=StreamFlowPath(path, context=self.context, location=location)
-            )
-        ) is not None:
+        while (sf_path := get_inner_path(path=sf_path)) is not None:
             data_locations.append(
                 DataLocation(
                     location=location.wraps,
-                    path=str(path),
-                    relpath=relpath or str(path),
+                    path=str(sf_path),
+                    relpath=relpath or str(sf_path),
                     data_type=data_type,
                     available=False,
                 )
             )
             self.path_mapper.put(
-                path=str(path), data_location=data_locations[-1], recursive=True
+                path=sf_path, data_location=data_locations[-1], recursive=True
             )
             self.register_relation(
                 src_location=data_locations[0], dst_location=data_locations[-1]
@@ -310,8 +309,22 @@ class DefaultDataManager(DataManager):
         self, src_location: DataLocation, dst_location: DataLocation
     ) -> None:
         for data_location in self.path_mapper.get(path=src_location.path):
-            self.path_mapper.put(data_location.path, dst_location)
-            self.path_mapper.put(dst_location.path, data_location)
+            self.path_mapper.put(
+                StreamFlowPath(
+                    path=data_location.path,
+                    context=self.context,
+                    location=data_location.location,
+                ),
+                dst_location,
+            )
+            self.path_mapper.put(
+                StreamFlowPath(
+                    path=dst_location.path,
+                    context=self.context,
+                    location=dst_location.location,
+                ),
+                data_location,
+            )
 
     async def transfer_data(
         self,
@@ -414,9 +427,7 @@ class DefaultDataManager(DataManager):
                     relpath=src_data_location.relpath,
                     data_type=DataType.PRIMARY,
                 )
-                self.path_mapper.put(
-                    path=str(loc_dst_path), data_location=dst_data_location
-                )
+                self.path_mapper.put(path=loc_dst_path, data_location=dst_data_location)
                 data_locations.append(dst_data_location)
                 # If the destination is not writable , map the new `DataLocation` object to the source locations
                 if not writable:
