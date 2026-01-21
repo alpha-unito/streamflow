@@ -67,7 +67,7 @@ class SSHContext:
     ) -> asyncssh.SSHClientConnection | None:
         if config is None:
             return None
-        (hostname, port) = parse_hostname(config.hostname)
+        hostname, port = parse_hostname(config.hostname)
         return await asyncssh.connect(
             client_keys=config.client_keys,
             compression_algs=None,

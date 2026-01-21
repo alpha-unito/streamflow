@@ -319,7 +319,7 @@ class SSHChannelErrorContext(SSHContext):
         config = cast(SSHChannelErrorConfig, config)
         if config is None:
             return None
-        (hostname, port) = parse_hostname(config.hostname)
+        hostname, port = parse_hostname(config.hostname)
 
         def get_client_factory():
             return SSHChannelErrorClient(config.connector)
