@@ -39,7 +39,7 @@ dependencies = [
     "importlib-metadata==8.7.1",
     "Jinja2==3.1.6",
     "jsonschema==4.26.0",
-    "kubernetes_asyncio==33.3.0",
+    "kubernetes_asyncio==34.3.3",
     "psutil==7.2.1",
     "referencing==0.37.0",
     "rdflib==7.5.0",
