@@ -47,6 +47,7 @@ from streamflow.cwl.processor import (
     CWLCommandOutput,
     CWLCommandOutputProcessor,
     CWLObjectCommandOutputProcessor,
+    CWLOutputJSONCommandOutput,
 )
 from streamflow.cwl.step import build_token
 from streamflow.cwl.utils import is_literal_file
@@ -83,8 +84,7 @@ def _adjust_cwl_output(
                     )
                 elif not path_processor.isabs(path):
                     path = base_path / path
-                    value["path"] = path
-                    value["location"] = f"file://{path}"
+                    value |= {"path": path, "location": f"file://{path}"}
                 return value
             else:
                 return {
@@ -224,54 +224,6 @@ def _build_command_output_processor(
             return CWLCommandOutputProcessor(  # nosec
                 name=name, workflow=cast(CWLWorkflow, step.workflow), token_type="Any"
             )
-
-
-async def _check_cwl_output(job: Job, step: Step, result: Any) -> Any:
-    connector = step.workflow.context.scheduler.get_connector(job.name)
-    locations = step.workflow.context.scheduler.get_locations(job.name)
-    path_processor = get_path_processor(connector)
-    for location in locations:
-        cwl_output_path = StreamFlowPath(
-            job.output_directory,
-            "cwl.output.json",
-            context=step.workflow.context,
-            location=location,
-        )
-        if await cwl_output_path.exists():
-            # If file exists, use its contents as token value
-            result = json.loads(await cwl_output_path.read_text())
-            # Update step output ports at runtime if needed
-            if isinstance(result, MutableMapping):
-                for out_name, out in result.items():
-                    out = _adjust_cwl_output(
-                        base_path=StreamFlowPath(
-                            job.output_directory,
-                            context=step.workflow.context,
-                            location=location,
-                        ),
-                        job_name=job.name,
-                        path_processor=path_processor,
-                        value=out,
-                    )
-                    if out_name not in step.output_ports:
-                        cast(ExecuteStep, step).add_output_port(
-                            name=out_name,
-                            port=step.workflow.create_port(),
-                            output_processor=_build_command_output_processor(
-                                name=out_name, step=step, value=out
-                            ),
-                        )
-                        # Update workflow outputs if needed
-                        if out_name not in step.workflow.output_ports:
-                            step.workflow.output_ports[out_name] = step.output_ports[
-                                out_name
-                            ]
-                for out_name in [p for p in step.output_ports if p not in result]:
-                    result[out_name] = None
-                    if out_name in step.workflow.output_ports:
-                        del step.workflow.output_ports[out_name]
-            break
-    return result
 
 
 def _escape_value(value: Any) -> Any:
@@ -979,8 +931,47 @@ class CWLCommand(TokenizedCommand):
                 "end_time": end_time,
             },
         )
-        # Check if file `cwl.output.json` exists either locally on at least one location
-        result = await _check_cwl_output(job, self.step, result)
+        # Check if file `cwl.output.json` exists on any location
+        path_processor = get_path_processor(connector)
+        for location in locations:
+            cwl_output_path = StreamFlowPath(
+                job.output_directory,
+                "cwl.output.json",
+                context=self.step.workflow.context,
+                location=location,
+            )
+            if await cwl_output_path.exists():
+                # If file exists, use its contents as token value
+                result = json.loads(await cwl_output_path.read_text())
+                # Update step output ports at runtime if needed
+                if isinstance(result, MutableMapping):
+                    result = {
+                        k: _adjust_cwl_output(
+                            base_path=StreamFlowPath(
+                                job.output_directory,
+                                context=self.step.workflow.context,
+                                location=location,
+                            ),
+                            job_name=job.name,
+                            path_processor=path_processor,
+                            value=v,
+                        )
+                        for k, v in result.items()
+                    }
+                else:
+                    raise WorkflowExecutionException(
+                        f"Invalid `cwl.output.json` file produced by step `{self.step.name}`: "
+                        "it should contain a JSON object"
+                    )
+                # Put a `None` token if an output value is not present
+                for out_name in self.step.output_ports:
+                    if out_name not in result:
+                        result[out_name] = None
+                # Propagate a CWLOutputJSONCommandOutput
+                return CWLOutputJSONCommandOutput(
+                    value=result, status=status, exit_code=exit_code
+                )
+        # Otherwise, propagate a CWLCommandOutput object
         return CWLCommandOutput(value=result, status=status, exit_code=exit_code)
 
 
