@@ -50,7 +50,9 @@ from streamflow.core.workflow import (
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
-from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
+from streamflow.persistence.utils import load_dependee_tokens
+from streamflow.workflow.port import ConnectorPort, FilterTokenPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
@@ -80,7 +82,7 @@ def _is_parent_tag(tag: str, parent: str) -> bool:
     return tag.split(".")[: len(parent_idx)] == parent_idx
 
 
-def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
+def _reduce_statuses(statuses: MutableSequence[Status], step: str) -> Status:
     num_skipped = 0
     for status in statuses:
         match status:
@@ -90,9 +92,13 @@ def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
                 return Status.CANCELLED
             case Status.SKIPPED:
                 num_skipped += 1
+            case Status.RECOVERED:
+                return Status.RECOVERED
     if num_skipped == len(statuses):
         return Status.SKIPPED
     else:
+        if num_skipped > 0:
+            logger.info(f"Step {step} has {num_skipped}/{len(statuses)} skipped votes")
         return Status.COMPLETED
 
 
@@ -120,7 +126,7 @@ class BaseStep(Step, ABC):
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs.values()):
                 logger.debug(
-                    f"Step {self.name} received termination token with Status {_reduce_statuses([t.value for t in inputs.values()]).name}"
+                    f"Step {self.name} received termination token with Status {_reduce_statuses([t.value for t in inputs.values()], self.name).name}"
                 )
             else:
                 logger.debug(
@@ -149,6 +155,11 @@ class BaseStep(Step, ABC):
                 inputs=input_token_ids, token=token.persistent_id
             )
         return token
+
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
+        pass
 
     async def terminate(self, status: Status) -> None:
         if not self.terminated:
@@ -264,6 +275,9 @@ class Combinator(ABC):
         )
         return combinator
 
+    async def resume(self, on_tags: MutableMapping[str, MutableSequence[str]]) -> None:
+        return
+
     async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
         return {
             "type": utils.get_class_fullname(type(self)),
@@ -358,7 +372,7 @@ class CombinatorStep(BaseStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
-                        status = _reduce_statuses([status, token.value])
+                        status = _reduce_statuses([status, token.value], self.name)
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 f"Step {self.name} received termination token for port {task_name}"
@@ -421,7 +435,9 @@ class ConditionalStep(BaseStep):
                     inputs = await self._get_inputs(self.get_input_ports())
                     # Check for termination
                     if check_termination(inputs.values()):
-                        status = _reduce_statuses([t.value for t in inputs.values()])
+                        status = _reduce_statuses(
+                            [t.value for t in inputs.values()], self.name
+                        )
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -540,7 +556,9 @@ class DeployStep(BaseStep):
                     inputs = await self._get_inputs(self.get_input_ports())
                     # Check for termination
                     if check_termination(inputs.values()):
-                        status = _reduce_statuses([t.value for t in inputs.values()])
+                        status = _reduce_statuses(
+                            [t.value for t in inputs.values()], self.name
+                        )
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -863,8 +881,17 @@ class ExecuteStep(BaseStep):
                         inputs = task.result()
                         # Check for termination
                         if check_termination(inputs.values()):
+                            # caso loop
+                            # statuses accumula gli statuses di tutte le iterazioni
+                            # quindi se una iterazione è completed
+                            # la finale iterazione che avrà valore skipped
+                            # non causa la propagazione di skipped
+                            # Perché uno step per essere skipped deve avere
+                            # tutti gli status skipped
                             statuses.append(
-                                _reduce_statuses([t.value for t in inputs.values()])
+                                _reduce_statuses(
+                                    [t.value for t in inputs.values()], self.name
+                                )
                             )
                             if statuses[-1] in (Status.CANCELLED, Status.FAILED):
                                 for t in unfinished:
@@ -903,7 +930,7 @@ class ExecuteStep(BaseStep):
             )
         )
         # Terminate step
-        await self.terminate(self._get_status(_reduce_statuses(statuses)))
+        await self.terminate(self._get_status(_reduce_statuses(statuses, self.name)))
 
 
 class GatherStep(BaseStep):
@@ -1015,7 +1042,7 @@ class GatherStep(BaseStep):
                 task_name = task.get_name()
                 token = task.result()
                 if check_termination(token):
-                    status = _reduce_statuses([status, token.value])
+                    status = _reduce_statuses([status, token.value], self.name)
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(
                             f"Step {self.name} received termination token on port {task_name}"
@@ -1194,7 +1221,7 @@ class LoopCombinatorStep(CombinatorStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
-                        status = _reduce_statuses([status, token.value])
+                        status = _reduce_statuses([status, token.value], self.name)
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
                                 f"Step {self.name} received termination token for port {task_name}"
@@ -1232,10 +1259,10 @@ class LoopCombinatorStep(CombinatorStep):
                             ins = [
                                 id_ for t in schema.values() for id_ in t["input_ids"]
                             ]
-                            for port_name, token in schema.items():
+                            for port_name, new_token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=token["token"],
+                                        token=new_token["token"],
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )
@@ -1255,6 +1282,69 @@ class LoopCombinatorStep(CombinatorStep):
                         )
         # Terminate step
         await self.terminate(self._get_status(status))
+
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
+        # The `on_tokens` parameter contains the output tokens, and the iteration begins from the
+        # token with the smallest tag. First, we need to determine whether a tag is a starting tag
+        # or an intermediate tag. For example, if the input tag is `0.1`, the next tag must be
+        # either `0.2` or `0.1.0`. To make this distinction, we use the port history by retrieving
+        # all the tokens from the previous execution.
+
+        # Input port tags: ['0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0']
+        # Input method tags: ['0.1', '0.2']
+        # Input combinator tags: [['0.0']]
+
+        # Input port tags: ['0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0']
+        # Input method tags: ['0.1']
+        # Input combinator tags: [['0.0']]
+
+        # Input port tags: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
+        # Input method tags: ['0.0']
+        # Input combinator tags: [['0']]
+
+        from_tags = {}
+        loading_context = DefaultDatabaseLoadingContext()
+        for name, tokens in on_tokens.items():
+            if tokens:
+                tags = set()
+                token = min(
+                    tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
+                )
+                tokens = await load_dependee_tokens(
+                    persistent_id=token.persistent_id,
+                    context=self.workflow.context,
+                    loading_context=loading_context,
+                )
+                prev_tags = {t.tag for t in tokens}
+                if len(prev_tags) == 0:
+                    raise WorkflowDefinitionException(
+                        "Output token must have previous tokens."
+                    )
+                prev_iter = iter(prev_tags)
+                fst = next(prev_iter)
+                if any(len(fst.split(".")) != len(t.split(".")) for t in prev_iter):
+                    raise WorkflowDefinitionException(
+                        "Input of a LoopCombinatorStep must have the same tag depth level"
+                    )
+                # If tags are different, it means that it is necessary to restart from the first iteration
+                if len(fst.split(".")) != len(token.tag.split(".")):
+                    tags.add(token.tag)
+                else:
+                    tags |= prev_tags
+                from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
+        input_port_tags = [
+            t.tag for p in self.get_input_ports().values() for t in p.token_list
+        ]
+        input_method_tags = [t.tag for ts in on_tokens.values() for t in ts]
+        input_combinator_tags = list(from_tags.values())
+        logger.info(
+            f"TAGS\nInput port tags: {input_port_tags}\n"
+            f"Input method tags: {input_method_tags}\n"
+            f"Input combinator tags: {input_combinator_tags}\n"
+        )
+        await self.combinator.resume(from_tags)
 
 
 class LoopOutputStep(BaseStep, ABC):
@@ -1301,7 +1391,7 @@ class LoopOutputStep(BaseStep, ABC):
             prefix = ".".join(token.tag.split(".")[:-1])
             # If a TerminationToken is received, terminate the step
             if check_termination(token):
-                status = _reduce_statuses([status, token.value])
+                status = _reduce_statuses([status, token.value], self.name)
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(f"Step {self.name} received termination token")
                 # If no iterations have been performed, just terminate
@@ -1587,7 +1677,9 @@ class ScheduleStep(BaseStep):
                     inputs = await self._get_inputs(input_ports)
                     # Check for termination
                     if check_termination(inputs.values()):
-                        status = _reduce_statuses([t.value for t in inputs.values()])
+                        status = _reduce_statuses(
+                            [t.value for t in inputs.values()], self.name
+                        )
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
@@ -1711,6 +1803,19 @@ class ScatterStep(BaseStep):
     def get_size_port(self) -> Port:
         return self.get_output_port("__size__")
 
+    async def resume(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
+        port = self.get_output_port()
+        valid_tags = [token.tag for token in on_tokens[port.name]]
+        self.workflow.ports[port.name] = FilterTokenPort(
+            self.workflow,
+            port.name,
+            filter_function=lambda t: t.tag in valid_tags,
+        )
+        for token in port.token_list:
+            self.workflow.ports[port.name].put(token)
+
     async def run(self) -> None:
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
@@ -1802,7 +1907,7 @@ class TransferStep(BaseStep, ABC):
                     # Check for termination
                     if check_termination(inputs.values()) or job is None:
                         status = _reduce_statuses(
-                            [status, *(t.value for t in inputs.values())]
+                            [status, *(t.value for t in inputs.values())], self.name
                         )
                         break
                     # Group inputs by tag
@@ -1851,7 +1956,9 @@ class Transformer(BaseStep, ABC):
                     inputs = await self._get_inputs(input_ports)
                     # Check for termination
                     if check_termination(inputs.values()):
-                        status = _reduce_statuses([t.value for t in inputs.values()])
+                        status = _reduce_statuses(
+                            [t.value for t in inputs.values()], self.name
+                        )
                         break
                     # Group inputs by tag
                     _group_by_tag(inputs, inputs_map)
