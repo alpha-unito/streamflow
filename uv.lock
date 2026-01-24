@@ -2916,11 +2916,14 @@ sdist = { url = "https://files.pythonhosted.org/packages/3c/03/15c1d632e6671ae07
 
 [[package]]
 name = "sphinx-llms-txt"
-version = "0.3.1"
+version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/77/b2/ce628672ecf6a32191ccc1856087c261adb785042eb6c57184702f189c9f/sphinx_llms_txt-0.3.1.tar.gz", hash = "sha256:4dee29e4a1ef548edb709453c36668a9c2baf7fe29f2fe530d39136eb3da4cdd", size = 19438, upload-time = "2025-07-31T23:20:56.525Z" }
+dependencies = [
+    { name = "sphinx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d3/dd/6d7fa7d6f51ee20959f1734cdbd62e99880dcd87576ce554d4bb8aaabdd7/sphinx_llms_txt-0.7.1.tar.gz", hash = "sha256:b5cefec19d3fd56670aa4a28917d17d32b22c61a9feadbab8564ad11e932f5c0", size = 32464, upload-time = "2025-12-16T22:31:26.379Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1f/90/d1c867fcefe776b834e9e23e5458a4e8907fd42aade50b9f2380b5ae465b/sphinx_llms_txt-0.3.1-py3-none-any.whl", hash = "sha256:530ad2262fc6b4027c5452de114dbad25241049ec0f5cdfe3871e3c974576893", size = 14468, upload-time = "2025-07-31T23:20:55.275Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/17/a751012a0910e3c3afa41a5d40bdf00132466d072d25891ae7ec1f70dafd/sphinx_llms_txt-0.7.1-py3-none-any.whl", hash = "sha256:8f1cfcfe5897f5be118792f33f73eeb04cbbf66fc60c4c15982ec59252522263", size = 22545, upload-time = "2025-12-16T22:31:25.075Z" },
 ]
 
 [[package]]
@@ -3136,13 +3139,13 @@ dev = [
     { name = "pyupgrade", specifier = "==3.21.2" },
     { name = "sphinx", specifier = "==8.1.3" },
     { name = "sphinx-jsonschema", specifier = "==1.19.2" },
-    { name = "sphinx-llms-txt", specifier = "==0.3.1" },
+    { name = "sphinx-llms-txt", specifier = "==0.7.1" },
     { name = "sphinx-rtd-theme", specifier = "==3.1.0" },
 ]
 docs = [
     { name = "sphinx", specifier = "==8.1.3" },
     { name = "sphinx-jsonschema", specifier = "==1.19.2" },
-    { name = "sphinx-llms-txt", specifier = "==0.3.1" },
+    { name = "sphinx-llms-txt", specifier = "==0.7.1" },
     { name = "sphinx-rtd-theme", specifier = "==3.1.0" },
 ]
 lint = [
