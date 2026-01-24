@@ -22,12 +22,13 @@ async def create_graph_mapper(
     context: StreamFlowContext, provenance: ProvenanceGraph
 ) -> GraphMapper:
     mapper = GraphMapper(context)
-    queue = deque(provenance.dag_tokens.prev(DirectGraph.LEAF))
+    queue = deque(provenance.dag_tokens.get_sinks())
     visited = set()
     while queue:
         token_id = queue.popleft()
         visited.add(token_id)
-        for prev_token_id in provenance.dag_tokens.prev(token_id):
+        mapper.add(provenance.info_tokens.get(token_id, None), None)
+        for prev_token_id in provenance.dag_tokens.predecessors(token_id):
             if prev_token_id not in visited and prev_token_id not in queue:
                 queue.append(prev_token_id)
             mapper.add(
@@ -37,101 +38,155 @@ async def create_graph_mapper(
     return mapper
 
 
-class DirectGraph:
-    ROOT = "root"
-    LEAF = "leaf"
+class DirectedGraph:
+    __slots__ = ("_successors", "_predecessors", "name")
 
-    def __init__(self, name: str):
-        self.graph: MutableMapping[Any, MutableSet[Any]] = {}
+    def __init__(self, name: str) -> None:
         self.name: str = name
+        self._successors: MutableMapping[Any, MutableSet[Any]] = {}
+        self._predecessors: MutableMapping[Any, MutableSet[Any]] = {}
 
-    def add(self, src: Any | None, dst: Any | None) -> None:
-        src = src or DirectGraph.ROOT
-        dst = dst or DirectGraph.LEAF
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"{self.name} Graph: Added {src} -> {dst}")
-        self.graph.setdefault(src, set()).add(dst)
+    def _add_node(self, node: Any) -> None:
+        if node not in self._successors.keys():
+            self._successors[node] = set()
+            self._predecessors[node] = set()
 
-    def empty(self) -> bool:
-        return False if self.graph else True
+    def add(self, u: Any | None, v: Any | None) -> None:
+        if u is not None:
+            self._add_node(u)
+        if v is not None:
+            self._add_node(v)
+        if u is not None and v is not None:
+            self._successors[u].add(v)
+            self._predecessors[v].add(u)
 
-    def items(self):
-        return self.graph.items()
+    def get_nodes(self) -> MutableSet[Any]:
+        return set(self._successors.keys())
 
-    def keys(self):
-        return self.graph.keys()
+    def in_degree(self) -> MutableMapping[Any, int]:
+        return {n: len(nodes) for n, nodes in self._predecessors.items()}
 
-    def prev(self, vertex: Any) -> MutableSet[Any]:
-        """Return the previous nodes of the vertex."""
-        return {v for v, next_vs in self.graph.items() if vertex in next_vs}
+    def out_degree(self) -> MutableMapping[Any, int]:
+        return {n: len(nodes) for n, nodes in self._successors.items()}
 
-    def remove(self, vertex: Any) -> MutableSequence[Any]:
-        self.graph.pop(vertex, None)
-        removed = [vertex]
-        # Delete nodes which are not connected to the leaves nodes
-        dead_end_nodes = set()
-        for node, values in self.graph.items():
-            if vertex in values:
-                values.remove(vertex)
-            if len(values) == 0:
-                dead_end_nodes.add(node)
-        for node in dead_end_nodes:
-            removed.extend(self.remove(node))
+    def predecessors(self, node: Any) -> MutableSet[Any]:
+        return set(self._predecessors[node])
 
-        # Assign the root node to vertices without parent
-        orphan_nodes = set()
-        for node in self.keys():
-            if node != DirectGraph.ROOT and not self.prev(node):
-                orphan_nodes.add(node)
-        for node in orphan_nodes:
-            self.add(None, node)
-        return removed
+    def remove_nodes(
+        self, nodes: MutableSequence[Any], prune_dead_end: bool = True
+    ) -> MutableSequence[Any]:
+        """
+        Remove a node from the graph.
 
-    def replace(self, old_vertex: Any, new_vertex: Any) -> None:
-        for values in self.graph.values():
-            if old_vertex in values:
-                values.remove(old_vertex)
-                values.add(new_vertex)
-        if old_vertex in self.graph.keys():
-            self.graph[new_vertex] = self.graph.pop(old_vertex)
+        When a node is removed, any parent nodes that are left with
+        no other children are considered dead-end branches.
+        If prune_dead_end is enabled, these nodes are deleted from
+        the current node back to the source of the branch.
+        """
+        removed_nodes = []
+        stack = list(nodes)
+        while stack:
+            if (current := stack.pop()) not in self._successors.keys():
+                continue
+            removed_nodes.append(current)
+            for succ in self._successors[current]:
+                self._predecessors[succ].discard(current)
+            for pred in self._predecessors[current]:
+                self._successors[pred].discard(current)
+                # If a parent now has no successors, it is a dead-end
+                if prune_dead_end and not (self._successors[pred].difference(stack)):
+                    stack.append(pred)
+            del self._successors[current]
+            del self._predecessors[current]
+        return removed_nodes
 
-    def succ(self, vertex: Any) -> MutableSet[Any]:
-        """Return the next nodes of the vertex. A new instance of the list is created"""
-        return {t for t in self.graph.get(vertex, [])}
+    def remove_node(
+        self, node: Any, prune_dead_end: bool = True
+    ) -> MutableSequence[Any]:
+        return self.remove_nodes([node], prune_dead_end=prune_dead_end)
 
-    def values(self):
-        return self.graph.values()
+    def replace(self, old_node: Any, new_node: Any) -> None:
+        """
+        Replace an existing node with a new node, preserving all edges.
 
-    def __getitem__(self, name):
-        return self.graph[name]
+        If old_node does not exist, the operation is ignored.
+        If new_node already exists, a ValueError is raised to prevent
+        unintentional merging of nodes.
+        """
+        if old_node not in self._successors.keys():
+            return
+        if new_node in self._successors.keys():
+            raise ValueError(
+                f"Cannot replace: node '{new_node}' already exists in the graph."
+            )
+        self._add_node(new_node)
+        for succ in self._successors[old_node]:
+            self._successors[new_node].add(succ)
+            self._predecessors[succ].remove(old_node)
+            self._predecessors[succ].add(new_node)
+        for pred in self._predecessors[old_node]:
+            self._predecessors[new_node].add(pred)
+            self._successors[pred].remove(old_node)
+            self._successors[pred].add(new_node)
+        del self._successors[old_node]
+        del self._predecessors[old_node]
 
-    def __iter__(self):
-        return iter(self.graph)
+    def successors(self, node: Any) -> MutableSet[Any]:
+        return set(self._successors[node])
 
     def __str__(self) -> str:
-        # return f"{json.dumps({k : list(v) for k, v in self.graph.items()}, indent=2)}"
         return (
             "{\n"
             + "\n".join(
                 [
-                    f"{k} : {[str(v) for v in values]}"
-                    for k, values in self.graph.items()
+                    f"{k} : {[v for v in values]},"
+                    for k, values in self._successors.items()
                 ]
             )
             + "\n}\n"
         )
 
 
+class DirectedAcyclicGraph(DirectedGraph):
+
+    def get_sources(self) -> MutableSet[Any]:
+        return {n for n, nodes in self._predecessors.items() if len(nodes) == 0}
+
+    def get_sinks(self) -> MutableSet[Any]:
+        return {n for n, nodes in self._successors.items() if len(nodes) == 0}
+
+    def promote_to_source(self, node: Any) -> MutableSequence[Any]:
+        """
+        Move a node to be a source node.
+
+        This implies that all the edges with its previous nodes are deleted.
+        All nodes on the path from the sources to the nodes that have no other
+        successors are deleted.
+
+        Returns:
+            List of all deleted vertices.
+        """
+        if node not in self._successors.keys():
+            return []
+        to_delete = []
+        for pred in list(self._predecessors[node]):
+            self._successors[pred].discard(node)
+            self._predecessors[node].discard(pred)
+            # If the parent now has no successors, it must be deleted
+            if not self._successors[pred]:
+                to_delete.append(pred)
+        return self.remove_nodes(to_delete)
+
+
 class GraphMapper:
     def __init__(self, context: StreamFlowContext):
-        self.dcg_port: DirectGraph = DirectGraph("Dependencies")
-        self.dag_tokens: DirectGraph = DirectGraph("Provenance")
+        self.dcg_port: DirectedGraph = DirectedGraph("Dependencies")
+        self.dag_tokens: DirectedAcyclicGraph = DirectedAcyclicGraph("Provenance")
         # port name : port ids
         self.port_name_ids: MutableMapping[str, MutableSet[int]] = {}
         # port name : token ids
         self.port_tokens: MutableMapping[str, MutableSet[int]] = {}
         self.token_available: MutableMapping[int, bool] = {}
-        # token id : token instance
         self.token_instances: MutableMapping[int, Token] = {}
         self.context: StreamFlowContext = context
 
@@ -143,14 +198,13 @@ class GraphMapper:
                 return equal_token_id
             elif is_available:
                 self.replace_token(port_name, token, is_available)
-                self.remove_token(token.persistent_id, preserve_token=True)
+                self.move_token_to_root(token.persistent_id)
                 return token.persistent_id
             else:
                 return equal_token_id
         else:
             # Add port and token relation
-            if port_name not in (DirectGraph.ROOT, DirectGraph.LEAF):
-                self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
+            self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
             self.token_instances[token.persistent_id] = token
             self.token_available[token.persistent_id] = is_available
             return token.persistent_id
@@ -208,11 +262,7 @@ class GraphMapper:
 
     async def get_output_tokens(self, job_token_id: int) -> Iterable[int]:
         execute_step_out_token_ids = set()
-        for token_id in [
-            t
-            for t in self.dag_tokens.succ(job_token_id)
-            if t not in (DirectGraph.ROOT, DirectGraph.LEAF)
-        ]:
+        for token_id in self.dag_tokens.successors(job_token_id):
             port_row = await self.context.database.get_port_from_token(token_id)
             for step_id_row in await self.context.database.get_input_steps(
                 port_row["id"]
@@ -224,15 +274,13 @@ class GraphMapper:
 
     async def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
         port_names = set()
-        for port_name in self.dcg_port.succ(
+        for port_name in self.dcg_port.successors(
             next(
                 port
                 for port, token_ids in self.port_tokens.items()
                 if job_token.persistent_id in token_ids
             )
         ):
-            if port_name in (DirectGraph.ROOT, DirectGraph.LEAF):
-                continue
             # Get newest port
             port_id = max(self.port_name_ids[port_name])
             step_rows = await self.context.database.get_input_steps(port_id)
@@ -296,43 +344,57 @@ class GraphMapper:
             step_ids.remove(step_id)
         return step_ids
 
-    def remove_port(self, port_name: str) -> None:
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f"Remove port {port_name}")
+    def remove_port(self, port_name: str) -> MutableSequence[str]:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Removing port {port_name}")
         orphan_tokens = set()
-        for next_port_name in self.dcg_port.remove(port_name):
+        removed_ports = self.dcg_port.remove_node(port_name)
+        for next_port_name in removed_ports:
+            if logger.isEnabledFor(logging.DEBUG) and next_port_name != port_name:
+                logger.debug(
+                    f"Removed port {next_port_name} by deleting port {port_name}"
+                )
             for token_id in self.port_tokens.pop(next_port_name, []):
                 orphan_tokens.add(token_id)
             self.port_name_ids.pop(next_port_name, None)
         for token_id in orphan_tokens:
             self.remove_token(token_id)
+        return removed_ports
 
-    def remove_token(self, token_id: int, preserve_token: bool = True):
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f"Remove token id {token_id}")
-        if token_id == DirectGraph.ROOT:
-            return
-        # Remove previous links
-        token_leaves = set()
-        for prev_token_id in self.dag_tokens.prev(token_id):
-            self.dag_tokens[prev_token_id].remove(token_id)
-            if len(self.dag_tokens[prev_token_id]) == 0 or (
-                isinstance(self.token_instances.get(prev_token_id, None), JobToken)
-            ):
-                if prev_token_id == DirectGraph.ROOT:
-                    raise FailureHandlingException(
-                        "Impossible execute a workflow without a ROOT"
-                    )
-                token_leaves.add(prev_token_id)
-        # Delete end-road branches
-        for leaf_id in token_leaves:
-            self.remove_token(leaf_id)
-        # Delete token (if needed)
-        if not preserve_token:
+    def move_token_to_root(self, token_id: int) -> None:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Moving token {token_id} to root")
+        empty_ports = set()
+        for removed_token_id in self.dag_tokens.promote_to_source(token_id):
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Removed token {removed_token_id} caused by moving {token_id} to root"
+                )
+            self.token_available.pop(removed_token_id, None)
+            self.token_instances.pop(removed_token_id, None)
+            # Remove ports
+            for port_name, token_list in self.port_tokens.items():
+                if removed_token_id in token_list:
+                    self.port_tokens[port_name].remove(removed_token_id)
+                if len(self.port_tokens[port_name]) == 0:
+                    empty_ports.add(port_name)
+        removed_ports = []
+        for port_name in empty_ports:
+            if port_name not in removed_ports:
+                removed_ports.extend(self.remove_port(port_name))
+
+    def remove_token(self, token_id: int) -> None:
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Removing token {token_id}")
+        removed = {token_id, *self.dag_tokens.remove_node(token_id)}
+        for removed_token_id in removed:
+            if logger.isEnabledFor(logging.DEBUG) and removed_token_id != token_id:
+                logger.debug(
+                    f"Removed token with id {removed_token_id} by deleting token with id {token_id}"
+                )
             self.token_available.pop(token_id, None)
             self.token_instances.pop(token_id, None)
-            self.dag_tokens.remove(token_id)
-        if not preserve_token:
+            # Remove ports
             empty_ports = set()
             for port_name, token_list in self.port_tokens.items():
                 if token_id in token_list:
@@ -353,13 +415,13 @@ class GraphMapper:
                     f"Availability mismatch for token {old_token_id}. "
                     f"Expected: {self.token_available[old_token_id]}, Got: {is_available}."
                 )
-            elif logger.isEnabledFor(logging.INFO):
-                logger.info(
+            elif logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
                     f"Token {old_token_id} is already in desired state. Skipping replacement."
                 )
             return
-        elif logger.isEnabledFor(logging.INFO):
-            logger.info(f"Replacing {old_token_id} with {token.persistent_id}")
+        elif logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Replacing {old_token_id} with {token.persistent_id}")
         # Replace
         self.dag_tokens.replace(old_token_id, token.persistent_id)
         # Remove old token
@@ -370,14 +432,12 @@ class GraphMapper:
         self.port_tokens.setdefault(port_name, set()).add(token.persistent_id)
         self.token_instances[token.persistent_id] = token
         self.token_available[token.persistent_id] = is_available
-        # Remove previous dependencies
-        self.remove_token(token.persistent_id, preserve_token=True)
 
 
 class ProvenanceGraph:
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
-        self.dag_tokens: DirectGraph = DirectGraph("Provenance")
+        self.dag_tokens: DirectedAcyclicGraph = DirectedAcyclicGraph("Provenance")
         self.info_tokens: MutableMapping[int, ProvenanceToken] = {}
 
     def add(self, src_token: Token | None, dst_token: Token | None) -> None:
@@ -386,7 +446,7 @@ class ProvenanceGraph:
             dst_token.persistent_id if dst_token is not None else dst_token,
         )
 
-    async def build_graph(self, inputs: Iterable[Token]):
+    async def build_graph(self, inputs: Iterable[Token]) -> None:
         """
         The provenance graph represents the execution and is always a DAG.
         To traverse the graph, a breadth-first search is performed
