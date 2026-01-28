@@ -14,7 +14,7 @@ import inspect
 
 __all__ = ["cached", "cachedmethod"]
 
-from contextlib import AbstractContextManager
+from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 import cachetools
@@ -22,9 +22,9 @@ import cachetools
 
 # noinspection PyUnresolvedReferences
 def cached(
-    cache: cachetools.Cache,
+    cache: cachetools.Cache | None,
     key=cachetools.keys.hashkey,
-    lock: AbstractContextManager[Any, bool | None] | None = None,
+    lock: AbstractAsyncContextManager[Any, bool | None] | None = None,
 ):
     """
     Decorator to wrap a function or a coroutine with a memoizing callable
@@ -96,7 +96,11 @@ def cached(
 
 
 # noinspection PyUnresolvedReferences
-def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
+def cachedmethod(
+    cache: cachetools.Cache | None,
+    key=cachetools.keys.hashkey,
+    lock: AbstractAsyncContextManager[Any, bool | None] | None = None,
+):
     """Decorator to wrap a class or instance method with a memoizing
     callable that saves results in a cache.
     When ``lock`` is provided for a standard function, it's expected to
