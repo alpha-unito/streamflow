@@ -2,7 +2,15 @@
 
 pip() {
   if command -v uv > /dev/null; then
-    uv pip "$@"
+    local args=()
+    local command_name="$1"
+    for arg in "$@"; do
+      if [[ "$command_name" == "uninstall" ]] && [[ "$arg" == "-y" || "$arg" == "--yes" ]]; then
+        continue
+      fi
+      args+=("$arg")
+    done
+    uv pip "${args[@]}"
   else
     python3 -m pip "$@"
   fi
