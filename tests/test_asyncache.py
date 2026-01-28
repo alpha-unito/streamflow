@@ -1,5 +1,7 @@
 import logging
-from typing import Any, AsyncContextManager
+from collections.abc import MutableMapping
+from contextlib import AbstractAsyncContextManager
+from typing import Any
 
 import cachetools
 import pytest
@@ -11,8 +13,8 @@ from tests.utils.utils import caplog_streamflow
 
 
 class AsyncCached:
-    def __init__(self, cache: Any) -> None:
-        self.cache: Any = cache
+    def __init__(self, cache: cachetools.Cache | MutableMapping | None) -> None:
+        self.cache: cachetools.Cache | MutableMapping | None = cache
         self.count: int = 0
 
     @cachedmethod(lambda self: self.cache)
@@ -33,9 +35,9 @@ class AsyncCountedLock:
         pass
 
 
-class AsyncLocked(AsyncContextManager):
-    def __init__(self, cache):
-        self.cache: Any = cache
+class AsyncLocked(AbstractAsyncContextManager):
+    def __init__(self, cache: cachetools.Cache | MutableMapping | None):
+        self.cache: cachetools.Cache | MutableMapping | None = cache
         self.count: int = 0
         self.lock_count: int = 0
 
@@ -242,6 +244,16 @@ class TestAsyncCached:
         assert await wrapper(1.0) == (2, 1.0)
         assert len(cache) == 2
         assert counter.count == 2
+
+    @pytest.mark.asyncio
+    async def test_async_no_cache(self):
+        """Test behavior when the cache provider returns None."""
+        counter = Counter()
+        wrapper = cached(None)(counter.async_func)
+
+        assert await wrapper(0) == (1, 0)
+        assert await wrapper(0) == (2, 0)
+        assert await wrapper(0) == (3, 0)
 
     async def test_decorator_lock(self):
         cache = cachetools.LRUCache(maxsize=2)
