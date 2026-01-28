@@ -599,7 +599,7 @@ class SSHConnector(BaseConnector):
         self, location: ExecutionLocation
     ) -> SSHContextFactory:
         if self.dataTransferConfig:
-            if location not in self.data_transfer_context_factories:
+            if location.name not in self.data_transfer_context_factories:
                 self.data_transfer_context_factories[location.name] = SSHContextFactory(
                     cls_context=self._cls_context,
                     streamflow_config_dir=self.config_dir,
@@ -611,7 +611,7 @@ class SSHConnector(BaseConnector):
                 )
             return self.data_transfer_context_factories[location.name]
         else:
-            if location not in self.ssh_context_factories:
+            if location.name not in self.ssh_context_factories:
                 self.ssh_context_factories[location.name] = SSHContextFactory(
                     cls_context=self._cls_context,
                     streamflow_config_dir=self.config_dir,
