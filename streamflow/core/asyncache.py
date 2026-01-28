@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+from streamflow.log_handler import logger
+
 """
 Helpers to use [cachetools](https://github.com/tkem/cachetools) with
 asyncio.
@@ -33,19 +37,21 @@ def cached(
 
     def decorator(func):
         if inspect.iscoroutinefunction(func):
-            if cache is None:
-
-                async def wrapper(*args, **kwargs):
-                    return await func(*args, **kwargs)
-
-            elif lock is None:
+            if lock is None:
 
                 async def wrapper(*args, **kwargs):
                     k = key(*args, **kwargs)
                     try:
                         return cache[k]
                     except KeyError:
-                        pass  # key not found
+                        # Cache miss
+                        if logger.isEnabledFor(logging.WARNING):
+                            for obj in (*args, *kwargs):
+                                if type(obj).__hash__ is object.__hash__:
+                                    logger.warning(
+                                        f"Caching {func.__name__}: "
+                                        f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
+                                    )
                     v = await func(*args, **kwargs)
                     try:
                         cache[k] = v
@@ -61,7 +67,14 @@ def cached(
                         async with lock:
                             return cache[k]
                     except KeyError:
-                        pass  # key not found
+                        # Cache miss
+                        if logger.isEnabledFor(logging.WARNING):
+                            for obj in (*args, *kwargs):
+                                if type(obj).__hash__ is object.__hash__:
+                                    logger.warning(
+                                        f"Caching {func.__name__}: "
+                                        f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
+                                    )
                     v = await func(*args, **kwargs)
                     # in case of a race, prefer the item already in the cache
                     try:
@@ -99,7 +112,14 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     try:
                         return c[k]
                     except KeyError:
-                        pass  # key not found
+                        # Cache miss
+                        if logger.isEnabledFor(logging.WARNING):
+                            for obj in (*args, *kwargs):
+                                if type(obj).__hash__ is object.__hash__:
+                                    logger.warning(
+                                        f"Caching {method.__name__} in class {type(self).__name__}: "
+                                        f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
+                                    )
                     v = await method(self, *args, **kwargs)
                     try:
                         c[k] = v
@@ -118,7 +138,14 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                         async with lock(self):
                             return c[k]
                     except KeyError:
-                        pass  # key not found
+                        # Cache miss
+                        if logger.isEnabledFor(logging.WARNING):
+                            for obj in (*args, *kwargs):
+                                if type(obj).__hash__ is object.__hash__:
+                                    logger.warning(
+                                        f"Caching {method.__name__} in class {type(self).__name__}: "
+                                        f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
+                                    )
                     v = await method(self, *args, **kwargs)
                     # in case of a race, prefer the item already in the cache
                     try:
