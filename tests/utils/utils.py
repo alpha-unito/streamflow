@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import inspect
 import logging
 import os
@@ -10,6 +11,7 @@ from types import TracebackType
 from typing import Any
 
 import pytest
+from pytest import LogCaptureFixture
 
 import streamflow.data
 import streamflow.deployment
@@ -357,3 +359,22 @@ class InjectPlugin(AbstractContextManager):
                 streamflow.deployment.filter.binding_filter_classes.pop("reverse")
             case _:
                 raise ValueError(f"Unknown plugin name: {self.plugin_name}")
+
+
+@contextlib.contextmanager
+def caplog_streamflow(caplog: LogCaptureFixture, level: int = logging.INFO):
+    """
+    Context manager to capture logs from the StreamFlow logger.
+
+    Since the StreamFlow logger disables propagation (propagate=False),
+    standard caplog cannot intercept its records via the root logger.
+    This context manager manually attaches the pytest capture handler to the
+    logger and removes it upon exit to ensure logs are captured.
+    """
+    _logger = logging.getLogger("streamflow")
+    _logger.addHandler(caplog.handler)
+    with caplog.at_level(level, logger="streamflow"):
+        try:
+            yield caplog
+        finally:
+            _logger.removeHandler(caplog.handler)

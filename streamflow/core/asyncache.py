@@ -37,7 +37,12 @@ def cached(
 
     def decorator(func):
         if inspect.iscoroutinefunction(func):
-            if lock is None:
+            if cache is None:
+
+                async def wrapper(*args, **kwargs):
+                    return await func(*args, **kwargs)
+
+            elif lock is None:
 
                 async def wrapper(*args, **kwargs):
                     k = key(*args, **kwargs)
@@ -46,7 +51,7 @@ def cached(
                     except KeyError:
                         # Cache miss
                         if logger.isEnabledFor(logging.WARNING):
-                            for obj in (*args, *kwargs):
+                            for obj in (*args, *kwargs.values()):
                                 if type(obj).__hash__ is object.__hash__:
                                     logger.warning(
                                         f"Caching {func.__name__}: "
@@ -69,7 +74,7 @@ def cached(
                     except KeyError:
                         # Cache miss
                         if logger.isEnabledFor(logging.WARNING):
-                            for obj in (*args, *kwargs):
+                            for obj in (*args, *kwargs.values()):
                                 if type(obj).__hash__ is object.__hash__:
                                     logger.warning(
                                         f"Caching {func.__name__}: "
@@ -114,7 +119,7 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     except KeyError:
                         # Cache miss
                         if logger.isEnabledFor(logging.WARNING):
-                            for obj in (*args, *kwargs):
+                            for obj in (*args, *kwargs.values()):
                                 if type(obj).__hash__ is object.__hash__:
                                     logger.warning(
                                         f"Caching {method.__name__} in class {type(self).__name__}: "
@@ -140,7 +145,7 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     except KeyError:
                         # Cache miss
                         if logger.isEnabledFor(logging.WARNING):
-                            for obj in (*args, *kwargs):
+                            for obj in (*args, *kwargs.values()):
                                 if type(obj).__hash__ is object.__hash__:
                                     logger.warning(
                                         f"Caching {method.__name__} in class {type(self).__name__}: "
