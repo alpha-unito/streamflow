@@ -65,6 +65,36 @@ class ExecutionLocation:
         else:
             return posixpath.join(self.deployment, self.name)
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, ExecutionLocation):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.deployment == other.deployment
+            and self.environment == other.environment
+            and self.hostname == other.hostname
+            and self.local == other.local
+            and self.mounts == other.mounts
+            and self.service == other.service
+            and self.stacked == other.stacked
+            and self.wraps == other.wraps
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.name,
+                self.deployment,
+                frozenset(self.environment.items()),
+                self.hostname,
+                self.local,
+                frozenset(self.mounts.items()),
+                self.service,
+                self.stacked,
+                self.wraps,
+            )
+        )
+
 
 class BindingFilter(SchemaEntity):
 
