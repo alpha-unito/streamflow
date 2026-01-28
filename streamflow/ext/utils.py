@@ -20,7 +20,9 @@ from streamflow.log_handler import logger
 PLUGIN_ENTRY_POINT = "unito.streamflow.plugin"
 
 
-def _filter_by_name(classes: MutableMapping[str, Any], name: str):
+def _filter_by_name(
+    classes: MutableMapping[str, Any], name: str
+) -> MutableMapping[str, Any]:
     filtered_classes = {}
     for class_ in classes:
         ext_objs = [ext for ext in classes[class_] if ext["name"] == name]
@@ -81,7 +83,7 @@ def _resolve_refs(
     resolver: Resolver,
     path: PurePosixPath,
     refs: MutableMapping[str, Any],
-):
+) -> None:
     if isinstance(contents, MutableMapping):
         for k, v in contents.items():
             _resolve_refs(v, resolver, path / k, refs)
@@ -122,7 +124,9 @@ def _get_type_repr(
         return None
 
 
-def _split_refs(refs: MutableMapping[str, Any], processed: MutableSequence[str]):
+def _split_refs(
+    refs: MutableMapping[str, Any], processed: MutableSequence[str]
+) -> MutableMapping[str, Any]:
     refs_descs = {}
     subrefs = {}
     for k, v in refs.items():

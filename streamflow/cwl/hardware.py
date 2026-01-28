@@ -5,6 +5,7 @@ import os
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, Any
 
+import cwl_utils.types
 from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
@@ -67,7 +68,7 @@ class CWLHardwareRequirement(HardwareRequirement):
         }
 
     def _process_requirement(
-        self, requirement: str | float, context: MutableMapping[str, Any]
+        self, requirement: str | float, context: cwl_utils.types.CWLParameterContext
     ) -> float:
         return math.ceil(
             eval_expression(
@@ -78,22 +79,22 @@ class CWLHardwareRequirement(HardwareRequirement):
             )
         )
 
-    def get_cores(self, context: MutableMapping[str, Any]) -> float:
+    def get_cores(self, context: cwl_utils.types.CWLParameterContext) -> float:
         return self._process_requirement(self.cores, context)
 
-    def get_memory(self, context: MutableMapping[str, Any]) -> float:
+    def get_memory(self, context: cwl_utils.types.CWLParameterContext) -> float:
         return self._process_requirement(self.memory, context)
 
-    def get_outdir_size(self, context: MutableMapping[str, Any]) -> float:
+    def get_outdir_size(self, context: cwl_utils.types.CWLParameterContext) -> float:
         return self._process_requirement(self.outdir, context)
 
-    def get_tmpdir_size(self, context: MutableMapping[str, Any]) -> float:
+    def get_tmpdir_size(self, context: cwl_utils.types.CWLParameterContext) -> float:
         return self._process_requirement(self.tmpdir, context)
 
     def eval(self, job: Job) -> Hardware:
-        context = {
-            "inputs": {name: get_token_value(t) for name, t in job.inputs.items()}
-        }
+        context = cwl_utils.types.CWLParameterContext(
+            inputs={name: get_token_value(t) for name, t in job.inputs.items()}
+        )
         return Hardware(
             cores=self.get_cores(context),
             memory=self.get_memory(context),

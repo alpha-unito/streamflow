@@ -72,7 +72,7 @@ class DefaultScheduler(Scheduler):
         connector: Connector,
         selected_locations: MutableSequence[AvailableLocation],
         target: Target,
-    ):
+    ) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             if len(selected_locations) == 1:
                 logger.debug(
@@ -170,7 +170,11 @@ class DefaultScheduler(Scheduler):
                         self.hardware_locations[loc.name] = (
                             self.hardware_locations[loc.name] - job_hardware
                         ) + storage_usage
-                if locations := [loc.wraps for loc in locations if loc.stacked]:
+                if locations := [
+                    loc.wraps
+                    for loc in locations
+                    if loc.stacked and loc.wraps is not None
+                ]:
                     conn = cast(ConnectorWrapper, conn).connector
                     for execution_loc in locations:
                         job_hardware = await utils.bind_mount_point(
@@ -188,7 +192,7 @@ class DefaultScheduler(Scheduler):
                             job_hardware,
                         )
 
-    def _get_binding_filter(self, config: FilterConfig):
+    def _get_binding_filter(self, config: FilterConfig) -> BindingFilter:
         if config.name not in self.binding_filter_map:
             self.binding_filter_map[config.name] = binding_filter_classes[config.type](
                 config.name, **config.config
@@ -228,7 +232,7 @@ class DefaultScheduler(Scheduler):
                     return []
             return selected_locations
 
-    def _get_policy(self, config: Config):
+    def _get_policy(self, config: Config) -> Policy:
         if config.name not in self.policy_map:
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
@@ -293,7 +297,7 @@ class DefaultScheduler(Scheduler):
         target: Target,
         job_context: JobContext,
         hardware_requirement: HardwareRequirement | None,
-    ):
+    ) -> None:
         deployment = target.deployment.name
         if deployment not in self.wait_queues:
             self.wait_queues[deployment] = asyncio.Condition()
@@ -531,7 +535,7 @@ class DefaultScheduler(Scheduler):
         hardware_requirement: HardwareRequirement | None,
     ) -> None:
         job_context = JobContext(job)
-        targets = list(binding_config.targets)
+        targets: MutableSequence[Target] = list(binding_config.targets)
         for f in (self._get_binding_filter(f) for f in binding_config.filters):
             targets = await f.get_targets(job, targets)
         wait_tasks = [

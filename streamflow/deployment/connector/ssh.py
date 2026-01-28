@@ -6,6 +6,7 @@ import os
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
+from types import TracebackType
 from typing import Any, AsyncContextManager
 
 import asyncssh
@@ -237,7 +238,12 @@ class SSHContextManager:
                                 await context.reset()
                     await asyncio.sleep(self._retry_delay)
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ):
         async with self._condition:
             if self._selected_context:
                 if self._proc:
@@ -308,7 +314,12 @@ class SSHStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
         self.ssh_context: SSHContextManager | None = None
         self.stream: StreamWrapper | None = None
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ):
         if self.stream:
             await self.stream.close()
         await self.ssh_context.__aexit__(exc_type, exc_val, exc_tb)
@@ -431,7 +442,7 @@ class SSHConnector(BaseConnector):
             dataTransferConnection
         )
         self.nodes: MutableMapping[str, SSHConfig] = {
-            n.hostname: n for n in [self._get_config(n) for n in nodes]
+            n.hostname: n for n in [self._get_config(n) for n in nodes] if n is not None
         }
         self.hardware: MutableMapping[str, Hardware] = {}
         self._cls_context: type[SSHContext] = SSHContext

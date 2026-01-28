@@ -1,5 +1,6 @@
 import hashlib
 import os
+from collections.abc import AsyncGenerator
 from tempfile import TemporaryDirectory
 
 import pytest
@@ -13,7 +14,7 @@ from tests.utils.data import get_data_path
 
 
 @pytest_asyncio.fixture(scope="session")
-async def context() -> StreamFlowContext:
+async def context() -> AsyncGenerator[StreamFlowContext]:
     _context = build_context(
         {
             "database": {

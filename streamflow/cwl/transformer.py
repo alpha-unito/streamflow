@@ -393,7 +393,7 @@ class ListToElementTransformer(OneToOneTransformer):
 
 
 class OnlyNonNullTransformer(OneToOneTransformer):
-    def _transform(self, name: str, token: Token):
+    def _transform(self, name: str, token: Token) -> Token:
         if isinstance(token, ListToken):
             ret = None
             for t in token.value:
@@ -478,8 +478,7 @@ class ValueFromTransformer(ManyToOneTransformer):
             new_inputs[output_name] = await self.processor.process(
                 new_inputs, new_inputs[output_name]
             )
-        context = utils.build_context(new_inputs)
-        context |= {"self": context["inputs"].get(output_name)}
+        context = utils.build_context(inputs=inputs, self=inputs.get(output_name))
         return {
             output_name: await build_token(
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
@@ -558,11 +557,11 @@ class LoopValueFromTransformer(ValueFromTransformer):
             "loop_input_port": self.loop_input_ports,
         }
 
-    def add_loop_input_port(self, name: str, port: Port):
+    def add_loop_input_port(self, name: str, port: Port) -> None:
         self.add_input_port(name + "-in", port)
         self.loop_input_ports.append(name)
 
-    def add_loop_source_port(self, name: str, port: Port):
+    def add_loop_source_port(self, name: str, port: Port) -> None:
         self.add_input_port(name + "-out", port)
         self.loop_source_port = name
 
@@ -577,16 +576,13 @@ class LoopValueFromTransformer(ValueFromTransformer):
             if self.loop_source_port
             else None
         )
-        context = cast(dict[str, Any], utils.build_context(loop_inputs)) | {
-            "self": get_token_value(self_token)
-        }
         return {
             self.get_output_name(): await build_token(
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 inputs=inputs,
                 token_value=utils.eval_expression(
                     expression=self.value_from,
-                    context=context,
+                    context=utils.build_context(inputs=loop_inputs, self=self_token),
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
                 ),

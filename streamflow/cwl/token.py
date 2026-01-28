@@ -9,7 +9,7 @@ from streamflow.data.remotepath import StreamFlowPath
 from streamflow.workflow.token import FileToken
 
 
-async def _get_file_token_weight(context: StreamFlowContext, value: Any):
+async def _get_file_token_weight(context: StreamFlowContext, value: Any) -> int:
     weight = 0
     if "size" in value:
         weight = value["size"]
@@ -20,10 +20,10 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any):
             )
             if data_locations:
                 data_location = next(iter(data_locations))
-                path = StreamFlowPath(
+                sf_path = StreamFlowPath(
                     data_location.path, context=context, location=data_location.location
                 )
-                weight = await (await path.resolve()).size()
+                weight = await (await sf_path.resolve()).size()
     if "secondaryFiles" in value:
         weight += sum(
             await asyncio.gather(
@@ -57,5 +57,5 @@ class CWLFileToken(FileToken):
                     paths.append(path)
         return paths
 
-    async def get_weight(self, context):
+    async def get_weight(self, context: StreamFlowContext) -> int:
         return await _get_file_token_weight(context, self.value)
