@@ -341,7 +341,7 @@ async def test_resume_loop_combinator_step(
             context=context,
         )
 
-    await new_combinator_step.resume(
+    await new_combinator_step.restore(
         on_tokens={
             name: [
                 token
@@ -402,7 +402,7 @@ async def test_resume_scatter_step(context: StreamFlowContext) -> None:
         scatter_step, workflow, context
     )
     output_port = scatter_step.get_output_port(input_name)
-    await new_scatter_step.resume(
+    await new_scatter_step.restore(
         on_tokens={
             output_port.name: [
                 t

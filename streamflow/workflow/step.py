@@ -152,10 +152,10 @@ class BaseStep(Step, ABC):
             )
         return token
 
-    async def resume(
+    async def restore(
         self, on_tokens: MutableMapping[str, MutableSequence[Token]]
     ) -> None:
-        pass
+        return
 
     async def terminate(self, status: Status) -> None:
         if not self.terminated:
@@ -271,11 +271,11 @@ class Combinator(ABC):
         )
         return combinator
 
-    async def resume(
+    async def restore(
         self, from_tags: MutableMapping[str, MutableSequence[str]]
     ) -> None:
         """
-        Resume the combinator's internal state based on the provided tags.
+        Restore the combinator's internal state based on the provided tags.
         """
         return
 
@@ -1190,7 +1190,7 @@ class LoopCombinatorStep(CombinatorStep):
         super().__init__(name, workflow, combinator)
         self.iteration_termination_checklist: MutableMapping[str, set[str]] = {}
 
-    async def resume(
+    async def restore(
         self, on_tokens: MutableMapping[str, MutableSequence[Token]]
     ) -> None:
         # The `on_tokens` parameter contains the output tokens, and the iteration begins from the
@@ -1206,7 +1206,7 @@ class LoopCombinatorStep(CombinatorStep):
                 token = min(
                     tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
                 )
-                prev_tags = {
+                parent_tags = {
                     t.tag
                     for t in await load_dependee_tokens(
                         persistent_id=token.persistent_id,
@@ -1214,23 +1214,24 @@ class LoopCombinatorStep(CombinatorStep):
                         loading_context=loading_context,
                     )
                 }
-                if len(prev_tags) == 0:
-                    raise WorkflowDefinitionException(
-                        "Output token must have previous tokens."
+                if len(parent_tags) == 0:
+                    raise FailureHandlingException(
+                        f"Failed to load parents for token tag {token.tag} in step {self.name}."
                     )
-                prev_iter = iter(prev_tags)
-                fst = next(prev_iter)
-                if any(len(fst.split(".")) != len(t.split(".")) for t in prev_iter):
-                    raise WorkflowDefinitionException(
-                        f"LoopCombinatorStep must have inputs with the same tag depth level. Got: {prev_tags}"
+                parent_tag = next(iter(parent_tags))
+                if any(
+                    len(parent_tag.split(".")) != len(t.split(".")) for t in parent_tags
+                ):
+                    raise FailureHandlingException(
+                        f"LoopCombinatorStep {self.name} must have inputs with the same tag depth level. Got: {parent_tags}"
                     )
                 # If tags are different, it means that it is necessary to restart from the first iteration
-                if len(fst.split(".")) != len(token.tag.split(".")):
+                if len(parent_tag.split(".")) != len(token.tag.split(".")):
                     tags.add(token.tag)
                 else:
-                    tags |= prev_tags
+                    tags |= parent_tags
                 from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
-        await self.combinator.resume(from_tags)
+        await self.combinator.restore(from_tags)
 
     async def run(self) -> None:
         # Set default status to SKIPPED
@@ -1774,7 +1775,7 @@ class ScatterStep(BaseStep):
     def get_size_port(self) -> Port:
         return self.get_output_port("__size__")
 
-    async def resume(
+    async def restore(
         self, on_tokens: MutableMapping[str, MutableSequence[Token]]
     ) -> None:
         port = self.get_output_port()

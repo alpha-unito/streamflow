@@ -176,7 +176,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         await _inject_tokens(mapper, new_workflow)
         # Resume steps
         for step in new_workflow.steps.values():
-            await step.resume(
+            await step.restore(
                 on_tokens={
                     port.name: [
                         mapper.token_instances[token_id]

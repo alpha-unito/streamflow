@@ -204,7 +204,7 @@ class DefaultTransformer(ManyToOneTransformer):
             "default_port": self.default_port.persistent_id
         }
 
-    async def resume(
+    async def restore(
         self, on_tokens: MutableMapping[str, MutableSequence[Token]]
     ) -> None:
         if len(self.default_port.token_list) == 0:
