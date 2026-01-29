@@ -2,17 +2,17 @@
 
 pip() {
   if command -v uv > /dev/null; then
-    local args=()
-    local command_name="$1"
-    for arg in "$@"; do
-      if [[ "$command_name" == "uninstall" ]] && [[ "$arg" == "-y" || "$arg" == "--yes" ]]; then
-        continue
-      fi
-      args+=("$arg")
-    done
-    uv pip "${args[@]}"
+    uv pip "$@"
   else
     python3 -m pip "$@"
+  fi
+}
+
+pip_uninstall() {
+  if command -v uv > /dev/null; then
+    uv pip uninstall "$@"
+  else
+    python3 -m pip uninstall -y "$@"
   fi
 }
 
@@ -73,7 +73,7 @@ pip install -U setuptools wheel "pip>=25.1"
 pip install "${SCRIPT_DIRECTORY}"
 pip install --group test "${SCRIPT_DIRECTORY}"
 if [[ "${VERSION}" = "v1.3" ]] ; then
-  pip uninstall -y cwl-utils
+  pip_uninstall cwl-utils
   pip install git+https://github.com/common-workflow-language/cwl-utils.git@refs/pull/370/head
 fi
 
