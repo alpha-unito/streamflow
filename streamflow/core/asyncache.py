@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+
+from streamflow.log_handler import logger
+
 """
 Helpers to use [cachetools](https://github.com/tkem/cachetools) with
 asyncio.
@@ -10,17 +14,19 @@ import inspect
 
 __all__ = ["cached", "cachedmethod"]
 
-from contextlib import AbstractContextManager
-from typing import Any
+from collections.abc import Callable, MutableMapping
+from contextlib import AbstractAsyncContextManager
+from typing import Any, TypeVar
 
-import cachetools
+from cachetools import keys as cache_keys
+
+_KT = TypeVar("_KT")
 
 
-# noinspection PyUnresolvedReferences
 def cached(
-    cache: cachetools.Cache,
-    key=cachetools.keys.hashkey,
-    lock: AbstractContextManager[Any, bool | None] | None = None,
+    cache: MutableMapping[_KT, Any] | None,
+    key: Callable[..., _KT] = cache_keys.hashkey,
+    lock: AbstractAsyncContextManager[Any] | None = None,
 ):
     """
     Decorator to wrap a function or a coroutine with a memoizing callable
@@ -45,7 +51,14 @@ def cached(
                     try:
                         return cache[k]
                     except KeyError:
-                        pass  # key not found
+                        # Cache miss
+                        if logger.isEnabledFor(logging.WARNING):
+                            for obj in (*args, *kwargs.values()):
+                                if type(obj).__hash__ is object.__hash__:
+                                    logger.warning(
+                                        f"Caching {func.__name__}: "
+                                        f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
+                                    )
                     v = await func(*args, **kwargs)
                     try:
                         cache[k] = v
@@ -61,7 +74,14 @@ def cached(
                         async with lock:
                             return cache[k]
                     except KeyError:
-                        pass  # key not found
+                        # Cache miss
+                        if logger.isEnabledFor(logging.WARNING):
+                            for obj in (*args, *kwargs.values()):
+                                if type(obj).__hash__ is object.__hash__:
+                                    logger.warning(
+                                        f"Caching {func.__name__}: "
+                                        f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
+                                    )
                     v = await func(*args, **kwargs)
                     # in case of a race, prefer the item already in the cache
                     try:
@@ -77,8 +97,11 @@ def cached(
     return decorator
 
 
-# noinspection PyUnresolvedReferences
-def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
+def cachedmethod(
+    cache: Callable[[Any], MutableMapping[_KT, Any] | None],
+    key: Callable[..., _KT] = cache_keys.hashkey,
+    lock: Callable[[Any], AbstractAsyncContextManager[Any]] | None = None,
+):
     """Decorator to wrap a class or instance method with a memoizing
     callable that saves results in a cache.
     When ``lock`` is provided for a standard function, it's expected to
@@ -99,7 +122,14 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                     try:
                         return c[k]
                     except KeyError:
-                        pass  # key not found
+                        # Cache miss
+                        if logger.isEnabledFor(logging.WARNING):
+                            for obj in (*args, *kwargs.values()):
+                                if type(obj).__hash__ is object.__hash__:
+                                    logger.warning(
+                                        f"Caching {method.__name__} in class {type(self).__name__}: "
+                                        f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
+                                    )
                     v = await method(self, *args, **kwargs)
                     try:
                         c[k] = v
@@ -118,7 +148,14 @@ def cachedmethod(cache, key=cachetools.keys.hashkey, lock=None):
                         async with lock(self):
                             return c[k]
                     except KeyError:
-                        pass  # key not found
+                        # Cache miss
+                        if logger.isEnabledFor(logging.WARNING):
+                            for obj in (*args, *kwargs.values()):
+                                if type(obj).__hash__ is object.__hash__:
+                                    logger.warning(
+                                        f"Caching {method.__name__} in class {type(self).__name__}: "
+                                        f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
+                                    )
                     v = await method(self, *args, **kwargs)
                     # in case of a race, prefer the item already in the cache
                     try:
