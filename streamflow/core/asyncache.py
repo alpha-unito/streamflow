@@ -14,18 +14,19 @@ import inspect
 
 __all__ = ["cached", "cachedmethod"]
 
-from collections.abc import Callable, Hashable, MutableMapping
+from collections.abc import Callable, MutableMapping
 from contextlib import AbstractAsyncContextManager
-from typing import Any
+from typing import Any, TypeVar
 
-import cachetools
+from cachetools import keys as cache_keys
+
+_KT = TypeVar("_KT")
 
 
-# noinspection PyUnresolvedReferences
 def cached(
-    cache: MutableMapping[Hashable, Any] | None,
-    key: Callable[..., int] = cachetools.keys.hashkey,
-    lock: AbstractAsyncContextManager[Any, bool | None] | None = None,
+    cache: MutableMapping[_KT, Any] | None,
+    key: Callable[..., _KT] = cache_keys.hashkey,
+    lock: AbstractAsyncContextManager[Any] | None = None,
 ):
     """
     Decorator to wrap a function or a coroutine with a memoizing callable
@@ -96,11 +97,10 @@ def cached(
     return decorator
 
 
-# noinspection PyUnresolvedReferences
 def cachedmethod(
-    cache: MutableMapping[Hashable, Any] | None,
-    key: Callable[..., int] = cachetools.keys.hashkey,
-    lock: AbstractAsyncContextManager[Any, bool | None] | None = None,
+    cache: Callable[[Any], MutableMapping[_KT, Any] | None],
+    key: Callable[..., _KT] = cache_keys.hashkey,
+    lock: Callable[[Any], AbstractAsyncContextManager[Any]] | None = None,
 ):
     """Decorator to wrap a class or instance method with a memoizing
     callable that saves results in a cache.

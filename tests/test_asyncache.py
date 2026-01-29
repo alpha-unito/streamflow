@@ -1,11 +1,12 @@
 import logging
-from collections.abc import Hashable, MutableMapping
+from collections.abc import MutableMapping
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 import cachetools
 import pytest
 from cachetools import LRUCache
+from cachetools import keys as cache_keys
 from pytest import LogCaptureFixture
 
 from streamflow.core.asyncache import cached, cachedmethod
@@ -13,8 +14,8 @@ from tests.utils.utils import caplog_streamflow
 
 
 class AsyncCached:
-    def __init__(self, cache: MutableMapping[Hashable, Any] | None) -> None:
-        self.cache: MutableMapping[Hashable, Any] | None = cache
+    def __init__(self, cache: MutableMapping[Any, Any] | None) -> None:
+        self.cache: MutableMapping[Any, Any] | None = cache
         self.count: int = 0
 
     @cachedmethod(lambda self: self.cache)
@@ -36,8 +37,8 @@ class AsyncCountedLock:
 
 
 class AsyncLocked(AbstractAsyncContextManager):
-    def __init__(self, cache: MutableMapping[Hashable, Any] | None):
-        self.cache: MutableMapping[Hashable, Any] | None = cache
+    def __init__(self, cache: MutableMapping[Any, Any] | None):
+        self.cache: MutableMapping[Any, Any] | None = cache
         self.count: int = 0
         self.lock_count: int = 0
 
@@ -55,8 +56,8 @@ class AsyncLocked(AbstractAsyncContextManager):
 
 
 class AsyncTarget:
-    def __init__(self, cache: MutableMapping[Hashable, Any] | None):
-        self.cache: MutableMapping[Hashable, Any] | None = cache
+    def __init__(self, cache: MutableMapping[Any, Any] | None):
+        self.cache: MutableMapping[Any, Any] | None = cache
         self.call_count: int = 0
 
     @cachedmethod(lambda self: self.cache)
@@ -256,7 +257,7 @@ class TestAsyncCached:
         assert len(cache) == 0
         assert await wrapper(0) == (1, 0)
         assert len(cache) == 1
-        assert cachetools.keys.hashkey(0) in cache
+        assert cache_keys.hashkey(0) in cache
 
         assert await wrapper(1) == (2, 1)
         assert len(cache) == 2
