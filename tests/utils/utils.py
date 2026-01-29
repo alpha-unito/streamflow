@@ -373,8 +373,8 @@ def caplog_streamflow(caplog: LogCaptureFixture, level: int = logging.INFO):
     """
     _logger = logging.getLogger("streamflow")
     _logger.addHandler(caplog.handler)
-    with caplog.at_level(level, logger="streamflow"):
-        try:
+    try:
+        with caplog.at_level(level, logger="streamflow"):
             yield caplog
-        finally:
-            _logger.removeHandler(caplog.handler)
+    finally:
+        _logger.removeHandler(caplog.handler)

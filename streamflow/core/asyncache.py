@@ -14,6 +14,7 @@ import inspect
 
 __all__ = ["cached", "cachedmethod"]
 
+from collections.abc import Callable, Hashable, MutableMapping
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
@@ -22,8 +23,8 @@ import cachetools
 
 # noinspection PyUnresolvedReferences
 def cached(
-    cache: cachetools.Cache | None,
-    key=cachetools.keys.hashkey,
+    cache: MutableMapping[Hashable, Any] | None,
+    key: Callable[..., int] = cachetools.keys.hashkey,
     lock: AbstractAsyncContextManager[Any, bool | None] | None = None,
 ):
     """
@@ -97,8 +98,8 @@ def cached(
 
 # noinspection PyUnresolvedReferences
 def cachedmethod(
-    cache: cachetools.Cache | None,
-    key=cachetools.keys.hashkey,
+    cache: MutableMapping[Hashable, Any] | None,
+    key: Callable[..., int] = cachetools.keys.hashkey,
     lock: AbstractAsyncContextManager[Any, bool | None] | None = None,
 ):
     """Decorator to wrap a class or instance method with a memoizing

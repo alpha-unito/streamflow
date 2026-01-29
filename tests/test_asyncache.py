@@ -1,5 +1,5 @@
 import logging
-from collections.abc import MutableMapping
+from collections.abc import Hashable, MutableMapping
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
@@ -13,8 +13,8 @@ from tests.utils.utils import caplog_streamflow
 
 
 class AsyncCached:
-    def __init__(self, cache: cachetools.Cache | MutableMapping | None) -> None:
-        self.cache: cachetools.Cache | MutableMapping | None = cache
+    def __init__(self, cache: MutableMapping[Hashable, Any] | None) -> None:
+        self.cache: MutableMapping[Hashable, Any] | None = cache
         self.count: int = 0
 
     @cachedmethod(lambda self: self.cache)
@@ -36,8 +36,8 @@ class AsyncCountedLock:
 
 
 class AsyncLocked(AbstractAsyncContextManager):
-    def __init__(self, cache: cachetools.Cache | MutableMapping | None):
-        self.cache: cachetools.Cache | MutableMapping | None = cache
+    def __init__(self, cache: MutableMapping[Hashable, Any] | None):
+        self.cache: MutableMapping[Hashable, Any] | None = cache
         self.count: int = 0
         self.lock_count: int = 0
 
@@ -55,8 +55,8 @@ class AsyncLocked(AbstractAsyncContextManager):
 
 
 class AsyncTarget:
-    def __init__(self, cache: Any):
-        self.cache: Any = cache
+    def __init__(self, cache: MutableMapping[Hashable, Any] | None):
+        self.cache: MutableMapping[Hashable, Any] | None = cache
         self.call_count: int = 0
 
     @cachedmethod(lambda self: self.cache)
@@ -82,8 +82,13 @@ class HashableObject:
     def __init__(self, item: int):
         self.item: int = item
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self.item)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, HashableObject):
+            return NotImplemented
+        return self.item == other.item
 
 
 class UnhashableObject:
@@ -104,6 +109,15 @@ class TestAsyncCachedMethod:
 
         cached_obj.cache.clear()
         assert await cached_obj.get(1) == 3  # Cache miss
+
+        obj1 = HashableObject(2)
+        obj2 = HashableObject(2)
+        assert id(obj1) != id(obj2)
+        assert await cached_obj.get(obj1) == 4
+        # Distinct instances with equivalent values; triggers a cache hit via hash equality
+        assert await cached_obj.get(obj2) == 4
+        obj3 = HashableObject(3)
+        assert await cached_obj.get(obj3) == 5
 
     @pytest.mark.asyncio
     async def test_async_lru_cache(self):
@@ -212,6 +226,24 @@ class TestAsyncCachedMethod:
                 def no_async_get(self, *args, **kwargs) -> int:
                     return -1
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("enable_lock", [True, False], ids=["lock", "no_lock"])
+    async def test_cached_value_too_large(self, enable_lock: bool) -> None:
+        """
+        Test that when a value is too large for the cache.
+        """
+        # Every item has a size of 10, but the maxsize is only 5.
+        cache = LRUCache(maxsize=5, getsizeof=lambda x: 10)
+        if enable_lock:
+            target = AsyncLocked(cache)
+        else:
+            target = AsyncCached(cache)
+
+        assert await target.get(0) == 1
+        assert len(cache) == 0  # empty cache
+        assert await target.get(0) == 2  # Miss
+        assert len(cache) == 0  # empty cache
+
 
 @pytest.mark.asyncio
 class TestAsyncCached:
@@ -232,6 +264,15 @@ class TestAsyncCached:
         # Cache Hit
         assert await wrapper(1) == (2, 1)
         assert counter.count == 2
+
+        # Test custom objects
+        obj1 = HashableObject(2)
+        obj2 = HashableObject(2)
+        obj3 = HashableObject(3)
+        assert id(obj1) != id(obj2)
+        assert await wrapper(obj1) == (3, obj1)
+        assert await wrapper(obj2) == (3, obj2)  # Different instance, same hash
+        assert await wrapper(obj3) == (4, obj3)
 
     async def test_decorator_typed(self):
         cache = cachetools.LRUCache(maxsize=3)
@@ -366,3 +407,20 @@ class TestAsyncCached:
 
         with pytest.raises(NotImplementedError):
             cached(cache)(lambda x: x + 1)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("enable_lock", [True, False], ids=["lock", "no_lock"])
+    async def test_cached_value_too_large(self, enable_lock: bool) -> None:
+        """
+        Test that when a value is too large for the cache.
+        """
+        # Every item has a size of 10, but the maxsize is only 5.
+        cache = LRUCache(maxsize=5, getsizeof=lambda x: 10)
+        counter = Counter()
+        wrapper = cached(cache, lock=AsyncCountedLock() if enable_lock else None)(
+            counter.async_func
+        )
+        result = await wrapper(1)
+        assert result == (1, 1)
+        assert len(cache) == 0  # Empty cache
+        assert await wrapper(1) == (2, 1)  # Miss
