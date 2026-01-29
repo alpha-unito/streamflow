@@ -22,12 +22,10 @@ from streamflow.recovery.utils import (
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     ConnectorPort,
-    FilterTokenPort,
     InterWorkflowJobPort,
     InterWorkflowPort,
     JobPort,
 )
-from streamflow.workflow.step import ScatterStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -135,23 +133,6 @@ async def _populate_workflow(
         )
 
 
-async def _set_step_states(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for step in new_workflow.steps.values():
-        if isinstance(step, ScatterStep):
-            port = step.get_output_port()
-            missing_tokens = tuple(
-                mapper.token_instances[token_id].tag
-                for token_id in mapper.port_tokens[port.name]
-                if not mapper.token_available[token_id]
-            )
-            new_workflow.ports[port.name] = FilterTokenPort(
-                new_workflow,
-                port.name,
-                filter_function=lambda t, tokens=missing_tokens: t.tag in tokens,
-            )
-            new_workflow.ports[port.name].token_list = port.token_list
-
-
 class RollbackRecoveryPolicy(RecoveryPolicy):
     async def _recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
         workflow = failed_step.workflow
@@ -193,7 +174,19 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             steps, failed_step, new_workflow, workflow_builder, failed_job
         )
         await _inject_tokens(mapper, new_workflow)
-        await _set_step_states(mapper, new_workflow)
+        # Resume steps
+        for step in new_workflow.steps.values():
+            await step.restore(
+                on_tokens={
+                    port.name: [
+                        mapper.token_instances[token_id]
+                        for token_id in mapper.port_tokens[port.name]
+                        if not mapper.token_available[token_id]
+                    ]
+                    for port in step.get_output_ports().values()
+                    if port.name in mapper.port_tokens.keys()
+                }
+            )
         return new_workflow
 
     async def _sync_workflows(

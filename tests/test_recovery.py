@@ -13,19 +13,22 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ExecutionLocation
-from streamflow.core.workflow import Job, Token
+from streamflow.core.workflow import Job, Status, Token
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.main import build_context
+from streamflow.workflow.combinator import LoopCombinator
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.step import GatherStep, ScatterStep
+from streamflow.workflow.step import GatherStep, LoopCombinatorStep, ScatterStep
 from streamflow.workflow.token import (
     FileToken,
+    IterationTerminationToken,
     JobToken,
     ListToken,
     ObjectToken,
     TerminationToken,
 )
 from tests.utils.deployment import get_deployment_config, get_location
+from tests.utils.utils import duplicate_elements, inject_tokens
 from tests.utils.workflow import (
     BaseFileToken,
     InjectorFailureCommand,
@@ -255,6 +258,194 @@ async def test_execute(
             # Version starts from 1
             retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             assert retry_request.version == expected_failures + 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "prefix_tag,resume_from",
+    itertools.product(("0", "0.1"), ("begin", "first", "half")),
+)
+async def test_resume_loop_combinator_step(
+    context: StreamFlowContext, prefix_tag: str, resume_from: str
+) -> None:
+    input_names = ["in_a", "in_b", "in_c"]
+    num_iter = 5
+    workflow, ports = await create_workflow(
+        context, num_port=len(input_names), type_="default"
+    )
+    input_ports = {name: port for name, port in zip(input_names, ports, strict=True)}
+    step_name = posixpath.join(posixpath.sep, utils.random_name())
+    loop_combinator = LoopCombinator(
+        workflow=workflow, name=step_name + "-loop-combinator"
+    )
+    for port_name in input_ports:
+        loop_combinator.add_item(port_name)
+    combinator_step = workflow.create_step(
+        cls=LoopCombinatorStep,
+        name=step_name + "-loop-combinator",
+        combinator=loop_combinator,
+    )
+    for port_name, port in input_ports.items():
+        combinator_step.add_input_port(port_name, port)
+        await inject_tokens(
+            token_list=[
+                Token(
+                    value=f"{port_name}_a",
+                    tag=prefix_tag,
+                ),
+                TerminationToken(Status.COMPLETED),
+                *(
+                    Token(value=f"{port_name}_a", tag=f"{prefix_tag}.{i}")
+                    for i in range(num_iter)
+                ),
+                IterationTerminationToken(tag=prefix_tag),
+            ],
+            in_port=port,
+            context=context,
+        )
+        combinator_step.add_output_port(port_name, workflow.create_port())
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+    # Duplicate the combinator and resume it
+    new_workflow, new_combinator_step = await duplicate_elements(
+        combinator_step, workflow, context
+    )
+    match resume_from:
+        case "begin":
+            restart_idx = 0
+        case "first":
+            restart_idx = 1
+        case "half":
+            restart_idx = num_iter // 2
+        case _:
+            raise NotImplementedError
+
+    # Inject input tokens, resume and execute the new workflow
+    for port_name, port in new_combinator_step.get_input_ports().items():
+        tokens = [
+            t
+            for t in combinator_step.get_input_port(port_name).token_list
+            if not isinstance(t, (TerminationToken, IterationTerminationToken))
+        ]
+        tag = tokens[restart_idx].tag
+        await inject_tokens(
+            token_list=[
+                Token(
+                    value=f"{port_name}_a",
+                    tag=tag,
+                ),
+                IterationTerminationToken(tag),
+            ],
+            in_port=port,
+            context=context,
+        )
+
+    await new_combinator_step.restore(
+        on_tokens={
+            name: [
+                token
+                for token in port.token_list[restart_idx : len(port.token_list)]
+                if not isinstance(token, (TerminationToken, IterationTerminationToken))
+            ]
+            for name, port in combinator_step.get_output_ports().items()
+        }
+    )
+    await new_workflow.save(context)
+    executor = StreamFlowExecutor(new_workflow)
+    await executor.run()
+    # Test input values                            -  New_combinator_step port tags
+    # prefix='0'     resume_from='begin' ('0')     -  input='0'     output='0.0'
+    # prefix='0'     resume_from='first' ('0.0')   -  input='0.0'   output='0.1'
+    # prefix='0'     resume_from='half' ('0.1')    -  input='0.1'   output='0.2'
+    # prefix='0.1'   resume_from='begin' ('0.1')   -  input='0.1'   output='0.1.0'
+    # prefix='0.1'   resume_from='first' ('0.1.0') -  input='0.1.0' output='0.1.1'
+    # prefix='0.1'   resume_from='half' ('0.1.1')  -  input='0.1.1' output='0.1.2'
+    for port_name, new_port in new_combinator_step.get_output_ports().items():
+        old_port = combinator_step.get_output_port(port_name)
+        # Expected: num_iter + IterationTerminationToken + TerminationToken
+        assert len(old_port.token_list) == num_iter + 2
+        # Expected: Token + TerminationToken
+        assert len(new_port.token_list) == 2
+        assert isinstance(new_port.token_list[-1], TerminationToken)
+        assert old_port.token_list[restart_idx].tag == new_port.token_list[-2].tag
+
+
+@pytest.mark.asyncio
+async def test_resume_scatter_step(context: StreamFlowContext) -> None:
+    input_name = "in_a"
+    scatter_size = 6
+    prefix_tag = "0.0"
+    step_name = posixpath.join(posixpath.sep, utils.random_name())
+    workflow, _ = await create_workflow(context, num_port=0, type_="default")
+    scatter_step = workflow.create_step(
+        cls=ScatterStep, name=posixpath.join(step_name, input_name) + "-scatter"
+    )
+    scatter_step.add_input_port(input_name, workflow.create_port())
+    scatter_step.add_output_port(input_name, workflow.create_port())
+    # Inject input tokens
+    await inject_tokens(
+        token_list=[
+            ListToken(
+                value=[Token(value=f"a_{i}") for i in range(scatter_size)],
+                tag=prefix_tag,
+            )
+        ],
+        in_port=scatter_step.get_input_port(input_name),
+        context=context,
+    )
+    await workflow.save(context)
+    executor = StreamFlowExecutor(workflow)
+    await executor.run()
+    # Duplicate the step and resume it
+    new_workflow, new_scatter_step = await duplicate_elements(
+        scatter_step, workflow, context
+    )
+    output_port = scatter_step.get_output_port(input_name)
+    await new_scatter_step.restore(
+        on_tokens={
+            output_port.name: [
+                t
+                for i, t in enumerate(output_port.token_list)
+                if i % 2 == 0 and not isinstance(t, TerminationToken)
+            ]
+        }
+    )
+    await inject_tokens(
+        token_list=[
+            ListToken(
+                value=[Token(value=f"a_{i}") for i in range(scatter_size)],
+                tag=prefix_tag,
+            )
+        ],
+        in_port=new_scatter_step.get_input_port(input_name),
+        context=context,
+    )
+    await new_workflow.save(context)
+    executor = StreamFlowExecutor(new_workflow)
+    await executor.run()
+    # Check size_port
+    size_port = scatter_step.get_size_port()
+    new_size_port = new_scatter_step.get_size_port()
+    assert len(size_port.token_list) == len(new_size_port.token_list) == 2
+    assert isinstance(size_port.token_list[-1], TerminationToken)
+    assert isinstance(new_size_port.token_list[-1], TerminationToken)
+    assert (
+        size_port.token_list[0].value
+        == new_size_port.token_list[0].value
+        == scatter_size
+    )
+    # Check output port
+    new_output_port = new_scatter_step.get_output_port(input_name)
+    assert isinstance(output_port.token_list[-1], TerminationToken)
+    assert isinstance(new_output_port.token_list[-1], TerminationToken)
+    assert len(output_port.token_list) == scatter_size + 1
+    assert len(new_output_port.token_list) == (scatter_size // 2) + 1
+    for i, token in enumerate(output_port.token_list[:-1]):
+        assert token.tag == f"{prefix_tag}.{i}"
+        # The output port of the resumed step has only tokens with even tags
+        if i % 2 == 0:
+            assert token.tag == new_output_port.token_list[i // 2].tag
 
 
 @pytest.mark.asyncio
