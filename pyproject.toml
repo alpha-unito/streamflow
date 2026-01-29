@@ -40,7 +40,7 @@ dependencies = [
     "Jinja2==3.1.6",
     "jsonschema==4.26.0",
     "kubernetes_asyncio==34.3.3",
-    "psutil==7.2.1",
+    "psutil==7.2.2",
     "referencing==0.37.0",
     "rdflib==7.5.0",
     "typing-extensions==4.15.0",
