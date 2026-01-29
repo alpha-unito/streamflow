@@ -13,6 +13,7 @@ from importlib.resources import files
 from typing import Any, AsyncContextManager, cast
 
 import cachetools
+from cachetools import keys as cache_keys
 
 from streamflow.core import utils
 from streamflow.core.asyncache import cachedmethod
@@ -736,7 +737,7 @@ class SlurmConnector(QueueManagerConnector):
 
     @cachedmethod(
         lambda self: self._jobs_cache,
-        key=partial(cachetools.keys.hashkey, "running_jobs"),
+        key=partial(cache_keys.hashkey, "running_jobs"),
     )
     async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         command = [
@@ -955,7 +956,7 @@ class PBSConnector(QueueManagerConnector):
 
     @cachedmethod(
         lambda self: self._jobs_cache,
-        key=partial(cachetools.keys.hashkey, "running_jobs"),
+        key=partial(cache_keys.hashkey, "running_jobs"),
     )
     async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         command = [
@@ -1158,7 +1159,7 @@ class FluxConnector(QueueManagerConnector):
 
     @cachedmethod(
         lambda self: self._jobs_cache,
-        key=partial(cachetools.keys.hashkey, "running_jobs"),
+        key=partial(cache_keys.hashkey, "running_jobs"),
     )
     async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         # If we add the job id, the filter is ignored

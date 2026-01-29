@@ -133,9 +133,13 @@ class TestAsyncCachedMethod:
         assert await cached_obj.get(1) == 4  # Miss (evicted)
 
     @pytest.mark.asyncio
-    async def test_async_no_cache(self):
+    @pytest.mark.parametrize("enable_lock", [True, False], ids=["lock", "no_lock"])
+    async def test_async_no_cache(self, enable_lock: bool) -> None:
         """Test behavior when the cache provider returns None."""
-        cached_obj = AsyncCached(None)
+        if enable_lock:
+            cached_obj = AsyncLocked(None)
+        else:
+            cached_obj = AsyncCached(None)
         assert await cached_obj.get(0) == 1
         assert await cached_obj.get(0) == 2
         assert await cached_obj.get(0) == 3
@@ -278,7 +282,7 @@ class TestAsyncCached:
     async def test_decorator_typed(self):
         cache = cachetools.LRUCache(maxsize=3)
         counter = Counter()
-        key = cachetools.keys.typedkey
+        key = cache_keys.typedkey
         wrapper = cached(cache, key=key)(counter.async_func)
 
         # Typed keys distinguish between int and float
