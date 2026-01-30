@@ -13,9 +13,13 @@ from pytest import LogCaptureFixture
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.exception import (
+    WorkflowDefinitionException,
+    WorkflowExecutionException,
+)
 from streamflow.deployment.connector import SSHConnector
 from streamflow.deployment.future import FutureConnector
+from streamflow.deployment.template import CommandTemplateMap
 from tests.conftest import get_class_callables
 from tests.utils.connector import (
     FailureConnector,
@@ -23,6 +27,7 @@ from tests.utils.connector import (
     SSHChannelErrorConnector,
 )
 from tests.utils.deployment import (
+    get_deployment,
     get_failure_deployment_config,
     get_location,
     get_ssh_deployment_config,
@@ -188,4 +193,82 @@ async def test_ssh_connector_multiple_request_fail(
                 result.args[0],
             )
             is not None
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deployment_t", ["ssh", "slurm"])
+async def test_templates(
+    chosen_deployment_types: MutableSequence[str],
+    context: StreamFlowContext,
+    deployment_t: str,
+) -> None:
+    """Test command templates"""
+    if deployment_t not in chosen_deployment_types:
+        pytest.skip(f"Deployment {deployment_t} was not activated")
+    deployment = get_deployment(deployment_t)
+    service = "test_template"
+    connector = context.deployment_manager.get_connector(deployment)
+    locations = await connector.get_available_locations(service=service)
+    location = next(iter(locations.values())).location
+    conn = context.deployment_manager.get_connector(location.deployment)
+    stdout, retcode = await conn.run(
+        location, ["true"], capture_output=True, job_name="job_test"
+    )
+    assert retcode == 0
+    assert stdout == f"I am a {deployment_t} service"
+
+
+def test_command_template():
+    """Test command template validation"""
+    t0 = CommandTemplateMap(default="#!/bin/sh\n\n{{streamflow_command}}")
+    assert t0.is_empty()
+    template_map = {
+        "service_a": "module load python\n{{streamflow_command}}",
+        "service_b": "spack load python\ncd {{ streamflow_workdir }}\n{{ streamflow_environment }}\n{{streamflow_command}}",
+        "service_c": "spack load python\n{{ custom_key }}\n{{streamflow_command}}",
+    }
+    t1 = CommandTemplateMap(
+        default="#!/bin/sh\n\n{{streamflow_command}}", template_map=template_map
+    )
+    assert not t1.is_empty()
+    # Test command
+    assert (
+        t1.get_command(
+            "cat /path/to/file", environment={"APP_NAME": "app1"}, workdir="/tmp/abc"
+        )
+        == "#!/bin/sh\n\ncat /path/to/file"
+    )
+    # Test workdir, environment, command
+    assert (
+        t1.get_command(
+            "cat /path/to/file",
+            template="service_b",
+            environment={"APP_NAME": "app1"},
+            workdir="/tmp/abc",
+        )
+        == 'spack load python\ncd /tmp/abc\nexport APP_NAME="app1"\ncat /path/to/file'
+    )
+    # Test custom keys
+    assert (
+        t1.get_command(
+            "cat /path/to/file",
+            template="service_c",
+            environment={"APP_NAME": "app1"},
+            workdir="/tmp/abc",
+            custom_key="hostname",
+        )
+        == "spack load python\nhostname\ncat /path/to/file"
+    )
+
+    # Test validation of default and service templates
+    with pytest.raises(WorkflowDefinitionException):
+        CommandTemplateMap(default="", template_map=template_map)
+    with pytest.raises(WorkflowDefinitionException):
+        CommandTemplateMap(
+            default="#!/bin/sh\n\n{{streamflow_command}}",
+            template_map={
+                "service_a": "module load python\n{{streamflow_command}}",
+                "service_b": "module load python",
+            },
         )
