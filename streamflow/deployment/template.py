@@ -27,6 +27,7 @@ class CommandTemplateMap:
         self.templates: MutableMapping[str, Template] = {
             "__DEFAULT__": Template(default)
         }
+        _check_template("default", default, ["streamflow_command"])
         if template_map:
             for name, template in template_map.items():
                 self.templates[name] = Template(template)
