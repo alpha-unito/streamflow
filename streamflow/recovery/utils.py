@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections import deque
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
-from typing import Any
+from typing import TypeVar
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
@@ -17,6 +17,8 @@ from streamflow.persistence.utils import load_dependee_tokens
 from streamflow.workflow.step import ExecuteStep, TransferStep
 from streamflow.workflow.token import JobToken
 
+T = TypeVar("T")
+
 
 async def create_graph_mapper(
     context: StreamFlowContext, provenance: ProvenanceGraph
@@ -27,7 +29,7 @@ async def create_graph_mapper(
     while queue:
         token_id = queue.popleft()
         visited.add(token_id)
-        mapper.add(provenance.info_tokens.get(token_id, None), None)
+        mapper.add(provenance.info_tokens.get(token_id, None))
         for prev_token_id in provenance.dag_tokens.predecessors(token_id):
             if prev_token_id not in visited and prev_token_id not in queue:
                 queue.append(prev_token_id)
@@ -43,38 +45,39 @@ class DirectedGraph:
 
     def __init__(self, name: str) -> None:
         self.name: str = name
-        self._successors: MutableMapping[Any, MutableSet[Any]] = {}
-        self._predecessors: MutableMapping[Any, MutableSet[Any]] = {}
+        self._successors: MutableMapping[T, MutableSet[T]] = {}
+        self._predecessors: MutableMapping[T, MutableSet[T]] = {}
 
-    def _add_node(self, node: Any) -> None:
+    def _add_node(self, node: T) -> None:
         if node not in self._successors.keys():
             self._successors[node] = set()
             self._predecessors[node] = set()
 
-    def add(self, u: Any | None, v: Any | None) -> None:
-        if u is not None:
-            self._add_node(u)
+    def add(self, u: T, v: T | None = None) -> None:
+        if u is None:
+            raise Exception()
+        self._add_node(u)
         if v is not None:
             self._add_node(v)
         if u is not None and v is not None:
             self._successors[u].add(v)
             self._predecessors[v].add(u)
 
-    def get_nodes(self) -> MutableSet[Any]:
+    def get_nodes(self) -> MutableSet[T]:
         return set(self._successors.keys())
 
-    def in_degree(self) -> MutableMapping[Any, int]:
+    def in_degree(self) -> MutableMapping[T, int]:
         return {n: len(nodes) for n, nodes in self._predecessors.items()}
 
-    def out_degree(self) -> MutableMapping[Any, int]:
+    def out_degree(self) -> MutableMapping[T, int]:
         return {n: len(nodes) for n, nodes in self._successors.items()}
 
-    def predecessors(self, node: Any) -> MutableSet[Any]:
+    def predecessors(self, node: T) -> MutableSet[T]:
         return set(self._predecessors[node])
 
     def remove_nodes(
-        self, nodes: MutableSequence[Any], prune_dead_end: bool = True
-    ) -> MutableSequence[Any]:
+        self, nodes: MutableSequence[T], prune_dead_end: bool = True
+    ) -> MutableSequence[T]:
         """
         Remove a node from the graph.
 
@@ -100,12 +103,10 @@ class DirectedGraph:
             del self._predecessors[current]
         return removed_nodes
 
-    def remove_node(
-        self, node: Any, prune_dead_end: bool = True
-    ) -> MutableSequence[Any]:
+    def remove_node(self, node: T, prune_dead_end: bool = True) -> MutableSequence[T]:
         return self.remove_nodes([node], prune_dead_end=prune_dead_end)
 
-    def replace(self, old_node: Any, new_node: Any) -> None:
+    def replace(self, old_node: T, new_node: T) -> None:
         """
         Replace an existing node with a new node, preserving all edges.
 
@@ -131,7 +132,7 @@ class DirectedGraph:
         del self._successors[old_node]
         del self._predecessors[old_node]
 
-    def successors(self, node: Any) -> MutableSet[Any]:
+    def successors(self, node: T) -> MutableSet[T]:
         return set(self._successors[node])
 
     def __str__(self) -> str:
@@ -149,13 +150,13 @@ class DirectedGraph:
 
 class DirectedAcyclicGraph(DirectedGraph):
 
-    def get_sources(self) -> MutableSet[Any]:
+    def get_sources(self) -> MutableSet[T]:
         return {n for n, nodes in self._predecessors.items() if len(nodes) == 0}
 
-    def get_sinks(self) -> MutableSet[Any]:
+    def get_sinks(self) -> MutableSet[T]:
         return {n for n, nodes in self._successors.items() if len(nodes) == 0}
 
-    def promote_to_source(self, node: Any) -> MutableSequence[Any]:
+    def promote_to_source(self, node: T) -> MutableSequence[T]:
         """
         Move a node to be a source node.
 
@@ -210,14 +211,11 @@ class GraphMapper:
             return token.persistent_id
 
     def add(
-        self, token_info_a: ProvenanceToken | None, token_info_b: ProvenanceToken | None
+        self, token_info_a: ProvenanceToken, token_info_b: ProvenanceToken | None = None
     ) -> None:
         # Add ports into the dependency graph
-        if token_info_a:
-            port_name_a = token_info_a.port_name
-            self.port_name_ids.setdefault(port_name_a, set()).add(token_info_a.port_id)
-        else:
-            port_name_a = None
+        port_name_a = token_info_a.port_name
+        self.port_name_ids.setdefault(port_name_a, set()).add(token_info_a.port_id)
         if token_info_b:
             port_name_b = token_info_b.port_name
             self.port_name_ids.setdefault(port_name_b, set()).add(token_info_b.port_id)
@@ -226,14 +224,10 @@ class GraphMapper:
         self.dcg_port.add(port_name_a, port_name_b)
 
         # Add (or update) tokens into the provenance graph
-        token_a_id = (
-            self._update_token(
-                port_name_a,
-                token_info_a.instance,
-                token_info_a.is_available,
-            )
-            if token_info_a
-            else None
+        token_a_id = self._update_token(
+            port_name_a,
+            token_info_a.instance,
+            token_info_a.is_available,
         )
         token_b_id = (
             self._update_token(
@@ -440,10 +434,10 @@ class ProvenanceGraph:
         self.dag_tokens: DirectedAcyclicGraph = DirectedAcyclicGraph("Provenance")
         self.info_tokens: MutableMapping[int, ProvenanceToken] = {}
 
-    def add(self, src_token: Token | None, dst_token: Token | None) -> None:
+    def add(self, src_token: Token, dst_token: Token | None = None) -> None:
         self.dag_tokens.add(
-            src_token.persistent_id if src_token is not None else src_token,
-            dst_token.persistent_id if dst_token is not None else dst_token,
+            src_token.persistent_id,
+            dst_token.persistent_id if dst_token is not None else None,
         )
 
     async def build_graph(self, inputs: Iterable[Token]) -> None:
@@ -457,7 +451,7 @@ class ProvenanceGraph:
         token_frontier = deque(inputs)
         loading_context = DefaultDatabaseLoadingContext()
         for t in token_frontier:
-            self.add(t, None)
+            self.add(t)
 
         while token_frontier:
             token = token_frontier.popleft()
@@ -471,9 +465,9 @@ class ProvenanceGraph:
                 == TokenAvailability.FutureAvailable
             ):
                 is_available = False
-                self.add(None, token)
+                self.add(token)
             elif is_available := await token.is_available(context=self.context):
-                self.add(None, token)
+                self.add(token)
             else:
                 # Token is not available, get previous tokens
                 if prev_tokens := await load_dependee_tokens(
