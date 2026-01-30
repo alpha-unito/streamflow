@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, MutableSequence
+from collections.abc import Callable, MutableMapping, MutableSequence
+from typing import NamedTuple
 
 from streamflow.core.deployment import Connector
-from streamflow.core.workflow import Job, Port, Status, Token, Workflow
+from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
+class BoundaryRule(NamedTuple):
+    port: Port
+    inter_terminate: bool = False
+    intra_terminate: bool = False
 
 class ConnectorPort(Port):
     async def get_connector(self, consumer: str) -> Connector:
@@ -52,23 +57,34 @@ class FilterTokenPort(Port):
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
-        self.inter_ports: MutableSequence[tuple[Port, str, bool]] = []
+        self.boundaries: MutableMapping[str, MutableSequence[BoundaryRule]] = {}
 
-    def add_inter_port(self, port: Port, boundary_tag: str, terminate: bool) -> None:
-        self.inter_ports.append((port, boundary_tag, terminate))
+    def _handle_boundary(self, token: Token, boundary: BoundaryRule) -> None:
+        boundary.port.put(token)
+        if boundary.inter_terminate:
+            boundary.port.put(TerminationToken())
+        if boundary.intra_terminate:
+            super().put(TerminationToken())
+
+    def add_inter_port(
+        self,
+        port: Port,
+        boundary_tag: str,
+        inter_terminate: bool = False,
+        intra_terminate: bool = False,
+    ) -> None:
+        boundary = BoundaryRule(
+            port=port, inter_terminate=inter_terminate, intra_terminate=intra_terminate
+        )
+        self.boundaries.setdefault(boundary_tag, []).append(boundary)
         for token in self.token_list:
-            if boundary_tag == token.tag:
-                port.put(token)
-                if terminate:
-                    port.put(TerminationToken(Status.SKIPPED))
+            if token.tag == boundary_tag:
+                self._handle_boundary(token, boundary)
 
     def put(self, token: Token) -> None:
         if not isinstance(token, TerminationToken):
-            for port, boundary_tag, terminate in self.inter_ports:
-                if boundary_tag == token.tag:
-                    port.put(token)
-                    if terminate:
-                        port.put(TerminationToken(Status.SKIPPED))
+            for route in self.boundaries.get(token.tag, ()):
+                self._handle_boundary(token, route)
         super().put(token)
 
 
