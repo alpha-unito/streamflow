@@ -64,6 +64,7 @@ from streamflow.workflow.utils import (
 def _get_directory(
     path_processor: ModuleType, directory: str | None, target: Target
 ) -> str:
+
     return directory or path_processor.join(target.workdir, utils.random_name())
 
 
