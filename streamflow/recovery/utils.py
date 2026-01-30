@@ -115,7 +115,7 @@ class DirectedGraph:
             return
         if new_node in self._successors.keys():
             raise ValueError(
-                f"Cannot replace: node '{new_node}' already exists in the graph."
+                f"Cannot replace: node '{new_node}' already exists in `{self.name}` graph."
             )
         self._add_node(new_node)
         for succ in self._successors[old_node]:
@@ -134,7 +134,7 @@ class DirectedGraph:
 
     def __str__(self) -> str:
         return (
-            "{\n"
+            f"{self.name}: {{\n"
             + "\n".join(
                 [
                     f"{k} : {[v for v in values]},"
