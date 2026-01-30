@@ -453,6 +453,21 @@ class Step(PersistableEntity, ABC):
         return step
 
     @abstractmethod
+    async def restore(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
+        """
+        Restore a specific state of the step.
+        This method sets the appropriate attributes within the step to allow it
+        to continue execution from the desired state.
+
+        :param on_tokens:
+            A mapping of ports to tokens. The ports are the output ports
+            of the step, and the tokens represent the missing output tokens.
+        """
+        ...
+
+    @abstractmethod
     async def run(self) -> None: ...
 
     async def save(self, context: StreamFlowContext) -> None:

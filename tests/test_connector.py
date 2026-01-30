@@ -16,7 +16,6 @@ from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.deployment.connector import SSHConnector
 from streamflow.deployment.future import FutureConnector
-from streamflow.log_handler import logger
 from tests.conftest import get_class_callables
 from tests.utils.connector import (
     FailureConnector,
@@ -28,7 +27,7 @@ from tests.utils.deployment import (
     get_location,
     get_ssh_deployment_config,
 )
-from tests.utils.utils import InjectPlugin
+from tests.utils.utils import InjectPlugin, caplog_streamflow
 
 
 def _get_future_connector_methods() -> MutableSequence[Callable]:
@@ -151,10 +150,8 @@ async def test_ssh_connector_channel_open_error(
     """
     if "ssh" not in chosen_deployment_types:
         pytest.skip("Deployment ssh was not activated")
-    caplog.set_level(logging.WARNING)
-    caplog_handler = caplog.handler
-    logger.addHandler(caplog_handler)
-    try:
+
+    with caplog_streamflow(caplog=caplog, level=logging.WARNING):
         deployment_config = await get_ssh_deployment_config(context)
         connector = SSHChannelErrorConnector(
             deployment_name=deployment_config.name,
@@ -163,8 +160,6 @@ async def test_ssh_connector_channel_open_error(
         )
         await connector.get_available_locations()
         assert "Error ChannelOpenError opening SSH session to" in caplog.text
-    finally:
-        logger.removeHandler(caplog_handler)
 
 
 @pytest.mark.asyncio

@@ -25,6 +25,7 @@ clean:
 checksum: clean html
 	@echo "Documentation checksum: "
 	@find build/html/ 						\
+			-not -name 'llms-full.txt'      \
 			-not -name 'searchindex.js'		\
 			-not -name '*.woff' 			\
 			-not -name '*.woff2' 			\

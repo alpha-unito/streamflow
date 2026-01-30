@@ -83,6 +83,15 @@ extlinks = {
     'repo': ('https://github.com/alpha-unito/streamflow/tree/' + release + '/%s', 'GH#')
 }
 
+
+# Include source code files in `llms-full.txt`
+llms_txt_code_files = [
+    "+:../../streamflow/**/*.json",
+    "+:../../streamflow/**/*.py",
+    "+:../../streamflow/**/*.sql",
+]
+
+
 # The summary file can include a custom description of the project
 llms_txt_summary = (
     "The StreamFlow framework is a container-native Workflow Management System written in Python 3 "

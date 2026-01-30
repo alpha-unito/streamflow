@@ -40,24 +40,24 @@ jobs:
           - commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.2"
-          - commit: "cafdc18a8d0112a4ba0a11bd257f357bf303ab9f"
+          - commit: "2063e9095f421f2a2ce12abaf196b2ba06ca5aae"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
           - docker: "singularity"
-            commit: "cafdc18a8d0112a4ba0a11bd257f357bf303ab9f"
+            commit: "2063e9095f421f2a2ce12abaf196b2ba06ca5aae"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
             on: "ubuntu-24.04"
             python: "3.14"
             version: "v1.3"
           - docker: "kubernetes"
-            commit: "cafdc18a8d0112a4ba0a11bd257f357bf303ab9f"
+            commit: "2063e9095f421f2a2ce12abaf196b2ba06ca5aae"
             exclude: "docker_entrypoint,modify_file_content"
             on: "ubuntu-24.04"
             python: "3.14"
             version: "v1.3"
           - on: "macos-15-intel"
             python: "3.14"
-            commit: "cafdc18a8d0112a4ba0a11bd257f357bf303ab9f"
+            commit: "2063e9095f421f2a2ce12abaf196b2ba06ca5aae"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
     runs-on: ${{ matrix.on }}
@@ -105,9 +105,10 @@ jobs:
         run: ./cwl-conformance-test.sh
       - name: "Upload test results"
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v5
         with:
           flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
+          report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: "Upload coverage report for conformance tests"
         uses: actions/upload-artifact@v6
@@ -158,7 +159,7 @@ jobs:
         run: uv sync --locked --no-dev --group docs
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "b6302579fab166d698bbd5c4c7cea72be203a2116d3aa960173229d4c418bf3e"
+          CHECKSUM: "be2933a30a986a448b8b7dfbab602e8301744520f96abde1f8ae35539061c411"
         run: |
           cd docs
           HASH="$(uv run --no-sync make checksum | tail -n1)"
@@ -274,9 +275,10 @@ jobs:
         run: tox
       - name: "Upload test results"
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v5
         with:
           flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
+          report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: "Upload coverage report for unit tests"
         uses: actions/upload-artifact@v6
