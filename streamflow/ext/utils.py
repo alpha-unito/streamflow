@@ -8,7 +8,8 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from importlib_metadata import entry_points
-from referencing._core import Resolver, Resource
+from referencing import Resource
+from referencing._core import Resolver
 
 from streamflow.config.schema import SfSchema
 from streamflow.core.exception import InvalidPluginException
@@ -68,7 +69,11 @@ def _replace_refs(contents: Any, resolver: Resolver) -> None:
                     element = element[part]
                 case MutableSequence():
                     element = element[int(part)]
-        element.update(v)
+        if isinstance(element, MutableMapping) and "$id" in element:
+            element.setdefault("$defs", {}).update(v.get("$defs", {}))
+            element.setdefault("properties", {}).update(v.get("properties", {}))
+        else:
+            element.update(v)
 
 
 def _resolve_refs(

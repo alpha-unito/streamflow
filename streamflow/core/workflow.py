@@ -456,11 +456,11 @@ class Step(PersistableEntity, ABC):
         return step
 
     @abstractmethod
-    async def resume(
+    async def restore(
         self, on_tokens: MutableMapping[str, MutableSequence[Token]]
     ) -> None:
         """
-        Resumes the execution of the step from a specific state.
+        Restore a specific state of the step.
         This method sets the appropriate attributes within the step to allow it
         to continue execution from the desired state.
 

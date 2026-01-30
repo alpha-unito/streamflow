@@ -202,7 +202,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         await _inject_tokens(mapper, new_workflow)
         # Resume steps
         for step in new_workflow.steps.values():
-            await step.resume(
+            await step.restore(
                 on_tokens={
                     port.name: [
                         mapper.token_instances[token_id]
@@ -213,31 +213,31 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     if port.name in mapper.port_tokens.keys()
                 }
             )
-        # DEBUG
-        for port in (
-            p
-            for p in new_workflow.ports.values()
-            if len(p.get_input_steps()) == 0 and p.name not in sync_port_names
-        ):
-            if len(port.token_list) == 0:
-                logger.info(f"Port {port.name} has no tokens")
-                # raise FailureHandlingException(f"Port {port.name} has no tokens")
-            elif len(port.token_list) == 1:
-                logger.info(f"Port {port.name} has 1 token")
-                # raise FailureHandlingException(f"Port {port.name} has 1 token")
-            # Some ports do not have a termination token because they can have
-            # available tokens and must wait until a recovery step of another
-            # recovery workflow generates the missing token.
-        for p in new_workflow.ports.values():
-            if len(steps := p.get_input_steps()) == 1:
-                for s in steps:
-                    if "back-prop" in s.name and len(p.token_list) == 0:
-                        logger.debug(
-                            f"Step {s.name} has no input token in its input port {p.name}"
-                        )
-                        # raise FailureHandlingException(
-                        #     "The back prop is an input port and is empty"
-                        # )
+            # DEBUG
+            for port in (
+                p
+                for p in new_workflow.ports.values()
+                if len(p.get_input_steps()) == 0 and p.name not in sync_port_names
+            ):
+                if len(port.token_list) == 0:
+                    logger.info(f"Port {port.name} has no tokens")
+                    # raise FailureHandlingException(f"Port {port.name} has no tokens")
+                elif len(port.token_list) == 1:
+                    logger.info(f"Port {port.name} has 1 token")
+                    # raise FailureHandlingException(f"Port {port.name} has 1 token")
+                # Some ports do not have a termination token because they can have
+                # available tokens and must wait until a recovery step of another
+                # recovery workflow generates the missing token.
+            for p in new_workflow.ports.values():
+                if len(steps := p.get_input_steps()) == 1:
+                    for s in steps:
+                        if "back-prop" in s.name and len(p.token_list) == 0:
+                            logger.debug(
+                                f"Step {s.name} has no input token in its input port {p.name}"
+                            )
+                            # raise FailureHandlingException(
+                            #     "The back prop is an input port and is empty"
+                            # )
         return new_workflow
 
     async def _sync_workflows(

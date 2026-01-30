@@ -266,12 +266,12 @@ def get_combinator_step(
     workflow: Workflow, combinator_type: str, inner_combinator: bool = False
 ) -> CombinatorStep:
     combinator_step_cls = CombinatorStep
-    name = utils.random_name()
+    name = posixpath.join(posixpath.sep, utils.random_name())
     match combinator_type:
         case "cartesian_product_combinator":
             combinator = get_cartesian_product_combinator(workflow, name)
-        case "dot_combinator":
-            combinator = get_dot_combinator(workflow, name)
+        case "dot_product_combinator":
+            combinator = get_dot_product_combinator(workflow, name)
         case "loop_combinator":
             combinator_step_cls = LoopCombinatorStep
             combinator = get_loop_combinator(workflow, name)
@@ -286,7 +286,9 @@ def get_combinator_step(
     if inner_combinator:
         if combinator_type == "nested_crossproduct":
             raise ValueError("Nested crossproduct already has inner combinators")
-        combinator.add_combinator(get_dot_combinator(workflow, name), {"test_name_1"})
+        combinator.add_combinator(
+            get_dot_product_combinator(workflow, name), {"test_name_1"}
+        )
         combinator.add_combinator(
             get_cartesian_product_combinator(workflow, name), {"test_name_2"}
         )
@@ -300,7 +302,7 @@ def get_combinator_step(
     return step
 
 
-def get_dot_combinator(
+def get_dot_product_combinator(
     workflow: Workflow, name: str | None = None
 ) -> DotProductCombinator:
     return get_full_instantiation(
