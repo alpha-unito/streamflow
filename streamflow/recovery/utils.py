@@ -54,12 +54,9 @@ class DirectedGraph:
             self._predecessors[node] = set()
 
     def add(self, u: T, v: T | None = None) -> None:
-        if u is None:
-            raise Exception()
         self._add_node(u)
         if v is not None:
             self._add_node(v)
-        if u is not None and v is not None:
             self._successors[u].add(v)
             self._predecessors[v].add(u)
 
@@ -161,11 +158,10 @@ class DirectedAcyclicGraph(DirectedGraph):
         Move a node to be a source node.
 
         This implies that all the edges with its previous nodes are deleted.
-        All nodes on the path from the sources to the nodes that have no other
+        All nodes on the path from the sources to the target `node` which have no other
         successors are deleted.
 
-        Returns:
-            List of all deleted vertices.
+        Returns: A list of all deleted vertices.
         """
         if node not in self._successors.keys():
             return []
