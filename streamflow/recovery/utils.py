@@ -348,7 +348,9 @@ class GraphMapper:
         source_token_ids = self.dag_tokens.get_sources()
         if not all(self.token_available[t] for t in source_token_ids):
             ta = {t: self.token_available[t] for t in source_token_ids}
-            logger.info(f"Source tokens must be all available: {ta} (exception for token FutureAvailable)")
+            logger.info(
+                f"Source tokens must be all available: {ta} (exception for token FutureAvailable)"
+            )
             # The root can have the output of a schedule step.
             # The token is a root when a synchronization is made, and it is correct that the token is not available
             # raise FailureHandlingException("Source tokens must be all available")

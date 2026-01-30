@@ -64,7 +64,6 @@ from streamflow.workflow.utils import (
 def _get_directory(
     path_processor: ModuleType, directory: str | None, target: Target
 ) -> str:
-
     return directory or path_processor.join(target.workdir, utils.random_name())
 
 
@@ -1326,8 +1325,13 @@ class LoopCombinatorStep(CombinatorStep):
                                 for t in p.token_list
                                 if t.persistent_id in ins
                             ]
-                            if logger.isEnabledFor(logging.DEBUG) and len(ts_tag := {t.tag for t in ts}) > 1:
-                                logger.debug(f"Step {self.name} received got inputs with different tags {ts_tag}")
+                            if (
+                                logger.isEnabledFor(logging.DEBUG)
+                                and len(ts_tag := {t.tag for t in ts}) > 1
+                            ):
+                                logger.debug(
+                                    f"Step {self.name} received got inputs with different tags {ts_tag}"
+                                )
                             for port_name, new_token in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
