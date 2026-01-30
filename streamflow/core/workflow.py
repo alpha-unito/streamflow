@@ -18,6 +18,7 @@ from streamflow.core.persistence import (
     PersistableEntity,
 )
 from streamflow.core.utils import get_class_from_name, get_class_fullname
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import Any
@@ -329,6 +330,7 @@ class Status(IntEnum):
     CANCELLED = 6
     ROLLBACK = 7
     RECOVERY = 8
+    RECOVERED = 9
 
 
 class Step(PersistableEntity, ABC):
@@ -340,6 +342,7 @@ class Step(PersistableEntity, ABC):
         self.status: Status = Status.WAITING
         self.terminated: bool = False
         self.workflow: Workflow = workflow
+        logger.info(f"STARTING Step {self.name}")
 
     def _add_port(self, name: str, port: Port, type_: DependencyType) -> None:
         if port.name not in self.workflow.ports:
