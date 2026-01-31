@@ -13,7 +13,6 @@ from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.utils import (
-    DirectGraph,
     GraphMapper,
     ProvenanceGraph,
     TokenAvailability,
@@ -60,13 +59,14 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
 
 
 async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for port_name in mapper.dcg_port[DirectGraph.ROOT]:
+    for port_name in [
+        p for p, degree in mapper.dcg_port.in_degree().items() if degree == 0
+    ]:
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
                 for token_id in mapper.port_tokens[port_name]
-                if token_id not in (DirectGraph.ROOT, DirectGraph.LEAF)
-                and mapper.token_available[token_id]
+                if mapper.token_available[token_id]
             ],
             key=lambda x: x.tag,
         )
@@ -219,7 +219,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         )
                 # Remove tokens recovered in other workflows
                 for token_id in await mapper.get_output_tokens(job_token.persistent_id):
-                    mapper.remove_token(token_id, preserve_token=True)
+                    mapper.move_token_to_root(token_id)
             elif is_available == TokenAvailability.Available:
                 job_token = get_job_token(job_name, job_tokens)
                 if logger.isEnabledFor(logging.DEBUG):
@@ -236,9 +236,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                             new_token,
                             True,
                         )
-                        mapper.remove_token(
-                            new_token.persistent_id, preserve_token=True
-                        )
+                        mapper.move_token_to_root(new_token.persistent_id)
             else:
                 await self.context.failure_manager.update_request(job_name)
                 retry_request.workflow = workflow
