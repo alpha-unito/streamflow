@@ -14,7 +14,7 @@ from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.workflow.step import ExecuteStep, TransferStep, ScheduleStep
+from streamflow.workflow.step import ExecuteStep, ScheduleStep, TransferStep
 from streamflow.workflow.token import JobToken
 
 T = TypeVar("T")

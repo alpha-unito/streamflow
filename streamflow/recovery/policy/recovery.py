@@ -9,7 +9,7 @@ from typing import cast
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
 from streamflow.core.utils import get_job_tag, get_tag
-from streamflow.core.workflow import Job, Status, Step, Token, Workflow
+from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.utils import (
@@ -91,7 +91,7 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
         ):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
-            port.put(TerminationToken(Status.SKIPPED))
+            port.put(TerminationToken())
 
 
 async def _populate_workflow(

@@ -9,10 +9,12 @@ from streamflow.core.workflow import Job, Port, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
+
 class BoundaryRule(NamedTuple):
     port: Port
     inter_terminate: bool = False
     intra_terminate: bool = False
+
 
 class ConnectorPort(Port):
     async def get_connector(self, consumer: str) -> Connector:
@@ -83,8 +85,8 @@ class InterWorkflowPort(Port):
 
     def put(self, token: Token) -> None:
         if not isinstance(token, TerminationToken):
-            for route in self.boundaries.get(token.tag, ()):
-                self._handle_boundary(token, route)
+            for boundary in self.boundaries.get(token.tag, ()):
+                self._handle_boundary(token, boundary)
         super().put(token)
 
 
