@@ -59,9 +59,7 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
 
 
 async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for port_name in [
-        p for p, degree in mapper.dcg_port.in_degree().items() if degree == 0
-    ]:
+    for port_name in mapper.port_tokens.keys():
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
