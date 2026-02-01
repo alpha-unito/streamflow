@@ -87,6 +87,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     streamflow_config["path"] = (
         args.streamflow_file if args.streamflow_file is not None else os.getcwd()
     )
+    args.hierarchical = False
     workflow_config = WorkflowConfig(workflow_name, streamflow_config)
     context = build_context(streamflow_config)
     try:
