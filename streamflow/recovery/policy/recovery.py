@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import posixpath
 from collections.abc import Iterable, MutableSequence, MutableSet
 from typing import cast
@@ -95,7 +96,7 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
         ):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
-            port.put(TerminationToken(Status.RECOVERED))
+            port.put(TerminationToken(Status.COMPLETED))
 
 
 async def _populate_workflow(
@@ -314,8 +315,12 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 new_job_names.append(job_name)
         return new_job_names
 
-    async def recover(self, failed_job: Job, failed_step: Step) -> None:
+    async def recover(
+        self, failed_job: Job, failed_step: Step, counter_wf: int
+    ) -> None:
         # Create recover workflow
         new_workflow = await self._recover_workflow(failed_job, failed_step)
+        for s in new_workflow.steps.values():
+            s.name = os.path.join(s.name, str(counter_wf))
         # Execute new workflow
         await _execute_recover_workflow(new_workflow, failed_step)

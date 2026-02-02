@@ -62,13 +62,18 @@ class InterWorkflowPort(Port):
         self.boundaries: MutableMapping[str, MutableSequence[BoundaryRule]] = {}
 
     def _handle_boundary(self, token: Token, boundary: BoundaryRule) -> None:
+        logger.info(f"Port {self.name} ({id(self)}) passing token {token.tag}")
         boundary.port.put(token)
         if boundary.inter_terminate:
+            logger.info(
+                f"Port {self.name} ({id(self)}) passing inter termination token"
+            )
             boundary.port.put(TerminationToken(Status.RECOVERED))
-            # boundary.port.put(TerminationToken(Status.SKIPPED))
         if boundary.intra_terminate:
+            logger.info(
+                f"Port {self.name} ({id(self)}) passing intra termination token"
+            )
             super().put(TerminationToken(Status.RECOVERED))
-            # super().put(TerminationToken(Status.SKIPPED))
 
     def add_inter_port(
         self,
@@ -81,6 +86,7 @@ class InterWorkflowPort(Port):
             port=port, inter_terminate=inter_terminate, intra_terminate=intra_terminate
         )
         self.boundaries.setdefault(boundary_tag, []).append(boundary)
+        logger.info(f"Port {self.name} ({id(self)}) inter port {boundary_tag}")
         for token in self.token_list:
             if token.tag == boundary_tag:
                 self._handle_boundary(token, boundary)

@@ -162,7 +162,7 @@ class StreamFlowExecutor(Executor):
                 for step in self.workflow.steps.values():
                     if step.status in [Status.FAILED, Status.CANCELLED]:
                         logger.debug(
-                            f"Step {step.name} exits with status {step.status}"
+                            f"Step {step.name} exits with status {step.status.name}"
                         )
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(

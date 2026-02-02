@@ -135,7 +135,7 @@ class BaseStep(Step, ABC):
         return inputs
 
     def _get_status(self, status: Status) -> Status:
-        if status == Status.FAILED:
+        if status in (Status.FAILED, Status.RECOVERED):
             return status
         elif any(p.empty() for p in self.get_output_ports().values()):
             return Status.SKIPPED
@@ -1258,6 +1258,7 @@ class LoopCombinatorStep(CombinatorStep):
     async def run(self) -> None:
         # Set default status to SKIPPED
         status = Status.SKIPPED
+        inputs_map = {}
         if self.input_ports:
             input_tasks, terminated = [], []
             for port_name, port in self.get_input_ports().items():
@@ -1281,7 +1282,8 @@ class LoopCombinatorStep(CombinatorStep):
                         status = _reduce_statuses([status, token.value], self.name)
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received termination token for port {task_name}"
+                                f"Step {self.name} received termination token {token.value.name} "
+                                f"for port {task_name}. Step status: {status.name}"
                             )
                         if token.value != Status.COMPLETED:
                             self.iteration_termination_checklist.get(task_name).clear()
@@ -1312,34 +1314,46 @@ class LoopCombinatorStep(CombinatorStep):
                                 token.tag
                             )
 
-                        async for schema in self.combinator.combine(task_name, token):
-                            ins = [
-                                in_id
-                                for t in schema.values()
-                                for in_id in t["input_ids"]
-                            ]
-                            # DEBUG
-                            ts = [
-                                t
-                                for p in self.get_input_ports().values()
-                                for t in p.token_list
-                                if t.persistent_id in ins
-                            ]
-                            if (
-                                logger.isEnabledFor(logging.DEBUG)
-                                and len(ts_tag := {t.tag for t in ts}) > 1
-                            ):
-                                logger.debug(
-                                    f"Step {self.name} received got inputs with different tags {ts_tag}"
-                                )
-                            for port_name, new_token in schema.items():
-                                self.get_output_port(port_name).put(
-                                    await self._persist_token(
-                                        token=new_token["token"],
-                                        port=self.get_output_port(port_name),
-                                        input_token_ids=ins,
-                                    )
-                                )
+                        _group_by_tag({task_name: token}, inputs_map)
+                        logger.info(
+                            f"Step {self.name} grouping tag: {token.tag} on port {task_name}"
+                        )
+                        # Process tags
+                        if len(inputs_map[token.tag]) == len(self.input_ports):
+                            logger.info(
+                                f"Step {self.name} combining {token.tag} tokens"
+                            )
+                            inputs = inputs_map.pop(token.tag)
+                            # Run combinator
+                            for p, t in inputs.items():
+                                async for schema in self.combinator.combine(p, t):
+                                    ins = [
+                                        in_id
+                                        for t in schema.values()
+                                        for in_id in t["input_ids"]
+                                    ]
+                                    # DEBUG
+                                    ts = [
+                                        t
+                                        for p in self.get_input_ports().values()
+                                        for t in p.token_list
+                                        if t.persistent_id in ins
+                                    ]
+                                    if (
+                                        logger.isEnabledFor(logging.DEBUG)
+                                        and len(ts_tag := {t.tag for t in ts}) > 1
+                                    ):
+                                        logger.debug(
+                                            f"Step {self.name} received got inputs with different tags {ts_tag}"
+                                        )
+                                    for port_name, new_token in schema.items():
+                                        self.get_output_port(port_name).put(
+                                            await self._persist_token(
+                                                token=new_token["token"],
+                                                port=self.get_output_port(port_name),
+                                                input_token_ids=ins,
+                                            )
+                                        )
                     # Create a new task in place of the completed one if the port is not terminated
                     if not (
                         task_name in terminated
