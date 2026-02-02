@@ -121,63 +121,65 @@ async def test_initial_workdir(
     # Create input data
     path = None
     try:
-        if file_type == "file":
-            path = StreamFlowPath(
-                "/tmp", "test.txt", context=context, location=execution_location
-            )
-            await path.write_text("Hello world")
-            path = await path.resolve()
-            file_token = CWLFileToken(
-                {
-                    "class": "File",
-                    "path": str(path),
-                }
-            )
-            initial_paths = [str(path)]
-        elif file_type in ("dir", "listing"):
-            path = StreamFlowPath(
-                "/tmp", "land", context=context, location=execution_location
-            )
-            await path.mkdir()
-            path = await path.resolve()
-            await (path / "lvl1").mkdir()
-            await (path / "lvl2").mkdir()
-            await (path / "lvl1" / "text.txt").write_text("Hello dir")
-            file_token = CWLFileToken(
-                {
-                    "class": "Directory",
-                    "path": str(path),
-                    "listing": [
-                        {
-                            "class": "Directory",
-                            "path": str(path / "lvl1"),
-                            "listing": [
-                                {
-                                    "class": "File",
-                                    "path": str(path / "lvl1" / "text.txt"),
-                                }
-                            ],
-                        },
-                        {"class": "Directory", "path": str(path / "lvl2")},
-                    ],
-                }
-            )
-            initial_paths = (
-                [str(path)]
-                if file_type == "dir"
-                else [str(path / "lvl1"), str(path / "lvl2")]
-            )
-        else:
-            raise NotImplementedError(f"Unsupported file type: {file_type}")
+        match file_type:
+            case "file":
+                path = StreamFlowPath(
+                    "/tmp", "test.txt", context=context, location=execution_location
+                )
+                await path.write_text("Hello world")
+                path = await path.resolve()
+                file_token = CWLFileToken(
+                    {
+                        "class": "File",
+                        "path": str(path),
+                    }
+                )
+                initial_paths = [str(path)]
+            case "dir" | "listing":
+                path = StreamFlowPath(
+                    "/tmp", "land", context=context, location=execution_location
+                )
+                await path.mkdir()
+                path = await path.resolve()
+                await (path / "lvl1").mkdir()
+                await (path / "lvl2").mkdir()
+                await (path / "lvl1" / "text.txt").write_text("Hello dir")
+                file_token = CWLFileToken(
+                    {
+                        "class": "Directory",
+                        "path": str(path),
+                        "listing": [
+                            {
+                                "class": "Directory",
+                                "path": str(path / "lvl1"),
+                                "listing": [
+                                    {
+                                        "class": "File",
+                                        "path": str(path / "lvl1" / "text.txt"),
+                                    }
+                                ],
+                            },
+                            {"class": "Directory", "path": str(path / "lvl2")},
+                        ],
+                    }
+                )
+                initial_paths = (
+                    [str(path)]
+                    if file_type == "dir"
+                    else [str(path / "lvl1"), str(path / "lvl2")]
+                )
+            case _:
+                raise NotImplementedError(f"Unsupported file type: {file_type}")
         # Inject input token
-        if token_type == "file":
-            token_value = file_token
-        elif token_type == "list":
-            token_value = ListToken([file_token])
-        elif token_type == "object":
-            token_value = ObjectToken({"a": file_token})
-        else:
-            raise ValueError(f"Invalid token_type: {token_type}")
+        match token_type:
+            case "file":
+                token_value = file_token
+            case "list":
+                token_value = ListToken([file_token])
+            case "object":
+                token_value = ObjectToken({"a": file_token})
+            case _:
+                raise ValueError(f"Invalid token_type: {token_type}")
         await inject_tokens([token_value], in_port, context)
         # Execute workflow
         await workflow.save(context)

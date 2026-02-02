@@ -103,41 +103,41 @@ async def _get_token_value(
     token_type: str,
     **kwargs: MutableMapping[str, Any],
 ) -> Any:
-    if token_type == "primitive":
-        return 100
-    elif token_type == "file":
-        return await _create_file(context, location)
-    elif token_type == "list":
-        return await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    _create_file(context, location, f"StreamFlow Manager: test {i}")
-                )
-                for i in range(int(kwargs.get("list_len", 3)))
-            )
-        )
-    elif token_type == "object":
-        return dict(
-            zip(
-                (
-                    f"{i}-{utils.random_name()}"
-                    for i in range(int(kwargs.get("obj_len", 3)))
-                ),
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            _create_file(
-                                context, location, f"StreamFlow Manager: test {i}"
-                            )
-                        )
-                        for i in range(int(kwargs.get("obj_len", 3)))
+    match token_type:
+        case "primitive":
+            return 100
+        case "file":
+            return await _create_file(context, location)
+        case "list":
+            return await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        _create_file(context, location, f"StreamFlow Manager: test {i}")
                     )
-                ),
+                    for i in range(int(kwargs.get("list_len", 3)))
+                )
             )
-        )
-
-    else:
-        raise RuntimeError(f"Unknown token type: {token_type}")
+        case "object":
+            return dict(
+                zip(
+                    (
+                        f"{i}-{utils.random_name()}"
+                        for i in range(int(kwargs.get("obj_len", 3)))
+                    ),
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                _create_file(
+                                    context, location, f"StreamFlow Manager: test {i}"
+                                )
+                            )
+                            for i in range(int(kwargs.get("obj_len", 3)))
+                        )
+                    ),
+                )
+            )
+        case _:
+            raise RuntimeError(f"Unknown token type: {token_type}")
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -571,12 +571,13 @@ async def test_synchro(fault_tolerant_context: StreamFlowContext):
     execution_location = await get_location(fault_tolerant_context, deployment_t)
     translator.deployment_configs = {deployment_config.name: deployment_config}
     input_ports = {}
-    if token_t == "default":
-        token_value = 100
-    elif token_t == "file":
-        token_value = await _create_file(fault_tolerant_context, execution_location)
-    else:
-        raise RuntimeError(f"Unknown token type: {token_t}")
+    match token_t:
+        case "default":
+            token_value = 100
+        case "file":
+            token_value = await _create_file(fault_tolerant_context, execution_location)
+        case _:
+            raise RuntimeError(f"Unknown token type: {token_t}")
     input_name = f"test_in_{utils.random_name()}"
     output_name = f"test_out_{utils.random_name()}"
     injector_step = translator.get_base_injector_step(
