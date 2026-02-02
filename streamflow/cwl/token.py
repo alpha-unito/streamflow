@@ -9,7 +9,7 @@ from streamflow.data.remotepath import StreamFlowPath
 from streamflow.workflow.token import FileToken
 
 
-async def _get_file_token_weight(context: StreamFlowContext, value: Any):
+async def _get_file_token_weight(context: StreamFlowContext, value: Any) -> int:
     weight = 0
     if "size" in value:
         weight = value["size"]
@@ -57,5 +57,5 @@ class CWLFileToken(FileToken):
                     paths.append(path)
         return paths
 
-    async def get_weight(self, context):
+    async def get_weight(self, context: StreamFlowContext) -> int:
         return await _get_file_token_weight(context, self.value)

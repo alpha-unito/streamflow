@@ -236,7 +236,6 @@ class DefaultTransformer(ManyToOneTransformer):
 
 
 class DefaultRetagTransformer(DefaultTransformer):
-
     def __init__(
         self,
         name: str,
@@ -400,7 +399,7 @@ class ListToElementTransformer(OneToOneTransformer):
 
 
 class OnlyNonNullTransformer(OneToOneTransformer):
-    def _transform(self, name: str, token: Token):
+    def _transform(self, name: str, token: Token) -> Token:
         if isinstance(token, ListToken):
             ret = None
             for t in token.value:
@@ -565,11 +564,11 @@ class LoopValueFromTransformer(ValueFromTransformer):
             "loop_input_port": self.loop_input_ports,
         }
 
-    def add_loop_input_port(self, name: str, port: Port):
+    def add_loop_input_port(self, name: str, port: Port) -> None:
         self.add_input_port(name + "-in", port)
         self.loop_input_ports.append(name)
 
-    def add_loop_source_port(self, name: str, port: Port):
+    def add_loop_source_port(self, name: str, port: Port) -> None:
         self.add_input_port(name + "-out", port)
         self.loop_source_port = name
 

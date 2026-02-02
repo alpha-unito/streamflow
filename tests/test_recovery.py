@@ -138,7 +138,7 @@ async def test_execute(
     num_of_failures: int,
     num_of_steps: int,
     token_type: str,
-):
+) -> None:
     deployment_t = "local-fs-volatile"
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
@@ -449,7 +449,7 @@ async def test_resume_scatter_step(context: StreamFlowContext) -> None:
 
 
 @pytest.mark.asyncio
-async def test_scatter(fault_tolerant_context: StreamFlowContext):
+async def test_scatter(fault_tolerant_context: StreamFlowContext) -> None:
     num_of_failures = 1
     deployment_t = "local-fs-volatile"
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
@@ -544,7 +544,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_synchro(fault_tolerant_context: StreamFlowContext):
+async def test_synchro(fault_tolerant_context: StreamFlowContext) -> None:
     step_t = "execute"
     num_of_steps = 1
     num_of_failures = 1

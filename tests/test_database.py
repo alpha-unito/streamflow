@@ -7,7 +7,7 @@ from tests.utils.workflow import create_workflow
 
 
 @pytest.mark.asyncio
-async def test_get_steps_queries(context: StreamFlowContext):
+async def test_get_steps_queries(context: StreamFlowContext) -> None:
     """Test get_input_steps and get_output_steps queries"""
     workflow, (port_a, job_port, job_port_2, port_b, port_c) = await create_workflow(
         context, num_port=5

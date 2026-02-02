@@ -95,7 +95,7 @@ class OccamConnector(SSHConnector):
                 )
         return None
 
-    async def _get_tmpdir(self, location: str):
+    async def _get_tmpdir(self, location: str) -> str:
         scratch_home = f"/scratch/home/{self.username}"
         temp_dir = posixpath.join(
             scratch_home, "streamflow", "".join(utils.random_name())
@@ -300,7 +300,7 @@ class OccamConnector(SSHConnector):
 
     async def _deploy_node(
         self, name: str, service: MutableMapping[str, Any], node: str
-    ):
+    ) -> None:
         deploy_command = (
             f"cd {service.get('workdir')} && "
             if "workdir" in service
@@ -340,7 +340,7 @@ class OccamConnector(SSHConnector):
             else:
                 raise WorkflowExecutionException(f"Failed to deploy {name}: {output}")
 
-    async def _undeploy_node(self, name: str, job_id: str):
+    async def _undeploy_node(self, name: str, job_id: str) -> None:
         undeploy_command = f"occam-kill {job_id}"
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"EXECUTING {undeploy_command}")

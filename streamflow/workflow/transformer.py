@@ -34,7 +34,7 @@ class OneToOneTransformer(ManyToOneTransformer, ABC):
                 f"{self.name} step must contain a single input port."
             )
 
-    async def run(self):
+    async def run(self) -> None:
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a single input port."
