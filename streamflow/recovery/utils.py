@@ -402,8 +402,8 @@ class GraphMapper:
                 strict=True,
             ):
                 if port_row["name"] not in self.port_tokens.keys():
-                    step_row = await self.context.database.get_step(step_id)
                     if logger.isEnabledFor(logging.DEBUG):
+                        step_row = await self.context.database.get_step(step_id)
                         logger.debug(
                             f"The port {port_row['name']} is missing. "
                             f"However, it is the input, called {dep_row['name']}, of the step {step_row['name']}"

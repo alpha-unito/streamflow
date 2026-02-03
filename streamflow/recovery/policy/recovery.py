@@ -26,6 +26,7 @@ from streamflow.workflow.port import (
     InterWorkflowPort,
     JobPort,
 )
+from streamflow.workflow.step import ConditionalStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -41,8 +42,7 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
                 f"Workflow {new_workflow.name} is empty. "
                 f"Waiting output ports {list(failed_step.output_ports.values())}"
             )
-        if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
-            raise FailureHandlingException("Recovered workflow construction invalid")
+        assert set(new_workflow.ports.keys()) == set(failed_step.output_ports.values())
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -75,15 +75,10 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
             raise FailureHandlingException(
                 f"Port {port_name} has multiple tokens with same tag (id, tag): {tags}"
             )
-        if any(
+        assert not any(
             isinstance(token, (TerminationToken, IterationTerminationToken))
             for token in token_list
-        ):
-            raise FailureHandlingException("Impossible to load a TerminationToken")
-        if port_name not in new_workflow.ports.keys():
-            logger.info(f"Missing port name {port_name}")
-            raise FailureHandlingException(f"Missing port name {port_name}")
-            # continue
+        )
         port = new_workflow.ports[port_name]
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
@@ -115,10 +110,7 @@ async def _populate_workflow(
         )
     )
     # Add the failed step to the new workflow
-    await workflow_builder.load_step(
-        new_workflow.context,
-        failed_step.persistent_id,
-    )
+    await workflow_builder.load_step(new_workflow.context, failed_step.persistent_id)
     # Instantiate ports that can transfer tokens between workflows
     for port in new_workflow.ports.values():
         if not isinstance(
@@ -202,6 +194,11 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         # )
         await _inject_tokens(mapper, new_workflow)
         # Resume steps
+        skip_ports = []
+        for s in new_workflow.steps.values():
+            if isinstance(s, ConditionalStep):
+                # CWL dependent implementation
+                skip_ports.extend(cast(ConditionalStep, s).skip_ports.values())
         for step in new_workflow.steps.values():
             await step.restore(
                 on_tokens={
@@ -215,20 +212,22 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 }
             )
             # DEBUG
+            # Some ports do not have a termination token because they can have
+            # available tokens and must wait until a recovery step of another
+            # recovery workflow generates the missing token.
             for port in (
                 p
                 for p in new_workflow.ports.values()
-                if len(p.get_input_steps()) == 0 and p.name not in sync_port_names
+                if len(p.get_input_steps()) == 0
+                and p.name not in sync_port_names
+                and p.name not in skip_ports
             ):
                 if len(port.token_list) == 0:
                     logger.info(f"Port {port.name} has no tokens")
-                    # raise FailureHandlingException(f"Port {port.name} has no tokens")
+                    raise FailureHandlingException(f"Port {port.name} has no tokens")
                 elif len(port.token_list) == 1:
                     logger.info(f"Port {port.name} has 1 token")
-                    # raise FailureHandlingException(f"Port {port.name} has 1 token")
-                # Some ports do not have a termination token because they can have
-                # available tokens and must wait until a recovery step of another
-                # recovery workflow generates the missing token.
+                    raise FailureHandlingException(f"Port {port.name} has 1 token")
             for p in new_workflow.ports.values():
                 if len(steps := p.get_input_steps()) == 1:
                     for s in steps:
@@ -236,9 +235,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                             logger.debug(
                                 f"Step {s.name} has no input token in its input port {p.name}"
                             )
-                            # raise FailureHandlingException(
-                            #     "The back prop is an input port and is empty"
-                            # )
         return new_workflow
 
     async def _sync_workflows(
