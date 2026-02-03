@@ -14,7 +14,7 @@ from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.workflow.step import ExecuteStep, ScheduleStep, TransferStep
+from streamflow.workflow.step import ExecuteStep, TransferStep
 from streamflow.workflow.token import JobToken
 
 T = TypeVar("T")
@@ -352,10 +352,6 @@ class GraphMapper:
         if len(step_rows) != 1:
             raise FailureHandlingException(
                 f"Job {job_token.value.name} with token {job_token.persistent_id} has multiple steps"
-            )
-        if not issubclass(get_class_from_name(step_rows[0]["type"]), ScheduleStep):
-            raise FailureHandlingException(
-                f"Job {job_token.value.name} with token {job_token.persistent_id} must have a schedule step. Got {step_rows[0]['type']}"
             )
         return port_name
 

@@ -24,6 +24,7 @@ from streamflow.workflow.port import (
     InterWorkflowJobPort,
     InterWorkflowPort,
     JobPort,
+    TerminationSide,
 )
 from streamflow.workflow.token import (
     IterationTerminationToken,
@@ -129,8 +130,7 @@ async def _populate_workflow(
         cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
             port,
             boundary_tag=get_tag(failed_job.inputs.values()),
-            inter_terminate=False,
-            intra_terminate=True,
+            termination_side=TerminationSide.INTRA,
         )
 
 
@@ -233,8 +233,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 ).add_inter_port(
                     workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
                     boundary_tag=get_job_tag(job_token.value.name),
-                    inter_terminate=True,
-                    intra_terminate=False,
+                    termination_side=TerminationSide.INTER,
                 )
                 # Synchronized schedule step
                 mapper.move_token_to_root(job_token.persistent_id)

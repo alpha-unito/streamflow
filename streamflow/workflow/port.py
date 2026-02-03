@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, MutableMapping, MutableSequence
-from typing import NamedTuple
+from enum import Enum
 
 from streamflow.core.deployment import Connector
 from streamflow.core.workflow import Job, Port, Token, Workflow
@@ -10,10 +10,9 @@ from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
 
-class BoundaryRule(NamedTuple):
-    port: Port
-    inter_terminate: bool = False
-    intra_terminate: bool = False
+class TerminationSide(Enum):
+    INTER = 0
+    INTRA = 1
 
 
 class ConnectorPort(Port):
@@ -59,25 +58,26 @@ class FilterTokenPort(Port):
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
-        self.boundaries: MutableMapping[str, MutableSequence[BoundaryRule]] = {}
+        self.boundaries: MutableMapping[
+            str, MutableSequence[tuple[Port, TerminationSide]]
+        ] = {}
 
-    def _handle_boundary(self, token: Token, boundary: BoundaryRule) -> None:
-        boundary.port.put(token)
-        if boundary.inter_terminate:
-            boundary.port.put(TerminationToken())
-        if boundary.intra_terminate:
+    def _handle_boundary(
+        self, token: Token, boundary: tuple[Port, TerminationSide]
+    ) -> None:
+        boundary[0].put(token)
+        if boundary[1] == TerminationSide.INTER:
+            boundary[0].put(TerminationToken())
+        else:
             super().put(TerminationToken())
 
     def add_inter_port(
         self,
         port: Port,
         boundary_tag: str,
-        inter_terminate: bool = False,
-        intra_terminate: bool = False,
+        termination_side: TerminationSide,
     ) -> None:
-        boundary = BoundaryRule(
-            port=port, inter_terminate=inter_terminate, intra_terminate=intra_terminate
-        )
+        boundary = (port, termination_side)
         self.boundaries.setdefault(boundary_tag, []).append(boundary)
         for token in self.token_list:
             if token.tag == boundary_tag:
