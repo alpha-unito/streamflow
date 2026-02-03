@@ -476,7 +476,7 @@ class Step(PersistableEntity, ABC):
                 self.persistent_id = await context.database.add_step(
                     name=self.name,
                     workflow_id=self.workflow.persistent_id,
-                    status=cast(int, self.status.value),
+                    status=self.status.value,
                     type=type(self),
                     params=await self._save_additional_params(context),
                 )
