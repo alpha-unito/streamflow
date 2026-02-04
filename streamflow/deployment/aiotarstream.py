@@ -13,7 +13,7 @@ import tarfile
 import time
 from abc import ABC
 from builtins import open as bltn_open
-from typing import Any, cast
+from typing import Any
 
 from typing_extensions import Self
 
@@ -1013,7 +1013,7 @@ class AioTarStream:
         if self.offset != self.stream.tell():
             if self.offset == 0:
                 return None
-            await cast(SeekableStreamReaderWrapper, self.stream).seek(self.offset)
+            await self.stream.seek(self.offset)
         tarinfo = None
         while True:
             try:

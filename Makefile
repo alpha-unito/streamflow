@@ -29,3 +29,6 @@ test:
 
 testcov:
 	python -m pytest -rs --cov --junitxml=junit.xml -o junit_family=legacy --cov-report= ${PYTEST_EXTRA}
+
+typing:
+	mypy streamflow tests

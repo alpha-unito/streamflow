@@ -8,7 +8,7 @@ import os
 from collections.abc import MutableMapping, MutableSequence
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 import pytest
 from pytest import LogCaptureFixture
@@ -39,8 +39,13 @@ from tests.utils.connector import (
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager, ReverseTargetsBindingFilter
 
+A = TypeVar("A")
+S = TypeVar("S", bound=Step)
+T = TypeVar("T", bound=Token)
+W = TypeVar("W", bound=Workflow)
 
-def get_full_instantiation(cls_: type[Any], **arguments) -> Any:
+
+def get_full_instantiation(cls_: type[A], **arguments) -> A:
     """
     Instantiates a class using the provided arguments, checking whether the resulting
     instance has values that differ from the class's default values.
@@ -149,12 +154,12 @@ async def create_and_run_step(
     workflow: Workflow,
     in_port: Port,
     out_port: Port,
-    step_cls: type[Step],
+    step_cls: type[S],
     kwargs_step: MutableMapping[str, Any],
-    token_list: MutableSequence[Token],
+    token_list: MutableSequence[T],
     port_name: str = "test",
     save_input_token: bool = True,
-) -> Step:
+) -> S:
     # Create step
     step = workflow.create_step(cls=step_cls, **kwargs_step)
     step.add_input_port(port_name, in_port)
@@ -168,13 +173,34 @@ async def create_and_run_step(
     return step
 
 
+if TYPE_CHECKING:
+
+    @overload
+    async def duplicate_and_test(
+        workflow: W,
+        step_cls: type[S],
+        kwargs_step: MutableMapping[str, Any],
+        context: StreamFlowContext,
+        test_are_eq: Literal[True] = ...,
+    ) -> tuple[None, None, None]: ...
+
+    @overload
+    async def duplicate_and_test(
+        workflow: W,
+        step_cls: type[S],
+        kwargs_step: MutableMapping[str, Any],
+        context: StreamFlowContext,
+        test_are_eq: Literal[False],
+    ) -> tuple[S, W, S]: ...
+
+
 async def duplicate_and_test(
-    workflow: Workflow,
-    step_cls: type[Step],
+    workflow: W,
+    step_cls: type[S],
     kwargs_step: MutableMapping[str, Any],
     context: StreamFlowContext,
     test_are_eq: bool = True,
-) -> tuple[Step, Workflow, Step] | tuple[None, None, None]:
+) -> tuple[S, W, S] | tuple[None, None, None]:
     step = workflow.create_step(cls=step_cls, **kwargs_step)
     await workflow.save(context)
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
@@ -199,8 +225,8 @@ async def duplicate_and_test(
 
 
 async def duplicate_elements(
-    step: Step, workflow: Workflow, context: StreamFlowContext
-) -> tuple[Workflow, Step]:
+    step: S, workflow: W, context: StreamFlowContext
+) -> tuple[W, S]:
     loading_context = WorkflowBuilder(deep_copy=False)
     new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
     new_step = await loading_context.load_step(context, step.persistent_id)
