@@ -3295,7 +3295,7 @@ dev = [
     { name = "types-antlr4-python3-runtime", specifier = "==4.13.0.20251118" },
     { name = "types-cachetools", specifier = "==6.2.0.20251022" },
     { name = "types-jsonschema", specifier = "==4.26.0.20260202" },
-    { name = "types-psutil", specifier = "==7.1.3.20251202" },
+    { name = "types-psutil", specifier = "==7.2.2.20260130" },
     { name = "types-pyyaml", specifier = "==6.0.12.20250915" },
 ]
 docs = [
@@ -3325,7 +3325,7 @@ typing = [
     { name = "types-antlr4-python3-runtime", specifier = "==4.13.0.20251118" },
     { name = "types-cachetools", specifier = "==6.2.0.20251022" },
     { name = "types-jsonschema", specifier = "==4.26.0.20260202" },
-    { name = "types-psutil", specifier = "==7.1.3.20251202" },
+    { name = "types-psutil", specifier = "==7.2.2.20260130" },
     { name = "types-pyyaml", specifier = "==6.0.12.20250915" },
 ]
 
@@ -3419,11 +3419,11 @@ wheels = [
 
 [[package]]
 name = "types-psutil"
-version = "7.1.3.20251202"
+version = "7.2.2.20260130"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/56/38/fe935d9e9e70f9f0aaa04b743673a72acafcb6410d7a565c7c333348faa3/types_psutil-7.1.3.20251202.tar.gz", hash = "sha256:5cfecaced7c486fb3995bb290eab45043d697a261718aca01b9b340d1ab7968a", size = 24948, upload-time = "2025-12-02T03:10:58.301Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/14/fc5fb0a6ddfadf68c27e254a02ececd4d5c7fdb0efcb7e7e917a183497fb/types_psutil-7.2.2.20260130.tar.gz", hash = "sha256:15b0ab69c52841cf9ce3c383e8480c620a4d13d6a8e22b16978ebddac5590950", size = 26535, upload-time = "2026-01-30T03:58:14.116Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/c3/7452fb13e3322885aa1f3c4b754fbb325eb666185656cb5982d720cc8fec/types_psutil-7.1.3.20251202-py3-none-any.whl", hash = "sha256:39bfc44780de7ab686c65169e36a7969db09e7f39d92de643b55789292953400", size = 31843, upload-time = "2025-12-02T03:10:57.153Z" },
+    { url = "https://files.pythonhosted.org/packages/17/d7/60974b7e31545d3768d1770c5fe6e093182c3bfd819429b33133ba6b3e89/types_psutil-7.2.2.20260130-py3-none-any.whl", hash = "sha256:15523a3caa7b3ff03ac7f9b78a6470a59f88f48df1d74a39e70e06d2a99107da", size = 32876, upload-time = "2026-01-30T03:58:13.172Z" },
 ]
 
 [[package]]
