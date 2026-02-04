@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, MutableMapping, MutableSequence
-from typing import NamedTuple
 
 from streamflow.core.deployment import Connector
+from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
@@ -50,52 +50,57 @@ class FilterTokenPort(Port):
             logger.debug(f"Port {self.name} skips {token.tag}")
 
 
-class BoundaryRule(NamedTuple):
-    port: Port
-    inter_terminate: bool = False
-    intra_terminate: bool = False
-
-
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
-        self.boundaries: MutableMapping[str, MutableSequence[BoundaryRule]] = {}
+        self.boundaries: MutableMapping[str, MutableSequence[tuple[Port, bool]]] = {}
 
-    def _handle_boundary(self, token: Token, boundary: BoundaryRule) -> None:
-        logger.info(f"Port {self.name} ({id(self)}) passing token {token.tag}")
-        boundary.port.put(token)
-        if boundary.inter_terminate:
-            logger.info(
-                f"Port {self.name} ({id(self)}) passing inter termination token"
-            )
-            boundary.port.put(TerminationToken(Status.RECOVERED))
-        if boundary.intra_terminate:
-            logger.info(
-                f"Port {self.name} ({id(self)}) passing intra termination token"
-            )
+    def _handle_self_boundary(self, token: Token) -> None:
+        if next(
+            (
+                boundary
+                for boundary in self.boundaries.get(token.tag, ())
+                if boundary[0] is self
+            ),
+            None,
+        ) is not None:
+            logger.info(f"Port {self.name} add inter_port. self termination token after {token.tag} (ignored input token {type(token)})")
             super().put(TerminationToken(Status.RECOVERED))
+        else:
+            logger.info(f"Port {self.name} add inter_port. self put token after {token.tag} ({type(token)})")
+            super().put(token)
+
 
     def add_inter_port(
         self,
         port: Port,
         boundary_tag: str,
-        inter_terminate: bool = False,
-        intra_terminate: bool = False,
+        terminate: bool = True,
     ) -> None:
-        boundary = BoundaryRule(
-            port=port, inter_terminate=inter_terminate, intra_terminate=intra_terminate
-        )
-        self.boundaries.setdefault(boundary_tag, []).append(boundary)
-        logger.info(f"Port {self.name} ({id(self)}) inter port {boundary_tag}")
-        for token in self.token_list:
+        if port is self and not terminate:
+            raise WorkflowDefinitionException(
+                f"Impossible to add self boundary without termination in the port {self.name}"
+            )
+        self.boundaries.setdefault(boundary_tag, []).append((port, terminate))
+        for token in list(self.token_list): # hard copy because the list can be increased in self._handle_self_boundary
             if token.tag == boundary_tag:
-                self._handle_boundary(token, boundary)
+                if port is not self:
+                    logger.info(f"Port {self.name} add inter_port. put token {token.tag} ({type(token)})")
+                    port.put(token)
+                    if terminate:
+                        logger.info(f"Port {self.name} add inter_port. put termination token after {token.tag} ({type(token)})")
+                        port.put(TerminationToken(Status.RECOVERED))
+                else:
+                    self._handle_self_boundary(token)
 
     def put(self, token: Token) -> None:
         if not isinstance(token, TerminationToken):
-            for route in self.boundaries.get(token.tag, ()):
-                self._handle_boundary(token, route)
-        super().put(token)
+            for boundary in self.boundaries.get(token.tag, ()):
+                if boundary[0] is not self:
+                    boundary[0].put(token)
+                    if boundary[1]:
+                        boundary[0].put(TerminationToken(Status.RECOVERED))
+        self._handle_self_boundary(token)
 
 
 class InterWorkflowJobPort(InterWorkflowPort, JobPort):

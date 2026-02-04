@@ -5,11 +5,12 @@ import logging
 import os
 import posixpath
 from collections.abc import Iterable, MutableSequence, MutableSet
+from functools import cmp_to_key
 from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
-from streamflow.core.utils import get_job_tag, get_tag
+from streamflow.core.utils import compare_tags, get_job_tag, get_tag
 from streamflow.core.workflow import Job, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
@@ -83,15 +84,31 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
-                    f"Injecting token {token.persistent_id} {token.tag} of port {port.name}"
+                    f"Injecting token {token.persistent_id} {token.tag} of port {port.name} ({type(port)})"
                 )
             port.put(token)
-        if len(port.token_list) > 0 and len(port.token_list) == len(
-            mapper.port_tokens[port_name]
-        ):
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Injecting termination token on port {port.name}")
+        # if len(port.token_list) > 0 and len(port.token_list) == len(
+        #     mapper.port_tokens[port_name]
+        # ):
+        #     if logger.isEnabledFor(logging.DEBUG):
+        #         logger.debug(f"Injecting termination token on port {port.name}")
+        #     port.put(TerminationToken(Status.COMPLETED))
+        if isinstance(port, InterWorkflowPort):
+            if not isinstance(port, InterWorkflowJobPort):
+                port.add_inter_port(
+                    port,
+                    boundary_tag=max(
+                        [
+                            mapper.token_instances[token_id].tag
+                            for token_id in mapper.port_tokens[port_name]
+                        ],
+                        key=cmp_to_key(lambda x, y: compare_tags(x, y)),
+                    ),
+                    terminate=True,
+                )
+        else:
             port.put(TerminationToken(Status.COMPLETED))
+    logger.info(f"Injected all tokens")
 
 
 async def _populate_workflow(
@@ -128,8 +145,12 @@ async def _populate_workflow(
         cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
             port,
             boundary_tag=get_tag(failed_job.inputs.values()),
-            inter_terminate=False,
-            intra_terminate=True,
+            terminate=False,
+        )
+        cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
+            new_workflow.ports[port.name],
+            boundary_tag=get_tag(failed_job.inputs.values()),
+            terminate=True,
         )
 
 
@@ -279,8 +300,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 ).add_inter_port(
                     workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
                     boundary_tag=get_job_tag(job_token.value.name),
-                    inter_terminate=True,
-                    intra_terminate=False,
+                    terminate=True,
                 )
                 # Synchronized schedule step
                 mapper.move_token_to_root(job_token.persistent_id)
