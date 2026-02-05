@@ -135,8 +135,10 @@ class BaseStep(Step, ABC):
         return inputs
 
     def _get_status(self, status: Status) -> Status:
-        if status in (Status.FAILED, Status.RECOVERED):
+        if status == Status.FAILED:
             return status
+        elif status == Status.RECOVERED:
+            return Status.COMPLETED
         elif any(p.empty() for p in self.get_output_ports().values()):
             return Status.SKIPPED
         else:
