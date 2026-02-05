@@ -56,12 +56,16 @@ def _get_connector_method_params(method_name: str) -> MutableSequence[Any]:
 
 
 @pytest_asyncio.fixture(scope="session")
-async def curr_location(context, deployment_src) -> ExecutionLocation:
+async def curr_location(
+    context: StreamFlowContext, deployment_src: str
+) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
 
 @pytest.fixture(scope="session")
-def curr_connector(context, curr_location) -> Connector:
+def curr_connector(
+    context: StreamFlowContext, curr_location: ExecutionLocation
+) -> Connector:
     return context.deployment_manager.get_connector(curr_location.deployment)
 
 

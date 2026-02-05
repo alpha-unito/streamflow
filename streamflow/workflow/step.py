@@ -831,7 +831,7 @@ class ExecuteStep(BaseStep):
             output_processor or DefaultCommandOutputProcessor(name, self.workflow)
         )
 
-    def get_job_port(self):
+    def get_job_port(self) -> Port:
         return self.get_input_port("__job__")
 
     async def run(self) -> None:
@@ -1492,7 +1492,7 @@ class ScheduleStep(BaseStep):
     async def _schedule(
         self,
         job: Job,
-    ):
+    ) -> None:
         await self.workflow.context.scheduler.schedule(
             job,
             self.binding_config,

@@ -97,7 +97,7 @@ class _RemotePathMapper:
             tree += self._node_repr(child, level + 1)
         return tree
 
-    def _remove_node(self, location: DataLocation, node: _RemotePathNode):
+    def _remove_node(self, location: DataLocation, node: _RemotePathNode) -> None:
         if location.deployment in node.locations:
             del node.locations[location.deployment][location.name]
         for n in node.children.values():
@@ -195,7 +195,7 @@ class _RemotePathMapper:
         # Return location
         return data_location
 
-    def remove_location(self, location: DataLocation):
+    def remove_location(self, location: DataLocation) -> None:
         data_locations = self._filesystem.locations.setdefault(
             location.deployment, {}
         ).get(location.name)
@@ -208,7 +208,7 @@ class DefaultDataManager(DataManager):
         super().__init__(context)
         self.path_mapper = _RemotePathMapper(context)
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
     def get_data_locations(

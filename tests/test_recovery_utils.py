@@ -24,7 +24,7 @@ def pipeline() -> DirectedGraph:
 
 
 @pytest.fixture
-def g_loop():
+def g_loop() -> DirectedGraph:
     # 0 -> 1 -> 2 <-----------------------+
     #           |                         |
     #           v                         |
@@ -84,7 +84,7 @@ def test_out_degree(g_full_connected: DirectedGraph, pipeline: DirectedGraph) ->
     assert pipeline.out_degree() == {0: 1, 1: 1, 2: 0}
 
 
-def test_add():
+def test_add() -> None:
     g = DirectedGraph("test")
     g.add(0, 1)
     assert 1 in g._successors[0]

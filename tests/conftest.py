@@ -4,7 +4,13 @@ import argparse
 import os
 import platform
 from asyncio.locks import Lock
-from collections.abc import AsyncGenerator, Callable, Collection, MutableSequence
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Collection,
+    MutableMapping,
+    MutableSequence,
+)
 from typing import Any
 
 import pytest
@@ -17,10 +23,10 @@ from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from tests.utils.deployment import get_deployment_config
 
 
-def csvtype(choices):
+def csvtype(choices: Collection[str]) -> Callable[[str], list[str]]:
     """Return a function that splits and checks comma-separated values."""
 
-    def splitarg(arg):
+    def splitarg(arg: str) -> list[str]:
         values = arg.split(",")
         for value in values:
             if value not in choices:
@@ -34,7 +40,7 @@ def csvtype(choices):
     return splitarg
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--deploys",
         type=csvtype(all_deployment_types()),
@@ -45,11 +51,11 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture(scope="session")
-def chosen_deployment_types(request):
+def chosen_deployment_types(request: pytest.FixtureRequest) -> MutableSequence[str]:
     return request.config.getoption("--deploys")
 
 
-def pytest_generate_tests(metafunc):
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "deployment" in metafunc.fixturenames:
         metafunc.parametrize(
             "deployment", metafunc.config.getoption("deploys"), scope="session"
@@ -119,7 +125,7 @@ def pytest_generate_tests(metafunc):
         )
 
 
-def all_deployment_types():
+def all_deployment_types() -> list[str]:
     deployments_ = ["local", "docker", "docker-compose", "docker-wrapper", "slurm"]
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity", "ssh"])
@@ -149,7 +155,9 @@ def is_primitive_type(elem: Any) -> bool:
     return type(elem) in (int, float, str, bool)
 
 
-def get_class_callables(class_type) -> MutableSequence[Callable]:
+def get_class_callables(
+    class_type: type[object],
+) -> MutableSequence[Callable[..., Any]]:
     """The function given in input a class type returns a list of strings with the method names"""
     return [
         getattr(class_type, func)
@@ -158,7 +166,7 @@ def get_class_callables(class_type) -> MutableSequence[Callable]:
     ]
 
 
-def object_to_dict(obj):
+def object_to_dict(obj: Any) -> MutableMapping[str, Any]:
     """The function given in input an object returns a dictionary with attribute:value"""
     return {
         attr: getattr(obj, attr)
@@ -231,7 +239,9 @@ def are_equals(elem1, elem2, obj_compared=None):
     return True
 
 
-async def save_load_and_test(elem: PersistableEntity, context):
+async def save_load_and_test(
+    elem: PersistableEntity, context: StreamFlowContext
+) -> None:
     assert elem.persistent_id is None
     await elem.save(context)
     assert elem.persistent_id is not None

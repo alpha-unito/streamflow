@@ -116,7 +116,7 @@ async def _get_contents(
     path: StreamFlowPath,
     size: int,
     cwl_version: str,
-):
+) -> str:
     if (cwl_version not in ("v1.0", "v.1.1")) and size > CONTENT_LIMIT:
         raise WorkflowExecutionException(
             f"Cannot read contents from files larger than "
@@ -1431,7 +1431,7 @@ async def write_remote_file(
     content: str,
     path: str,
     relpath: str,
-):
+) -> None:
     await asyncio.gather(
         *(
             asyncio.create_task(

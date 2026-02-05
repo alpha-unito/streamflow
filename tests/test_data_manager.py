@@ -17,7 +17,7 @@ from tests.utils.deployment import get_location
 def _contains_location(
     searched_location: ExecutionLocation | DataLocation,
     execution_location: ExecutionLocation,
-):
+) -> bool:
     """
     The `execution_location` object can wrap other `execution_location` object.
     This function checks whether the `execution_location` object, or one of its
@@ -37,29 +37,41 @@ def _contains_location(
 
 
 @pytest_asyncio.fixture(scope="session")
-async def src_location(context, deployment_src) -> ExecutionLocation:
+async def src_location(
+    context: StreamFlowContext, deployment_src: str
+) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
 
 @pytest.fixture(scope="session")
-def src_connector(context, src_location) -> Connector:
+def src_connector(
+    context: StreamFlowContext, src_location: ExecutionLocation
+) -> Connector:
     return context.deployment_manager.get_connector(src_location.deployment)
 
 
 @pytest_asyncio.fixture(scope="session")
-async def dst_location(context, deployment_dst) -> ExecutionLocation:
+async def dst_location(
+    context: StreamFlowContext, deployment_dst: str
+) -> ExecutionLocation:
     return await get_location(context, deployment_dst)
 
 
 @pytest.fixture(scope="session")
-def dst_connector(context, dst_location) -> Connector:
+def dst_connector(
+    context: StreamFlowContext, dst_location: ExecutionLocation
+) -> Connector:
     return context.deployment_manager.get_connector(dst_location.deployment)
 
 
 @pytest.mark.asyncio
 async def test_data_locations(
-    context, src_connector, src_location, dst_connector, dst_location
-):
+    context: StreamFlowContext,
+    src_connector: Connector,
+    src_location: ExecutionLocation,
+    dst_connector: Connector,
+    dst_location: ExecutionLocation,
+) -> None:
     """Test the existence of data locations after the transfer data"""
     src_path = StreamFlowPath(
         tempfile.gettempdir() if src_location.local else "/tmp",
@@ -159,7 +171,7 @@ async def test_invalidate_location(
     src_connector: Connector,
     src_location: ExecutionLocation,
     depth: str,
-):
+) -> None:
     """Test the invalidation of a location"""
     src_path = StreamFlowPath(
         tempfile.gettempdir() if src_location.local else "/tmp",

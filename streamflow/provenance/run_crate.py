@@ -347,7 +347,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                         with tag("a", href="./ro-crate-metadata.json"):
                             doc.asis(
                                 'Download all the metadata for <span class="name">'
-                                f'{self.graph["./"].get("name", "")}'
+                                f"{self.graph['./'].get('name', '')}"
                                 "</span> in JSON-LD format"
                             )
                         doc.stag("div", id="check")
@@ -686,7 +686,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
     @abstractmethod
     async def add_initial_inputs(self, wf_id: int, workflow: Workflow) -> None: ...
 
-    async def add_property(self, key: str, value: str):
+    async def add_property(self, key: str, value: str) -> None:
         current_obj = self.graph
         keys = re.split(r"(?<!\\)\.", key)
         for k in keys[:-1]:
@@ -1217,7 +1217,9 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 )
         return jsonld_workflow
 
-    async def _process_file_token(self, token_value: MutableMapping[str, Any]):
+    async def _process_file_token(
+        self, token_value: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
         if token_value["class"] == "File":
             if "secondaryFiles" in token_value:
                 self.files_map[token_value["path"]] = token_value["checksum"][5:]
@@ -1301,7 +1303,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         jsonld_steps: MutableSequence[MutableMapping[str, Any]],
         cwl_steps: MutableSequence[cwl_utils.parser.WorkflowStep],
         version: str,
-    ):
+    ) -> None:
         has_part = set()
         for cwl_step, jsonld_step in zip(cwl_steps, jsonld_steps, strict=True):
             step_name = streamflow.cwl.utils.get_name(prefix, cwl_prefix, cwl_step.id)

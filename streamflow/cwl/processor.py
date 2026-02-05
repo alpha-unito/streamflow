@@ -98,7 +98,7 @@ async def _fill_context(
     output_eval: str,
     full_js: bool,
     expression_lib: MutableSequence[str] | None,
-):
+) -> None:
     # Fill context with exit code if required
     if "exitCode" in resolve_dependencies(
         expression=output_eval,

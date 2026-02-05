@@ -101,7 +101,7 @@ class CartesianProductCombinator(Combinator):
         token: Token | MutableMapping[str, Token],
         tag_values: MutableMapping[str, MutableSequence[Any]],
         port_name: str,
-    ):
+    ) -> None:
         if port_name not in tag_values:
             tag_values[port_name] = deque()
         for t in tag_values[port_name]:

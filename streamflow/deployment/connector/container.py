@@ -530,7 +530,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
 
     async def _prepare_volumes(
         self, binds: MutableSequence[str] | None, mounts: MutableSequence[str] | None
-    ):
+    ) -> None:
         sources = [b.split(":", 2)[0] for b in binds] if binds is not None else []
         for m in mounts if mounts is not None else []:
             mount_type = next(
@@ -694,7 +694,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             f"'{command}'",
         ]
 
-    async def _populate_instance(self, name: str):
+    async def _populate_instance(self, name: str) -> None:
         # Build execution location
         location = ExecutionLocation(
             name=name,

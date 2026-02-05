@@ -1280,7 +1280,7 @@ def _get_secondary_files(
     return secondary_files
 
 
-def _inject_value(value: Any):
+def _inject_value(value: Any) -> Any:
     if isinstance(value, MutableSequence):
         return [_inject_value(v) for v in value]
     elif isinstance(value, MutableMapping):
@@ -1615,7 +1615,9 @@ class CWLTranslator:
         self.scatter: MutableMapping[str, Any] = {}
         self.workflow_config: WorkflowConfig = workflow_config
 
-    def _get_deploy_step(self, deployment_config: DeploymentConfig, workflow: Workflow):
+    def _get_deploy_step(
+        self, deployment_config: DeploymentConfig, workflow: Workflow
+    ) -> DeployStep:
         if deployment_config.name not in self.deployment_map:
             self.deployment_map[deployment_config.name] = workflow.create_step(
                 cls=DeployStep,
@@ -1753,7 +1755,7 @@ class CWLTranslator:
         self,
         workflow: Workflow,
         global_name: str,
-        port_name,
+        port_name: str,
         port: Port,
         output_directory: str,
         value: Any,
@@ -1939,7 +1941,7 @@ class CWLTranslator:
         context: MutableMapping[str, Any],
         name_prefix: str,
         cwl_name_prefix: str,
-    ):
+    ) -> None:
         context["elements"][cwl_element.id] = cwl_element
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating {cwl_element.__class__.__name__} {name_prefix}")
