@@ -334,6 +334,27 @@ class GraphMapper:
             step_ids.remove(step_id)
         return step_ids
 
+    async def get_schedule_port_name(self, job_token: JobToken) -> str:
+        port_name = next(
+            port
+            for port, token_ids in self.port_tokens.items()
+            if job_token.persistent_id in token_ids
+        )
+        # Get newest port
+        port_id = max(self.port_name_ids[port_name])
+        step_rows = await self.context.database.get_input_steps(port_id)
+        step_rows = await asyncio.gather(
+            *(
+                asyncio.create_task(self.context.database.get_step(row["step"]))
+                for row in step_rows
+            )
+        )
+        if len(step_rows) != 1:
+            raise FailureHandlingException(
+                f"Job {job_token.value.name} with token {job_token.persistent_id} has multiple steps"
+            )
+        return port_name
+
     def remove_port(self, port_name: str) -> MutableSequence[str]:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Removing port {port_name}")
