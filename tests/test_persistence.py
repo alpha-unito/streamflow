@@ -59,7 +59,7 @@ class DummyHardwareRequirement(HardwareRequirement):
 
 
 @pytest.mark.asyncio
-async def test_workflow(context: StreamFlowContext):
+async def test_workflow(context: StreamFlowContext) -> None:
     """Test saving and loading Workflow from database"""
     workflow = get_full_instantiation(
         cls_=Workflow,
@@ -71,7 +71,7 @@ async def test_workflow(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_port(context: StreamFlowContext):
+async def test_port(context: StreamFlowContext) -> None:
     """Test saving and loading Port from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
@@ -81,7 +81,7 @@ async def test_port(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_job_port(context: StreamFlowContext):
+async def test_job_port(context: StreamFlowContext) -> None:
     """Test saving and loading JobPort from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
@@ -91,7 +91,7 @@ async def test_job_port(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_connector_port(context: StreamFlowContext):
+async def test_connector_port(context: StreamFlowContext) -> None:
     """Test saving and loading ConnectorPort from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
     await workflow.save(context)
@@ -101,7 +101,7 @@ async def test_connector_port(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_deploy_step(context: StreamFlowContext):
+async def test_deploy_step(context: StreamFlowContext) -> None:
     """Test saving and loading DeployStep from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
     connector_port = workflow.create_port(cls=ConnectorPort)
@@ -120,7 +120,7 @@ async def test_deploy_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_schedule_step(context: StreamFlowContext):
+async def test_schedule_step(context: StreamFlowContext) -> None:
     """Test saving and loading ScheduleStep from database"""
     workflow, (job_port,) = await create_workflow(context, type_="default", num_port=1)
     binding_config = get_full_instantiation(
@@ -165,7 +165,7 @@ async def test_schedule_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_execute_step(context: StreamFlowContext):
+async def test_execute_step(context: StreamFlowContext) -> None:
     """Test saving and loading ExecuteStep from database"""
     workflow, (job_port,) = await create_workflow(context, type_="default", num_port=1)
     await workflow.save(context)
@@ -181,7 +181,7 @@ async def test_execute_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_gather_step(context: StreamFlowContext):
+async def test_gather_step(context: StreamFlowContext) -> None:
     """Test saving and loading GatherStep from database"""
     workflow, (port,) = await create_workflow(context, type_="default", num_port=1)
     await workflow.save(context)
@@ -198,7 +198,7 @@ async def test_gather_step(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_scatter_step(context: StreamFlowContext):
+async def test_scatter_step(context: StreamFlowContext) -> None:
     """Test saving and loading ScatterStep from database"""
     workflow, (port,) = await create_workflow(context, type_="default", num_port=1)
     await workflow.save(context)
@@ -223,7 +223,7 @@ async def test_scatter_step(context: StreamFlowContext):
         "loop_termination_combinator",
     ],
 )
-async def test_combinator_step(context: StreamFlowContext, combinator_t: str):
+async def test_combinator_step(context: StreamFlowContext, combinator_t: str) -> None:
     """
     Test saving and loading CombinatorStep and LoopCombinatorStep
     with appropriate Combinator classes from database
@@ -235,7 +235,7 @@ async def test_combinator_step(context: StreamFlowContext, combinator_t: str):
 
 
 @pytest.mark.asyncio
-async def test_target(context: StreamFlowContext):
+async def test_target(context: StreamFlowContext) -> None:
     """Test saving and loading Target from database"""
     target = get_full_instantiation(
         cls_=Target,
@@ -248,14 +248,14 @@ async def test_target(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_local_target(context: StreamFlowContext):
+async def test_local_target(context: StreamFlowContext) -> None:
     """Test saving and loading LocalTarget from database"""
     target = get_full_instantiation(cls_=LocalTarget, workdir=utils.random_name())
     await save_load_and_test(target, context)
 
 
 @pytest.mark.asyncio
-async def test_token(context: StreamFlowContext):
+async def test_token(context: StreamFlowContext) -> None:
     """Test saving and loading Token from database"""
     token = get_full_instantiation(
         cls_=Token, value=["test", "token"], tag="0.0", recoverable=True
@@ -264,7 +264,7 @@ async def test_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_job_token(context: StreamFlowContext):
+async def test_job_token(context: StreamFlowContext) -> None:
     """Test saving and loading JobToken from database"""
     token = get_full_instantiation(
         cls_=JobToken,
@@ -283,7 +283,7 @@ async def test_job_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_list_token(context: StreamFlowContext):
+async def test_list_token(context: StreamFlowContext) -> None:
     """Test saving and loading ListToken from database"""
     # The `ListToken` does not accept `recoverable=True` and set its internal attribute to `False`.
     # However, when using `get_full_instantiation`, passing the `recoverable` value is mandatory.
@@ -298,7 +298,7 @@ async def test_list_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_object_token(context: StreamFlowContext):
+async def test_object_token(context: StreamFlowContext) -> None:
     """Test saving and loading ObjectToken from database"""
     # The `ObjectToken` does not accept `recoverable=True` and set its internal attribute to `False`.
     # However, when using `get_full_instantiation`, passing the `recoverable` value is mandatory.
@@ -313,21 +313,21 @@ async def test_object_token(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_termination_token(context: StreamFlowContext):
+async def test_termination_token(context: StreamFlowContext) -> None:
     """Test saving and loading TerminationToken from database"""
     token = get_full_instantiation(cls_=TerminationToken, value=Status.FAILED)
     await save_load_and_test(token, context)
 
 
 @pytest.mark.asyncio
-async def test_iteration_termination_token(context: StreamFlowContext):
+async def test_iteration_termination_token(context: StreamFlowContext) -> None:
     """Test saving and loading IterationTerminationToken from database"""
     token = get_full_instantiation(cls_=IterationTerminationToken, tag="0.0")
     await save_load_and_test(token, context)
 
 
 @pytest.mark.asyncio
-async def test_filter_config(context: StreamFlowContext):
+async def test_filter_config(context: StreamFlowContext) -> None:
     """Test saving and loading filter configuration from database"""
     config = get_full_instantiation(
         cls_=FilterConfig,
@@ -339,7 +339,7 @@ async def test_filter_config(context: StreamFlowContext):
 
 
 @pytest.mark.asyncio
-async def test_deployment(context: StreamFlowContext):
+async def test_deployment(context: StreamFlowContext) -> None:
     """Test saving and loading deployment configuration from database"""
     config = get_full_instantiation(
         cls_=DeploymentConfig,

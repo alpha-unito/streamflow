@@ -5,6 +5,7 @@ import json
 import os
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
+from types import TracebackType
 from typing import Any, cast
 
 import aiosqlite
@@ -57,7 +58,12 @@ class SqliteConnection:
             self._connection.row_factory = aiosqlite.Row
         return self._connection
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         pass
 
     async def close(self) -> None:
@@ -153,8 +159,7 @@ class SqliteDatabase(CachedDatabase):
     ) -> int:
         async with self.connection as db:
             async with db.execute(
-                "INSERT INTO filter(name, type, config) "
-                "VALUES (:name, :type, :config)",
+                "INSERT INTO filter(name, type, config) VALUES (:name, :type, :config)",
                 {
                     "name": name,
                     "type": type,

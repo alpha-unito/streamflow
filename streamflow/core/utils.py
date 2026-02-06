@@ -110,9 +110,7 @@ def create_command(
             f"The `{class_name}` does not support `stderr` pipe redirection."
         )
     # Build command
-    return "".join(
-        "{workdir}" "{environment}" "{command}" "{stdin}" "{stdout}" "{stderr}"
-    ).format(
+    return "".join("{workdir}{environment}{command}{stdin}{stdout}{stderr}").format(
         workdir=f"cd {workdir} && " if workdir is not None else "",
         environment=(
             "".join(
@@ -191,7 +189,7 @@ def format_seconds_to_hhmmss(seconds: int) -> str:
     return "%02i:%02i:%02i" % (hours, minutes, seconds)
 
 
-def get_class_fullname(cls: type):
+def get_class_fullname(cls: type) -> str:
     return cls.__module__ + "." + cls.__qualname__
 
 
@@ -214,7 +212,7 @@ def get_entity_ids(
 
 async def get_local_to_remote_destination(
     dst_connector: Connector, dst_location: ExecutionLocation, src: str, dst: str
-):
+) -> str:
     is_dst_dir, status = await dst_connector.run(
         location=dst_location,
         command=[f'test -d "{dst}"'],
@@ -343,5 +341,5 @@ async def run_in_subprocess(
         return None
 
 
-def wrap_command(command: str):
+def wrap_command(command: str) -> list[str]:
     return ["/bin/sh", "-c", f"{command}"]

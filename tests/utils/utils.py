@@ -388,7 +388,9 @@ class InjectPlugin(AbstractContextManager):
 
 
 @contextlib.contextmanager
-def caplog_streamflow(caplog: LogCaptureFixture, level: int = logging.INFO):
+def caplog_streamflow(
+    caplog: LogCaptureFixture, level: int = logging.INFO
+) -> LogCaptureFixture:
     """
     Context manager to capture logs from the StreamFlow logger.
 

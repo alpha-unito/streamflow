@@ -10,7 +10,7 @@ from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.log_handler import logger
 
 
-def set_targets(current_node, target):
+def set_targets(current_node, target) -> None:
     for node in current_node["children"].values():
         if "port" in node:
             continue
@@ -74,7 +74,7 @@ class WorkflowConfig(Config):
                 else:
                     deployments.add(deployment["name"])
 
-    def _process_binding(self, binding: MutableMapping[str, Any]):
+    def _process_binding(self, binding: MutableMapping[str, Any]) -> None:
         targets = (
             binding["target"]
             if isinstance(binding["target"], MutableSequence)

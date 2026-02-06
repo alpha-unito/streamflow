@@ -120,7 +120,7 @@ async def get_deployment_config(
             raise Exception(f"{deployment_t} deployment type not supported")
 
 
-def get_docker_compose_deployment_config():
+def get_docker_compose_deployment_config() -> DeploymentConfig:
     return DeploymentConfig(
         name="alpine-docker-compose",
         type="docker-compose",
@@ -135,7 +135,7 @@ def get_docker_compose_deployment_config():
     )
 
 
-def get_docker_deployment_config():
+def get_docker_deployment_config() -> DeploymentConfig:
     return DeploymentConfig(
         name="alpine-docker",
         type="docker",
@@ -152,7 +152,9 @@ def get_docker_deployment_config():
     )
 
 
-async def get_docker_wrapper_deployment_config(_context: StreamFlowContext):
+async def get_docker_wrapper_deployment_config(
+    _context: StreamFlowContext,
+) -> DeploymentConfig:
     docker_dind_deployment = DeploymentConfig(
         name="docker-dind",
         type="docker",
@@ -172,7 +174,7 @@ async def get_docker_wrapper_deployment_config(_context: StreamFlowContext):
     )
 
 
-def get_failure_deployment_config():
+def get_failure_deployment_config() -> DeploymentConfig:
     return DeploymentConfig(
         name="failure-test",
         type="failure-connector",
@@ -182,7 +184,7 @@ def get_failure_deployment_config():
     )
 
 
-def get_kubernetes_deployment_config():
+def get_kubernetes_deployment_config() -> DeploymentConfig:
     template = Template(files(__package__).joinpath("pod.jinja2").read_text("utf-8"))
     with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
         template.stream(name=utils.random_name()).dump(f.name)
@@ -222,7 +224,7 @@ async def get_location(
     return next(iter(locations.values())).location
 
 
-def get_parameterizable_hardware_deployment_config():
+def get_parameterizable_hardware_deployment_config() -> DeploymentConfig:
     workdir = os.path.join(
         os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
     )
@@ -260,7 +262,7 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
             raise Exception(f"{deployment_t} deployment type not supported")
 
 
-def get_singularity_deployment_config():
+def get_singularity_deployment_config() -> DeploymentConfig:
     return DeploymentConfig(
         name="alpine-singularity",
         type="singularity",
@@ -270,7 +272,9 @@ def get_singularity_deployment_config():
     )
 
 
-async def get_slurm_deployment_config(_context: StreamFlowContext):
+async def get_slurm_deployment_config(
+    _context: StreamFlowContext,
+) -> DeploymentConfig:
     docker_compose_config = DeploymentConfig(
         name="docker-compose-slurm",
         type="docker-compose",
@@ -295,7 +299,9 @@ async def get_slurm_deployment_config(_context: StreamFlowContext):
     )
 
 
-async def get_ssh_deployment_config(_context: StreamFlowContext):
+async def get_ssh_deployment_config(
+    _context: StreamFlowContext,
+) -> DeploymentConfig:
     if config := cast(
         DefaultDeploymentManager, _context.deployment_manager
     ).config_map.get("linuxserver-ssh"):

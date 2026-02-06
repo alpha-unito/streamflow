@@ -13,6 +13,7 @@ from importlib.resources import files
 from math import ceil, floor
 from pathlib import Path
 from shutil import which
+from types import TracebackType
 from typing import Any, AsyncContextManager, cast
 
 import yaml
@@ -96,11 +97,11 @@ def _selector_from_set(selector: MutableMapping[str, Any]) -> str:
 
 
 class KubernetesResponseWrapper(BaseStreamWrapper):
-    def __init__(self, stream) -> None:
+    def __init__(self, stream: Any) -> None:
         super().__init__(stream)
         self.msg: bytes = b""
 
-    async def read(self, size: int | None = None):
+    async def read(self, size: int | None = None) -> bytes | None:
         if len(self.msg) > 0:
             if len(self.msg) > size:
                 data = self.msg[0:size]
@@ -127,23 +128,28 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
                         self.msg = b""
         return data if len(data) > 0 else None
 
-    async def write(self, data: Any):
+    async def write(self, data: Any) -> None:
         channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
         payload = channel_prefix + data
         await self.stream.send_bytes(payload)
 
 
 class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]):
-    def __init__(self, coro: Coroutine):
-        self.coro: Coroutine = coro
+    def __init__(self, coro) -> None:
+        self.coro = coro
         self.response: KubernetesResponseWrapper | None = None
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> KubernetesResponseWrapper:
         response = await self.coro
         self.response = KubernetesResponseWrapper(await response.__aenter__())
         return self.response
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         if self.response:
             await self.response.close()
 
@@ -500,7 +506,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         else:
             return None
 
-    async def undeploy(self, external: bool):
+    async def undeploy(self, external: bool) -> None:
         if self.client is not None:
             await self.client.api_client.close()
             self.client = None
@@ -703,7 +709,7 @@ class KubernetesConnector(KubernetesBaseConnector):
         else:
             return True
 
-    async def _undeploy(self, k8s_object: Any):
+    async def _undeploy(self, k8s_object: Any) -> Any:
         k8s_api = self._get_api(k8s_object)
         kind = k8s_object.kind
         kind = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", kind)

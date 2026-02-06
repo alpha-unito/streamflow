@@ -15,7 +15,7 @@ class ConnectorPort(Port):
         token = await self.get(consumer)
         return self.workflow.context.deployment_manager.get_connector(token.value)
 
-    def put_connector(self, connector_name: str):
+    def put_connector(self, connector_name: str) -> None:
         self.put(Token(value=connector_name))
 
 
@@ -27,7 +27,7 @@ class JobPort(Port):
         else:
             return token.value
 
-    def put_job(self, job: Job):
+    def put_job(self, job: Job) -> None:
         self.put(Token(value=job))
 
 

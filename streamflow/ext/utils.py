@@ -20,7 +20,9 @@ from streamflow.log_handler import logger
 PLUGIN_ENTRY_POINT = "unito.streamflow.plugin"
 
 
-def _filter_by_name(classes: MutableMapping[str, Any], name: str):
+def _filter_by_name(
+    classes: MutableMapping[str, Any], name: str
+) -> MutableMapping[str, Any]:
     filtered_classes = {}
     for class_ in classes:
         ext_objs = [ext for ext in classes[class_] if ext["name"] == name]
@@ -29,7 +31,9 @@ def _filter_by_name(classes: MutableMapping[str, Any], name: str):
     return filtered_classes
 
 
-def _flatten_all_of(entity_schema):
+def _flatten_all_of(
+    entity_schema: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
     for obj in entity_schema["allOf"]:
         if "allOf" in obj:
             obj["properties"] = _flatten_all_of(obj) | obj.get("properties", {})
@@ -81,7 +85,7 @@ def _resolve_refs(
     resolver: Resolver,
     path: PurePosixPath,
     refs: MutableMapping[str, Any],
-):
+) -> None:
     if isinstance(contents, MutableMapping):
         for k, v in contents.items():
             _resolve_refs(v, resolver, path / k, refs)
@@ -122,9 +126,11 @@ def _get_type_repr(
         return None
 
 
-def _split_refs(refs: MutableMapping[str, Any], processed: MutableSequence[str]):
+def _split_refs(
+    refs: MutableMapping[str, Any], processed: MutableSequence[str]
+) -> MutableMapping[str, MutableSequence[str]]:
     refs_descs = {}
-    subrefs = {}
+    subrefs: MutableMapping[str, Any] = {}
     for k, v in refs.items():
         refs_descs[k] = [
             _get_property_desc(name, prop, subrefs) for name, prop in v.items()
@@ -135,9 +141,15 @@ def _split_refs(refs: MutableMapping[str, Any], processed: MutableSequence[str])
     return refs_descs
 
 
-def _split_schema(schema: MutableMapping[str, Any]):
+def _split_schema(
+    schema: MutableMapping[str, Any],
+) -> tuple[
+    MutableSequence[str],
+    MutableSequence[str],
+    MutableMapping[str, MutableMapping[str, Any]],
+]:
     required, optional = [], []
-    refs = {}
+    refs: MutableMapping[str, MutableMapping[str, Any]] = {}
     for k, v in schema.get("properties", {}).items():
         if k in schema.get("required", []):
             required.append(_get_property_desc(k, v, refs))

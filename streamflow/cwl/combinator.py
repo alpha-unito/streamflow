@@ -14,7 +14,7 @@ from streamflow.workflow.combinator import DotProductCombinator
 from streamflow.workflow.token import IterationTerminationToken, ListToken
 
 
-def _flatten_token_list(outputs: MutableSequence[Token]):
+def _flatten_token_list(outputs: MutableSequence[Token]) -> MutableSequence[Token]:
     flattened_list = []
     for token in sorted(outputs, key=lambda t: int(t.tag.split(".")[-1])):
         if isinstance(token, ListToken):
