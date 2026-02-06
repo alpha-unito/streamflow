@@ -355,8 +355,8 @@ class DefaultDataManager(DataManager):
                 src_path, context=self.context, location=src_location
             ).resolve()
         ) is None:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Remote file system: {repr(self.path_mapper)}")
+            # if logger.isEnabledFor(logging.DEBUG):
+            #     logger.debug(f"Remote file system: {repr(self.path_mapper)}")
             raise WorkflowExecutionException(
                 f"Error retrieving realpath for {src_path} on location {src_location} "
                 f"while transferring it to {dst_path} on deployment {dst_connector.deployment_name}"

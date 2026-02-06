@@ -28,7 +28,7 @@ from streamflow.workflow.port import (
     JobPort,
     TerminationType,
 )
-from streamflow.workflow.step import ConditionalStep, GatherStep, LoopCombinatorStep
+from streamflow.workflow.step import ConditionalStep, GatherStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -66,6 +66,8 @@ async def _inject_tokens(
     new_workflow: Workflow,
     failed_step_output_ports: MutableSequence[str],
 ) -> None:
+    if any(isinstance(s, GatherStep) for s in new_workflow.steps.values()):
+        pass
     for port_name in mapper.port_tokens.keys():
         token_list = sorted(
             [
@@ -137,6 +139,8 @@ async def _inject_tokens(
                         ],
                         key=cmp_to_key(lambda x, y: compare_tags(x, y)),
                     )
+                if any(isinstance(s, GatherStep) for s in port.get_output_steps()):
+                    pass
                 port.add_inter_port(
                     port,
                     boundary_tag=b_tag,
