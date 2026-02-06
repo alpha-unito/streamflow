@@ -59,7 +59,8 @@ async def _assert_token_result(
         ).resolve()
         assert path is not None
         assert await path.is_file()
-        assert input_value.get("checksum") == f"sha1${await path.checksum()}"
+        res = input_value.get("checksum") == f"sha1${await path.checksum()}"
+        assert res
         assert input_value.get("size") == await path.size()
     elif isinstance(output_token, ListToken):
         for inner_value, inner_token in zip(
@@ -230,6 +231,7 @@ async def test_execute(
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
     # Check workflow output token
+    assert all(s.status == Status.COMPLETED for s in workflow.steps.values())
     result_token = execute_steps[-1].get_output_port(output_name).token_list
     assert len(result_token) == 2
     await _assert_token_result(

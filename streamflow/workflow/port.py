@@ -5,7 +5,6 @@ from collections.abc import Callable, MutableMapping, MutableSequence
 from enum import Enum
 
 from streamflow.core.deployment import Connector
-from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
@@ -64,45 +63,37 @@ class InterWorkflowPort(Port):
             str, MutableSequence[tuple[Port, TerminationType]]
         ] = {}
 
-    def _handle_self_boundary(self, token: Token) -> None:
-        if (
-            boundary := next(
-                (
-                    boundary
-                    for boundary in self.boundaries.get(token.tag, ())
-                    if boundary[0] is self
-                ),
-                None,
-            )
-        ) is not None:
-            if boundary[1] in (
-                TerminationType.PROPAGATE,
-                TerminationType.PROPAGATE_AND_TERMINATE,
-            ):
-                if token.tag not in (
-                    t.tag for t in self.token_list
-                ):  # DEBUG check. remove it
-                    logger.info(
-                        f"Port {self.name} _handle_self_boundary. propagating token {token.tag} {type(token)}"
-                    )
-                    super().put(token)
-                else:
-                    logger.info(
-                        f"Port {self.name} _handle_self_boundary. skips propagation token {token.tag} {type(token)}"
-                    )
-            if boundary[1] in (
-                TerminationType.TERMINATE,
-                TerminationType.PROPAGATE_AND_TERMINATE,
-            ):
+    def _handle_boundary(
+        self, port: Port, token: Token, termination_type: TerminationType, msg: str
+    ) -> None:
+        if termination_type in (
+            TerminationType.PROPAGATE,
+            TerminationType.PROPAGATE_AND_TERMINATE,
+        ):
+            if port is self:
                 logger.info(
-                    f"Port {self.name} _handle_self_boundary. termination token (input token {token.tag} {type(token)})"
+                    f"Port {self.name} {msg}. self boundary propagating token {token.tag} {type(token)}"
+                )
+                super().put(token)
+            else:
+                logger.info(
+                    f"Port {self.name} {msg}. boundary propagating token {token.tag} {type(token)}"
+                )
+                port.put(token)
+        if termination_type in (
+            TerminationType.TERMINATE,
+            TerminationType.PROPAGATE_AND_TERMINATE,
+        ):
+            if port is self:
+                logger.info(
+                    f"Port {self.name} {msg}. self boundary termination token  (input token {token.tag} {type(token)})"
                 )
                 super().put(TerminationToken(Status.RECOVERED))
-        else:
-            # logger.info(
-            #     f"Port {self.name} add inter_port. self put token {token.tag} {type(token)}"
-            # )
-            super().put(token)
+            else:
+                logger.info(
+                    f"Port {self.name} {msg}. boundary termination token  (input token {token.tag} {type(token)})"
+                )
+                port.put(TerminationToken(Status.RECOVERED))
 
     def add_inter_port(
         self,
@@ -110,60 +101,32 @@ class InterWorkflowPort(Port):
         boundary_tag: str,
         termination_type: TerminationType = TerminationType.TERMINATE,
     ) -> None:
-        if port is self and termination_type not in (
-            TerminationType.TERMINATE,
-            TerminationType.PROPAGATE_AND_TERMINATE,
-        ):
-            raise WorkflowDefinitionException(
-                f"Impossible to add self boundary without termination in the port {self.name}"
-            )
-        if port is self and termination_type == TerminationType.PROPAGATE_AND_TERMINATE:
-            pass
         self.boundaries.setdefault(boundary_tag, []).append((port, termination_type))
+
+        # Range of tag necessary before to propagate the boundary tag
+        # NOTE. currently the range start from 0 to boundary tag
+        #  it is better pass as argument the min of the range.
+        #  It can be necessary for the loop (?)
+        # levels = boundary_tag.split(".")
+        # a = not bool(
+        #     {".".join((*levels[:-1], str(i))) for i in range(int(levels[-1]))}
+        #     - {t.tag for t in self.token_list if not isinstance(t, TerminationToken)}
+        # )
+
         # hard copy because the list can be increased in self._handle_self_boundary
         for token in list(self.token_list):
             if token.tag == boundary_tag:
-                if port is not self:
-                    if termination_type in (
-                        TerminationType.PROPAGATE,
-                        TerminationType.PROPAGATE_AND_TERMINATE,
-                    ):
-                        logger.info(
-                            f"Port {self.name} add_inter_port. boundary propagating token {token.tag} {type(token)}"
-                        )
-                        port.put(token)
-                    if termination_type in (
-                        TerminationType.TERMINATE,
-                        TerminationType.PROPAGATE_AND_TERMINATE,
-                    ):
-                        logger.info(
-                            f"Port {self.name} add_inter_port. boundary termination token  (input token {token.tag} {type(token)})"
-                        )
-                        port.put(TerminationToken(Status.RECOVERED))
-                else:
-                    self._handle_self_boundary(token)
+                self._handle_boundary(port, token, termination_type, "add_inter_port")
 
     def put(self, token: Token) -> None:
-        if not isinstance(token, TerminationToken):
-            for boundary in self.boundaries.get(token.tag, ()):
-                if boundary[0] is not self:
-                    if boundary[1] in (
-                        TerminationType.PROPAGATE,
-                        TerminationType.PROPAGATE_AND_TERMINATE,
-                    ):
-                        logger.info(
-                            f"Port {self.name} put. boundary propagating token {token.tag} {type(token)}"
-                        )
-                        boundary[0].put(token)
-                    if boundary[1] in (
-                        TerminationType.TERMINATE,
-                        TerminationType.PROPAGATE_AND_TERMINATE,
-                    ):
-                        logger.info(
-                            f"Port {self.name} put. boundary termination token  (input token {token.tag} {type(token)})"
-                        )
-                        boundary[0].put(TerminationToken(Status.RECOVERED))
-        self._handle_self_boundary(token)
+        if (
+            isinstance(token, TerminationToken)
+            or token.tag not in self.boundaries.keys()
+        ):
+            super().put(token)
+        else:
+            for boundary in self.boundaries[token.tag]:
+                self._handle_boundary(boundary[0], token, boundary[1], "put")
 
 
 class InterWorkflowJobPort(InterWorkflowPort, JobPort):
