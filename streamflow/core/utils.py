@@ -307,7 +307,7 @@ def get_tag(tokens: Iterable[Token]) -> str:
 
 
 def make_future(obj: T) -> asyncio.Future[T]:
-    future = asyncio.Future()
+    future: asyncio.Future[T] = asyncio.Future()
     future.set_result(obj)
     return future
 

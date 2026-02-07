@@ -218,7 +218,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
-        bind_locations = {}
+        bind_locations: dict[str, ExecutionLocation] = {}
         copy_tasks = []
         dst = await get_local_to_remote_destination(self, locations[0], src, dst)
         for location in await self._get_effective_locations(locations, dst):
@@ -388,7 +388,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 effective_locations = await self._get_effective_locations(
                     locations, dst
                 )
-                bind_locations = {}
+                bind_locations: dict[str, ExecutionLocation] = {}
                 unbound_locations = []
                 copy_tasks = []
                 for location in effective_locations:

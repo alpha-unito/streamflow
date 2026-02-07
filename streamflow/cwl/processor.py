@@ -516,7 +516,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         # Generate the output object as described in `outputs` field
         if self.glob is not None:
             # Adjust glob path
-            globpaths = []
+            globpaths: list[str] = []
             for glob in (
                 self.glob if isinstance(self.glob, MutableSequence) else [self.glob]
             ):
