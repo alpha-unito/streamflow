@@ -1,6 +1,7 @@
 import logging
 from collections.abc import MutableMapping
 from contextlib import AbstractAsyncContextManager
+from types import TracebackType
 from typing import Any
 
 import cachetools
@@ -8,6 +9,7 @@ import pytest
 from cachetools import LRUCache
 from cachetools import keys as cache_keys
 from pytest import LogCaptureFixture
+from typing_extensions import Self
 
 from streamflow.core.asyncache import cached, cachedmethod
 from tests.utils.utils import caplog_streamflow
@@ -25,19 +27,24 @@ class AsyncCached:
 
 
 class AsyncCountedLock:
-    def __init__(self):
+    def __init__(self) -> None:
         self.count: int = 0
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> Self:
         self.count += 1
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         pass
 
 
 class AsyncLocked(AbstractAsyncContextManager):
-    def __init__(self, cache: MutableMapping[Any, Any] | None):
+    def __init__(self, cache: MutableMapping[Any, Any] | None) -> None:
         self.cache: MutableMapping[Any, Any] | None = cache
         self.count: int = 0
         self.lock_count: int = 0
@@ -56,7 +63,7 @@ class AsyncLocked(AbstractAsyncContextManager):
 
 
 class AsyncTarget:
-    def __init__(self, cache: MutableMapping[Any, Any] | None):
+    def __init__(self, cache: MutableMapping[Any, Any] | None) -> None:
         self.cache: MutableMapping[Any, Any] | None = cache
         self.call_count: int = 0
 
@@ -67,7 +74,7 @@ class AsyncTarget:
 
 
 class Counter:
-    def __init__(self):
+    def __init__(self) -> None:
         self.count: int = 0
 
     async def async_func(self, *args, **kwargs) -> tuple[Any, ...]:
@@ -99,7 +106,7 @@ class UnhashableObject:
 
 @pytest.mark.asyncio
 class TestAsyncCachedMethod:
-    async def test_async_dict_cache(self):
+    async def test_async_dict_cache(self) -> None:
         """Test basic caching functionality with a standard dict."""
         cached_obj = AsyncCached({})
 
@@ -121,7 +128,7 @@ class TestAsyncCachedMethod:
         assert await cached_obj.get(obj3) == 5
 
     @pytest.mark.asyncio
-    async def test_async_lru_cache(self):
+    async def test_async_lru_cache(self) -> None:
         """Test caching with LRU eviction policy."""
         cached_obj = AsyncCached(LRUCache(maxsize=2))
 
@@ -145,7 +152,7 @@ class TestAsyncCachedMethod:
         assert await cached_obj.get(0) == 3
 
     @pytest.mark.asyncio
-    async def test_async_locked_cache(self):
+    async def test_async_locked_cache(self) -> None:
         """Test that the async lock is properly acquired and released."""
         cached_obj = AsyncLocked({})
         # Lock for initial check (lock_count=1)
@@ -161,7 +168,7 @@ class TestAsyncCachedMethod:
         assert cached_obj.lock_count == 3
 
     @pytest.mark.asyncio
-    async def test_async_nospace_cache(self):
+    async def test_async_nospace_cache(self) -> None:
         """Test behavior when the cache has 0 capacity (ValueError handling)."""
         cached_obj = AsyncCached(LRUCache(maxsize=0))
 
@@ -214,7 +221,7 @@ class TestAsyncCachedMethod:
         with pytest.raises(TypeError, match="unhashable type"):
             await target.get(bad_obj)
 
-    async def test_mutable_builtin_raises_error(self):
+    async def test_mutable_builtin_raises_error(self) -> None:
         """Test that mutable builtins (like dict) raise TypeError."""
         target = AsyncTarget({})
 
@@ -222,7 +229,7 @@ class TestAsyncCachedMethod:
             await target.get({"data": 1})
             await target.get([])
 
-    async def test_non_async_method(self):
+    async def test_non_async_method(self) -> None:
         """Test decorator on a non-async method."""
         with pytest.raises(NotImplementedError):
 
@@ -238,7 +245,7 @@ class TestAsyncCachedMethod:
         Test that when a value is too large for the cache.
         """
         # Every item has a size of 10, but the maxsize is only 5.
-        cache = LRUCache(maxsize=5, getsizeof=lambda x: 10)
+        cache: LRUCache[int, int] = LRUCache(maxsize=5, getsizeof=lambda x: 10)
         if enable_lock:
             target = AsyncLocked(cache)
         else:
@@ -252,9 +259,8 @@ class TestAsyncCachedMethod:
 
 @pytest.mark.asyncio
 class TestAsyncCached:
-
-    async def test_decorator(self):
-        cache = cachetools.LRUCache(maxsize=2)
+    async def test_decorator(self) -> None:
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=2)
         counter = Counter()
         wrapper = cached(cache)(counter.async_func)
 
@@ -279,8 +285,10 @@ class TestAsyncCached:
         assert await wrapper(obj2) == (3, obj2)  # Different instance, same hash
         assert await wrapper(obj3) == (4, obj3)
 
-    async def test_decorator_typed(self):
-        cache = cachetools.LRUCache(maxsize=3)
+    async def test_decorator_typed(self) -> None:
+        cache: cachetools.LRUCache[int | float, int | float] = cachetools.LRUCache(
+            maxsize=3
+        )
         counter = Counter()
         key = cache_keys.typedkey
         wrapper = cached(cache, key=key)(counter.async_func)
@@ -292,7 +300,7 @@ class TestAsyncCached:
         assert counter.count == 2
 
     @pytest.mark.asyncio
-    async def test_async_no_cache(self):
+    async def test_async_no_cache(self) -> None:
         """Test behavior when the cache provider returns None."""
         counter = Counter()
         wrapper = cached(None)(counter.async_func)
@@ -301,8 +309,8 @@ class TestAsyncCached:
         assert await wrapper(0) == (2, 0)
         assert await wrapper(0) == (3, 0)
 
-    async def test_decorator_lock(self):
-        cache = cachetools.LRUCache(maxsize=2)
+    async def test_decorator_lock(self) -> None:
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=2)
         counter = Counter()
         lock = AsyncCountedLock()
         wrapper = cached(cache, lock=lock)(counter.async_func)
@@ -317,8 +325,8 @@ class TestAsyncCached:
         assert lock.count == 3
         assert counter.count == 1
 
-    async def test_decorator_wrapped(self):
-        cache = cachetools.LRUCache(maxsize=2)
+    async def test_decorator_wrapped(self) -> None:
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=2)
         counter = Counter()
         wrapper = cached(cache)(counter.async_func)
 
@@ -332,8 +340,8 @@ class TestAsyncCached:
         assert await wrapper(0) == (2, 0)  # Cache hit
         assert len(cache) == 1
 
-    async def test_zero_size_cache(self):
-        cache = cachetools.LRUCache(maxsize=0)
+    async def test_zero_size_cache(self) -> None:
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=0)
         counter = Counter()
         wrapper = cached(cache)(counter.async_func)
 
@@ -346,7 +354,7 @@ class TestAsyncCached:
         self, caplog: LogCaptureFixture
     ) -> None:
         """Test warning when an object with identity hashing is passed in args."""
-        cache = cachetools.LRUCache(maxsize=10)
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=10)
         counter = Counter()
         wrapper = cached(cache)(counter.async_func)
 
@@ -361,7 +369,7 @@ class TestAsyncCached:
         self, caplog: LogCaptureFixture
     ) -> None:
         """Test warning when an object with identity hashing is passed in kwargs."""
-        cache = cachetools.LRUCache(maxsize=10)
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=10)
         counter = Counter()
         wrapper = cached(cache)(counter.async_func)
 
@@ -374,7 +382,7 @@ class TestAsyncCached:
 
     async def test_hashable_types_no_warning(self, caplog: LogCaptureFixture) -> None:
         """Ensure hashable types do not trigger warnings."""
-        cache = cachetools.LRUCache(maxsize=10)
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=10)
         counter = Counter()
         wrapper = cached(cache)(counter.async_func)
 
@@ -384,9 +392,9 @@ class TestAsyncCached:
             assert caplog.text == ""
             assert counter.count == 1
 
-    async def test_unhashable_object_raises_error(self):
+    async def test_unhashable_object_raises_error(self) -> None:
         """Test that truly unhashable objects raise TypeError as expected."""
-        cache = cachetools.LRUCache(maxsize=10)
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=10)
         counter = Counter()
         wrapper = cached(cache)(counter.async_func)
         bad_obj = UnhashableObject()
@@ -394,9 +402,9 @@ class TestAsyncCached:
         with pytest.raises(TypeError, match="unhashable type"):
             await wrapper(bad_obj)
 
-    async def test_mutable_builtin_raises_error(self):
+    async def test_mutable_builtin_raises_error(self) -> None:
         """Test that mutable builtins (like dict) raise TypeError."""
-        cache = cachetools.LRUCache(maxsize=10)
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=10)
         counter = Counter()
         wrapper = cached(cache)(counter.async_func)
 
@@ -406,9 +414,9 @@ class TestAsyncCached:
         with pytest.raises(TypeError):
             await wrapper([])
 
-    async def test_non_async_func(self):
+    async def test_non_async_func(self) -> None:
         """Test decorator on a non-async function."""
-        cache = cachetools.LRUCache(maxsize=10)
+        cache: cachetools.LRUCache[int, int] = cachetools.LRUCache(maxsize=10)
 
         with pytest.raises(NotImplementedError):
             cached(cache)(lambda x: x + 1)
@@ -420,7 +428,7 @@ class TestAsyncCached:
         Test that when a value is too large for the cache.
         """
         # Every item has a size of 10, but the maxsize is only 5.
-        cache = LRUCache(maxsize=5, getsizeof=lambda x: 10)
+        cache: LRUCache[int, int] = LRUCache(maxsize=5, getsizeof=lambda x: 10)
         counter = Counter()
         wrapper = cached(cache, lock=AsyncCountedLock() if enable_lock else None)(
             counter.async_func

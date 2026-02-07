@@ -647,8 +647,8 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
             )
 
     async def undeploy(self, external: bool) -> None:
-        jobs_map = {}
-        loc_map = {}
+        jobs_map: dict[str, list[str]] = {}
+        loc_map: dict[str, ExecutionLocation] = {}
         for job_id, location in self._scheduled_jobs.items():
             inner_location = get_inner_location(location)
             jobs_map.setdefault(inner_location.name, []).append(job_id)

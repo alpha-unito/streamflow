@@ -745,7 +745,7 @@ def _create_nested_size_tag(
 ) -> MutableSequence[Port]:
     if len(size_ports) == 0:
         return [next(iter(replicas_port.values()))]
-    new_replicas_port = {}
+    new_replicas_port: dict[str, Port] = {}
     new_size_ports = {}
     for port_name, port in size_ports.items():
         output_port_name = f"{port_name}-{next(iter(replicas_port.keys()))}"
@@ -2015,7 +2015,7 @@ class CWLTranslator:
         # Process inputs
         input_ports = {}
         token_transformers = []
-        default_ports = {}
+        default_ports: dict[str, Port] = {}
         for element_input in cwl_element.inputs:
             global_name = utils.get_name(name_prefix, cwl_name_prefix, element_input.id)
             port_name = posixpath.relpath(global_name, name_prefix)
@@ -2748,10 +2748,10 @@ class CWLTranslator:
                 )
                 loop_terminator_combinator.add_item(port_name)
             # Process inputs
-            loop_input_ports = {}
-            loop_default_ports = {}
-            loop_value_from_transformers = {}
-            loop_input_dependencies = {}
+            loop_input_ports: dict[str, Port] = {}
+            loop_default_ports: dict[str, Port] = {}
+            loop_value_from_transformers: dict[str, ValueFromTransformer] = {}
+            loop_input_dependencies: dict[str, set[str]] = {}
             for loop_input in loop["loop"] or []:
                 # Extract element source
                 if "Loop" in requirements:

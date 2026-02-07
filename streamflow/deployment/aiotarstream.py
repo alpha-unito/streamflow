@@ -371,7 +371,7 @@ class AioTarInfo(tarfile.TarInfo):
         return next
 
     async def _proc_gnusparse_10(self, next, pax_headers, tarstream):
-        sparse = []
+        sparse: list[int] = []
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
         fields, buf = buf.split(b"\n", 1)
         fields = int(fields)
@@ -535,11 +535,11 @@ class AioTarStream:
             self.errorlevel = errorlevel
         self.copybufsize = copybufsize
         self.closed = False
-        self.members = []
+        self.members: list[AioTarInfo] = []
         self._loaded = False
-        self.inodes = {}
-        self._unames = {}  # Cached mappings of uid -> uname
-        self._gnames = {}  # Cached mappings of gid -> gname
+        self.inodes: dict[int, str] = {}
+        self._unames: dict[int, str] = {}  # Cached mappings of uid -> uname
+        self._gnames: dict[int, str] = {}  # Cached mappings of gid -> gname
 
     async def __aenter__(self) -> Self:
         self._check()

@@ -159,7 +159,7 @@ def _split_schema(
 
 
 def list_extensions(name: str | None, type_: str | None) -> None:
-    extensions = {}
+    extensions: dict[str, dict[str, dict[str, str]]] = {}
     max_sizes = {
         "name": 0,
         "class": 0,
@@ -381,7 +381,7 @@ def show_plugin(plugin: str) -> None:
             if len(classes) == 0:
                 print("It does not provide any StreamFlow extension")
             else:
-                ext_objs = {}
+                ext_objs: dict[str, list[dict[str, str]]] = {}
                 max_sizes = {"name": 0, "class": 0}
                 for extension_point, items in classes.items():
                     for item in items:

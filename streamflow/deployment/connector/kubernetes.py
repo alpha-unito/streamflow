@@ -319,7 +319,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         containers = {k: v for (k, v) in await asyncio.gather(*container_tasks)}
         # Check if some locations share volume mounts to the same path
         common_paths = {}
-        effective_locations = []
+        effective_locations: list[ExecutionLocation] = []
         for location in locations:
             container = containers[location.name.split(":")[1]]
             add_location = True
@@ -360,7 +360,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         pods = await self._get_running_pods()
-        valid_targets = {}
+        valid_targets: dict[str, AvailableLocation] = {}
         for pod in pods.items:
             # Check if pod is ready
             for condition in pod.status.conditions:
