@@ -9,9 +9,9 @@ from types import TracebackType
 from typing import Any, cast
 
 import aiosqlite
+from cachebox import cached
 
 from streamflow.core import utils
-from streamflow.core.asyncache import cachedmethod
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
 from streamflow.core.persistence import DependencyType
@@ -319,7 +319,7 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    @cachedmethod(lambda self: self.deployment_cache)
+    @cached(cache=lambda self: self.deployment_cache)
     async def get_deployment(self, deployment_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
@@ -347,7 +347,7 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    @cachedmethod(lambda self: self.filter_cache)
+    @cached(cache=lambda self: self.filter_cache)
     async def get_filter(self, filter_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
@@ -395,7 +395,7 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return await cursor.fetchall()
 
-    @cachedmethod(lambda self: self.port_cache)
+    @cached(cache=lambda self: self.port_cache)
     async def get_port(self, port_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
@@ -449,7 +449,7 @@ class SqliteDatabase(CachedDatabase):
                         )
                     return list(result.values())
 
-    @cachedmethod(lambda self: self.step_cache)
+    @cached(cache=lambda self: self.step_cache)
     async def get_step(self, step_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
@@ -457,7 +457,7 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return _load_keys(dict(await cursor.fetchone()))
 
-    @cachedmethod(lambda self: self.target_cache)
+    @cached(cache=lambda self: self.target_cache)
     async def get_target(self, target_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
@@ -465,7 +465,7 @@ class SqliteDatabase(CachedDatabase):
             ) as cursor:
                 return _load_keys(dict(await cursor.fetchone()))
 
-    @cachedmethod(lambda self: self.token_cache)
+    @cached(cache=lambda self: self.token_cache)
     async def get_token(self, token_id: int) -> MutableMapping[str, Any]:
         async with self.connection as db:
             async with db.execute(
