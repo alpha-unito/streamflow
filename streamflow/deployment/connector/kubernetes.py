@@ -17,7 +17,7 @@ from types import TracebackType
 from typing import Any, AsyncContextManager, cast
 
 import yaml
-from cachetools import Cache, TTLCache
+from cachebox import BaseCacheImpl, TTLCache, cached
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiClient, Configuration, V1Container, V1PodList
 from kubernetes_asyncio.config import (
@@ -29,7 +29,6 @@ from kubernetes_asyncio.stream import WsApiClient, ws_client
 from kubernetes_asyncio.utils import create_from_yaml
 
 from streamflow.core import utils
-from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
@@ -207,7 +206,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                     )
             else:
                 cacheTTL = 10
-        self.locationsCache: Cache = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
+        self.locationsCache: BaseCacheImpl = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
         self.configuration: Configuration | None = None
         self.client: client.CoreV1Api | None = None
         self.client_ws: client.CoreV1Api | None = None
@@ -355,7 +354,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         ws_api_client.set_default_header("Connection", "upgrade,keep-alive")
         self.client_ws = client.CoreV1Api(api_client=ws_api_client)
 
-    @cachedmethod(lambda self: self.locationsCache)
+    @cached(cache=lambda self: self.locationsCache)
     async def get_available_locations(
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
