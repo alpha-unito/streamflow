@@ -53,12 +53,12 @@ from streamflow.workflow.token import (
     TerminationToken,
 )
 from streamflow.workflow.transformer import ManyToOneTransformer
-from tests.test_provenance import (
+from tests.utils.cwl import get_cwl_parser
+from tests.utils.utils import (
     create_and_run_step,
     inject_tokens,
     verify_dependency_tokens,
 )
-from tests.utils.cwl import get_cwl_parser
 from tests.utils.workflow import (
     CWL_VERSION,
     create_deploy_step,

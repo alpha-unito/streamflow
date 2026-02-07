@@ -8,7 +8,7 @@ from streamflow.core.exception import (
     WorkflowExecutionException,
 )
 from streamflow.core.workflow import Job, Token
-from streamflow.deployment.filter import MatchingBindingFilter
+from streamflow.deployment.filter.matching import MatchingBindingFilter
 from streamflow.workflow.token import ListToken, ObjectToken
 from tests.utils.workflow import BaseFileToken, random_job_name
 

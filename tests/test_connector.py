@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 import re
-from collections.abc import Callable, MutableSequence
+from collections.abc import Callable, Iterable, MutableSequence
 from typing import Any
 
 import pytest
@@ -14,7 +14,7 @@ from pytest import LogCaptureFixture
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.deployment.connector import SSHConnector
+from streamflow.deployment.connector.ssh import SSHConnector
 from streamflow.deployment.future import FutureConnector
 from tests.conftest import get_class_callables
 from tests.utils.connector import (
@@ -145,7 +145,7 @@ async def test_future_connector_multiple_request_fail(
 @pytest.mark.asyncio
 async def test_ssh_connector_channel_open_error(
     caplog: LogCaptureFixture,
-    chosen_deployment_types: MutableSequence[str],
+    chosen_deployment_types: Iterable[str],
     context: StreamFlowContext,
 ) -> None:
     """
@@ -168,7 +168,7 @@ async def test_ssh_connector_channel_open_error(
 
 @pytest.mark.asyncio
 async def test_ssh_connector_multiple_request_fail(
-    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+    chosen_deployment_types: Iterable[str], context: StreamFlowContext
 ) -> None:
     """Test SSHConnector with multiple requests but the deployment fails"""
     if "ssh" not in chosen_deployment_types:

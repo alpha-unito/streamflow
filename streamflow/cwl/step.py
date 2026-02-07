@@ -7,6 +7,7 @@ from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from typing import Any, cast
 
+import cwl_utils.types
 from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
@@ -106,7 +107,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
         self.full_js: bool = full_js
 
     async def _eval(self, inputs: MutableMapping[str, Token]) -> bool:
-        context = utils.build_context(inputs)
+        context = utils.build_context(inputs=inputs)
         condition = utils.eval_expression(
             expression=self.expression,
             context=context,
@@ -185,7 +186,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
 
 class CWLLoopConditionalStep(CWLConditionalStep):
     async def _eval(self, inputs: MutableMapping[str, Token]) -> bool:
-        context = utils.build_context(inputs)
+        context = utils.build_context(inputs=inputs)
         condition = utils.eval_expression(
             expression=self.expression,
             context=context,
@@ -310,7 +311,7 @@ class CWLExecuteStep(ExecuteStep):
             if isinstance(self.recoverable, bool):
                 recoverable_ = self.recoverable
             else:
-                context = utils.build_context(job.inputs)
+                context = utils.build_context(inputs=job.inputs)
                 recoverable_ = utils.eval_expression(
                     expression=self.recoverable,
                     context=context,
@@ -507,7 +508,7 @@ class CWLTransferStep(TransferStep):
                     )
                 )
             case MutableMapping():
-                if utils.get_token_class(token_value) in ["File", "Directory"]:
+                if cwl_utils.types.is_file_or_directory(token_value):
                     return await self._update_file_token(job, token_value)
                 else:
                     return dict(
@@ -530,10 +531,12 @@ class CWLTransferStep(TransferStep):
     async def _update_listing(
         self,
         job: Job,
-        token_value: MutableMapping[str, Any],
+        token_value: cwl_utils.types.CWLDirectoryType,
         dst_path: StreamFlowPath | None = None,
         src_location: DataLocation | None = None,
-    ) -> MutableSequence[MutableMapping[str, Any]]:
+    ) -> MutableSequence[
+        cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType
+    ]:
         existing, tasks = [], []
         for element in token_value["listing"]:
             if src_location and self.workflow.context.data_manager.get_data_locations(
@@ -567,10 +570,9 @@ class CWLTransferStep(TransferStep):
     async def _update_file_token(
         self,
         job: Job,
-        token_value: MutableMapping[str, Any],
+        token_value: cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType,
         dst_path: StreamFlowPath | None = None,
-    ) -> MutableMapping[str, Any]:
-        token_class = utils.get_token_class(token_value)
+    ) -> cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType:
         # Get destination coordinates
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
@@ -625,16 +627,20 @@ class CWLTransferStep(TransferStep):
                     )
             except FileExistsError:
                 pass
-            # Transform token value
-            new_token_value = {
-                "class": token_class,
-                "path": str(filepath),
-                "location": "file://" + str(filepath),
-                "basename": filepath.name,
-                "dirname": str(filepath.parent),
-            }
+            new_token_value: (
+                cwl_utils.types.CWLFileType | cwl_utils.types.CWLDirectoryType
+            )
             # If token contains a file
-            if token_class == "File":  # nosec
+            if cwl_utils.types.is_file(token_value):  # nosec
+                new_token_value = cwl_utils.types.CWLFileType(
+                    **{
+                        "class": "File",
+                        "path": str(filepath),
+                        "location": "file://" + str(filepath),
+                        "basename": filepath.name,
+                        "dirname": str(filepath.parent),
+                    }
+                )
                 # Retrieve symbolic link data locations
                 data_locations = self.workflow.context.data_manager.get_data_locations(
                     path=str(filepath),
@@ -692,10 +698,19 @@ class CWLTransferStep(TransferStep):
                         )
                     )
             # If token contains a directory, propagate listing if present
-            elif token_class == "Directory" and "listing" in token_value:  # nosec
-                new_token_value["listing"] = await self._update_listing(
-                    job, token_value, filepath, selected_location
+            else:
+                new_token_value = cwl_utils.types.CWLDirectoryType(
+                    **{
+                        "class": "Directory",
+                        "path": str(filepath),
+                        "location": "file://" + str(filepath),
+                        "basename": filepath.name,
+                    }
                 )
+                if "listing" in token_value:  # nosec
+                    new_token_value["listing"] = await self._update_listing(
+                        job, token_value, filepath, selected_location
+                    )
             return new_token_value
         # Otherwise, create elements remotely
         else:
@@ -704,7 +719,7 @@ class CWLTransferStep(TransferStep):
                 unique=not self.prefix_path, path=dst_path or dst_dir
             ) as filepath:
                 # If the token contains a directory, simply create it
-                if token_class == "Directory":  # nosec
+                if cwl_utils.types.is_directory(token_value):  # nosec
                     await utils.create_remote_directory(
                         context=self.workflow.context,
                         locations=dst_locations,
@@ -754,41 +769,44 @@ class CWLTransferStep(TransferStep):
                 connector=dst_connector,
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 locations=dst_locations,
-                token_class=token_class,
+                token_class=utils.get_token_class(token_value),
                 filepath=str(filepath),
                 load_contents="contents" in token_value,
                 load_listing=LoadListing.no_listing,
             )
-            if (
-                "checksum" in token_value
-                and new_token_value["checksum"] != token_value["checksum"]
-            ):
-                raise WorkflowExecutionException(
-                    "Error creating file {} with path {} in locations {}.".format(
-                        token_value["path"],
-                        new_token_value["path"],
-                        [str(loc) for loc in dst_locations],
-                    )
-                )
-            # Check secondary files
-            if "secondaryFiles" in token_value:
-                new_token_value["secondaryFiles"] = await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._update_file_token(
-                                job=job,
-                                token_value=element,
-                                dst_path=filepath.parent,
-                            )
+            if cwl_utils.types.is_file(token_value):
+                if (
+                    "checksum" in token_value
+                    and cast(cwl_utils.types.CWLFileType, new_token_value)["checksum"]
+                    != token_value["checksum"]
+                ):
+                    raise WorkflowExecutionException(
+                        "Error creating file {} with path {} in locations {}.".format(
+                            token_value["path"],
+                            new_token_value["path"],
+                            [str(loc) for loc in dst_locations],
                         )
-                        for element in token_value["secondaryFiles"]
                     )
-                )
-
+                # Check secondary files
+                if "secondaryFiles" in token_value:
+                    cast(cwl_utils.types.CWLFileType, new_token_value)[
+                        "secondaryFiles"
+                    ] = await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                self._update_file_token(
+                                    job=job,
+                                    token_value=element,
+                                    dst_path=filepath.parent,
+                                )
+                            )
+                            for element in token_value["secondaryFiles"]
+                        )
+                    )
             # If listing is specified, recursively process its contents
-            if "listing" in token_value:
-                new_token_value["listing"] = await self._update_listing(
-                    job, token_value, filepath
+            if cwl_utils.types.is_directory(token_value) and "listing" in token_value:
+                cast(cwl_utils.types.CWLDirectoryType, new_token_value)["listing"] = (
+                    await self._update_listing(job, token_value, filepath)
                 )
             # Return the new token value
             return new_token_value

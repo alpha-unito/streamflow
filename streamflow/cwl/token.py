@@ -20,10 +20,10 @@ async def _get_file_token_weight(context: StreamFlowContext, value: Any) -> int:
             )
             if data_locations:
                 data_location = next(iter(data_locations))
-                path = StreamFlowPath(
+                sf_path = StreamFlowPath(
                     data_location.path, context=context, location=data_location.location
                 )
-                weight = await (await path.resolve()).size()
+                weight = await (await sf_path.resolve()).size()
     if "secondaryFiles" in value:
         weight += sum(
             await asyncio.gather(

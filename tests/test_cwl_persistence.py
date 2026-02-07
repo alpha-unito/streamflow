@@ -18,6 +18,7 @@ from streamflow.core.processor import (
     NullTokenProcessor,
     ObjectTokenProcessor,
     PopCommandOutputProcessor,
+    TokenProcessor,
     UnionCommandOutputProcessor,
     UnionTokenProcessor,
 )
@@ -34,7 +35,6 @@ from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
     CWLExpressionToolOutputProcessor,
-    CWLFileToken,
     CWLObjectCommandOutputProcessor,
     CWLTokenProcessor,
 )
@@ -49,6 +49,7 @@ from streamflow.cwl.step import (
     CWLScheduleStep,
     CWLTransferStep,
 )
+from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
     CloneTransformer,
@@ -214,6 +215,7 @@ async def test_cwl_command(context: StreamFlowContext, processor_t: str) -> None
     )
     job_port = workflow.create_port(JobPort)
     await workflow.save(context)
+    processors: MutableSequence[CommandTokenProcessor] | None
     match processor_t:
         case "none":
             processors = None
@@ -462,7 +464,7 @@ async def test_cwl_token_transformer(
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
     await workflow.save(context)
-    processor = None
+    processor: TokenProcessor
     match processor_t:
         case "primitive":
             processor = _create_cwl_token_processor(port.name, workflow)

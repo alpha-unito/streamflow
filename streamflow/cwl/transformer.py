@@ -484,8 +484,7 @@ class ValueFromTransformer(ManyToOneTransformer):
             new_inputs[output_name] = await self.processor.process(
                 new_inputs, new_inputs[output_name]
             )
-        context = utils.build_context(new_inputs)
-        context |= {"self": context["inputs"].get(output_name)}
+        context = utils.build_context(inputs=inputs, self=inputs.get(output_name))
         return {
             output_name: await build_token(
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
@@ -583,16 +582,13 @@ class LoopValueFromTransformer(ValueFromTransformer):
             if self.loop_source_port
             else None
         )
-        context = cast(dict[str, Any], utils.build_context(loop_inputs)) | {
-            "self": get_token_value(self_token)
-        }
         return {
             self.get_output_name(): await build_token(
                 cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
                 inputs=inputs,
                 token_value=utils.eval_expression(
                     expression=self.value_from,
-                    context=context,
+                    context=utils.build_context(inputs=loop_inputs, self=self_token),
                     full_js=self.full_js,
                     expression_lib=self.expression_lib,
                 ),

@@ -15,7 +15,7 @@ import inspect
 __all__ = ["cached", "cachedmethod"]
 
 from collections.abc import Callable, MutableMapping
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, suppress
 from typing import Any, TypeVar
 
 from cachetools import keys as cache_keys
@@ -60,10 +60,8 @@ def cached(
                                         f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
                                     )
                     v = await func(*args, **kwargs)
-                    try:
+                    with suppress(ValueError):
                         cache[k] = v
-                    except ValueError:
-                        pass  # value too large
                     return v
 
             else:
@@ -131,10 +129,8 @@ def cachedmethod(
                                         f"argument type {type(obj).__name__} uses identity hashing (cache miss risk)."
                                     )
                     v = await method(self, *args, **kwargs)
-                    try:
+                    with suppress(ValueError):
                         c[k] = v
-                    except ValueError:
-                        pass  # value too large
                     return v
 
             else:

@@ -13,8 +13,9 @@ import tarfile
 import time
 from abc import ABC
 from builtins import open as bltn_open
+from collections.abc import Iterable
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
+from typing import IO, TYPE_CHECKING, Literal, Protocol, TypeAlias
 
 from typing_extensions import Self
 
@@ -197,7 +198,7 @@ class GZipStreamWrapper(CompressionStreamWrapper):
         self.pos += len(buf)
         return buf
 
-    async def write(self, data: Any) -> None:
+    async def write(self, data: bytes) -> None:
         if self.cmp is None:
             await self._init_compression()
         self.crc = self.zlib.crc32(data, self.crc)
@@ -294,7 +295,7 @@ class FileStreamReaderWrapper(StreamWrapper):
             self.position += length
             return tarfile.NUL * length
 
-    async def write(self, data: Any) -> None:
+    async def write(self, data: bytes) -> None:
         raise NotImplementedError
 
 
@@ -318,7 +319,7 @@ class TellableStreamWrapper(BaseStreamWrapper):
     def tell(self) -> int:
         return self.position
 
-    async def write(self, data: Any) -> None:
+    async def write(self, data: bytes) -> None:
         await self.stream.write(data)
         self.position += len(data)
 
@@ -334,7 +335,7 @@ class SeekableStreamReaderWrapper(TellableStreamWrapper):
         elif offset < self.position:
             raise tarfile.ReadError("Cannot seek backward with streams")
 
-    async def write(self, data: Any) -> None:
+    async def write(self, data: bytes) -> None:
         raise NotImplementedError
 
 
@@ -357,7 +358,7 @@ class AioTarInfo(tarfile.TarInfo):
         )
         return self
 
-    async def _proc_gnulong(self, tarstream):
+    async def _proc_gnulong(self, tarstream: AioTarStream) -> Self:
         buf = await tarstream.stream.read(self._block(self.size))
         try:
             next = await self.fromtarfile(tarstream)
@@ -370,7 +371,9 @@ class AioTarInfo(tarfile.TarInfo):
             next.linkname = tarfile.nts(buf, tarstream.encoding, tarstream.errors)
         return next
 
-    async def _proc_gnusparse_10(self, next, pax_headers, tarstream):
+    async def _proc_gnusparse_10(
+        self, next: Self, pax_headers: dict[str, str], tarstream: AioTarStream
+    ) -> None:
         sparse = []
         buf = await tarstream.stream.read(tarfile.BLOCKSIZE)
         fields, buf = buf.split(b"\n", 1)
@@ -383,7 +386,7 @@ class AioTarInfo(tarfile.TarInfo):
         next.offset_data = tarstream.stream.tell()
         next.sparse = list(zip(sparse[::2], sparse[1::2], strict=True))
 
-    async def _proc_member(self, tarstream):
+    async def _proc_member(self, tarstream: AioTarStream) -> Self:
         if self.type in (tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK):
             return await self._proc_gnulong(tarstream)
         elif self.type == tarfile.GNUTYPE_SPARSE:
@@ -393,7 +396,7 @@ class AioTarInfo(tarfile.TarInfo):
         else:
             return self._proc_builtin(tarstream)
 
-    async def _proc_pax(self, tarstream):
+    async def _proc_pax(self, tarstream: AioTarStream) -> Self:
         buf = await tarstream.stream.read(self._block(self.size))
         if self.type == tarfile.XGLTYPE:
             pax_headers = tarstream.pax_headers
@@ -535,7 +538,7 @@ class AioTarStream:
             self.errorlevel = errorlevel
         self.copybufsize = copybufsize
         self.closed = False
-        self.members = []
+        self.members: list[AioTarInfo] = []
         self._loaded = False
         self.inodes = {}
         self._unames = {}  # Cached mappings of uid -> uname
@@ -877,7 +880,13 @@ class AioTarStream:
             else:
                 self._dbg(1, "tarfile: %s" % e)
 
-    async def extractall(self, path=".", members=None, *, numeric_owner=False):
+    async def extractall(
+        self,
+        path: StrOrBytesPath = ".",
+        members: Iterable[AioTarInfo] | None = None,
+        *,
+        numeric_owner: bool = False,
+    ):
         directories = []
         for tarinfo in members or self:
             if tarinfo.isdir():
@@ -934,7 +943,12 @@ class AioTarStream:
     async def getnames(self) -> list[str]:
         return [tarinfo.name for tarinfo in await self.getmembers()]
 
-    def gettarinfo(self, name=None, arcname=None, fileobj=None):
+    def gettarinfo(
+        self,
+        name: StrOrBytesPath | None = None,
+        arcname: str | None = None,
+        fileobj: IO[bytes] | None = None,
+    ) -> AioTarInfo:
         self._check("awx")
         if fileobj is not None:
             name = fileobj.name
@@ -1006,7 +1020,9 @@ class AioTarStream:
                 tarinfo.devminor = os.minor(statres.st_rdev)
         return tarinfo
 
-    def list(self, verbose=True, *, members=None):
+    def list(
+        self, verbose: bool = True, *, members: Iterable[AioTarInfo] = None
+    ) -> None:
         self._check()
         if members is None:
             members = self

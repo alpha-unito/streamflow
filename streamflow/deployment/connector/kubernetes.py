@@ -38,12 +38,12 @@ from streamflow.core.exception import (
 )
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.core.utils import get_option
-from streamflow.deployment.aiotarstream import BaseStreamWrapper
 from streamflow.deployment.connector.base import (
     BaseConnector,
     copy_remote_to_remote,
     copy_same_connector,
 )
+from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -135,8 +135,8 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
 
 
 class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]):
-    def __init__(self, coro) -> None:
-        self.coro = coro
+    def __init__(self, coro: Awaitable[str]):
+        self.coro: Awaitable[str] = coro
         self.response: KubernetesResponseWrapper | None = None
 
     async def __aenter__(self) -> KubernetesResponseWrapper:
@@ -387,20 +387,17 @@ class KubernetesBaseConnector(BaseConnector, ABC):
     ) -> AsyncContextManager[StreamWrapper]:
         pod, container = location.name.split(":")
         return KubernetesResponseWrapperContextManager(
-            coro=cast(
-                Coroutine,
-                self.client_ws.connect_get_namespaced_pod_exec(
-                    name=pod,
-                    namespace=self.namespace or "default",
-                    container=container,
-                    command=command,
-                    stderr=True,
-                    stdin=False,
-                    stdout=True,
-                    tty=False,
-                    _preload_content=False,
-                ),
-            )
+            coro=self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or "default",
+                container=container,
+                command=command,
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _preload_content=False,
+            ),
         )
 
     async def get_stream_writer(
@@ -437,7 +434,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
-        command = utils.create_command(
+        cmd = utils.create_command(
             self.__class__.__name__,
             command,
             environment,
@@ -449,32 +446,29 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "EXECUTING command {command} on {location} {job}".format(
-                    command=command,
+                    command=cmd,
                     location=location,
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        command = (
+        cmd = (
             ["sh", "-c"]
             + [f"{k}={v}" for k, v in location.environment.items()]
-            + [utils.encode_command(command)]
+            + [utils.encode_command(cmd)]
         )
         pod, container = location.name.split(":")
         # noinspection PyUnresolvedReferences
         result = await asyncio.wait_for(
-            cast(
-                Awaitable,
-                self.client_ws.connect_get_namespaced_pod_exec(
-                    name=pod,
-                    namespace=self.namespace or "default",
-                    container=container,
-                    command=command,
-                    stderr=True,
-                    stdin=False,
-                    stdout=True,
-                    tty=False,
-                    _preload_content=not capture_output,
-                ),
+            self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or "default",
+                container=container,
+                command=cmd,
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _preload_content=not capture_output,
             ),
             timeout=timeout,
         )
@@ -615,9 +609,9 @@ class KubernetesConnector(KubernetesBaseConnector):
                             )
                     else:
                         max_unavailable = 0
-                    return ready_replicas >= replicas - max_unavailable
+                    return bool(ready_replicas >= replicas - max_unavailable)
         elif kind == "PersistentVolumeClaim":
-            return k8s_object.status.phase == "Bound"
+            return bool(k8s_object.status.phase == "Bound")
         elif kind == "Service":
             if k8s_object.spec.type == "ExternalName":
                 return True
@@ -645,7 +639,7 @@ class KubernetesConnector(KubernetesBaseConnector):
                 )
                 if str(max_unavailable).endswith("%"):
                     max_unavailable = ceil(replicas * (int(max_unavailable[:-1]) / 100))
-                return (
+                return bool(
                     int(k8s_object.status.number_ready or 0)
                     >= replicas - max_unavailable
                 )

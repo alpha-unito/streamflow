@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import MutableMapping, MutableSequence
+from contextlib import suppress
 from typing import TYPE_CHECKING, overload
 
 from streamflow.core import utils
@@ -35,9 +36,8 @@ class StreamFlowExecutor(Executor):
 
     async def _handle_exception(self, task: asyncio.Task[Token | None]) -> Token | None:
         try:
-            return await task
-        except asyncio.CancelledError:
-            pass
+            with suppress(asyncio.CancelledError):
+                return await task
         except Exception as exc:
             logger.exception(exc)
             if not self.closed:

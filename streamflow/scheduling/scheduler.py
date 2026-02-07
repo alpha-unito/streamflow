@@ -170,7 +170,11 @@ class DefaultScheduler(Scheduler):
                         self.hardware_locations[loc.name] = (
                             self.hardware_locations[loc.name] - job_hardware
                         ) + storage_usage
-                if locations := [loc.wraps for loc in locations if loc.stacked]:
+                if locations := [
+                    loc.wraps
+                    for loc in locations
+                    if loc.stacked and loc.wraps is not None
+                ]:
                     conn = cast(ConnectorWrapper, conn).connector
                     for execution_loc in locations:
                         job_hardware = await utils.bind_mount_point(
@@ -531,7 +535,7 @@ class DefaultScheduler(Scheduler):
         hardware_requirement: HardwareRequirement | None,
     ) -> None:
         job_context = JobContext(job)
-        targets = list(binding_config.targets)
+        targets: MutableSequence[Target] = list(binding_config.targets)
         for f in (self._get_binding_filter(f) for f in binding_config.filters):
             targets = await f.get_targets(job, targets)
         wait_tasks = [
