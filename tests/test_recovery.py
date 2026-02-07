@@ -7,6 +7,8 @@ import posixpath
 import tempfile
 import uuid
 from collections.abc import AsyncGenerator, MutableMapping, MutableSequence
+from functools import cmp_to_key
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -59,12 +61,18 @@ async def _assert_token_result(
         ).resolve()
         assert path is not None
         assert await path.is_file()
+        a = Path(input_value["path"]).read_text()
+        b = await path.read_text()
+        assert a == b
         res = input_value.get("checksum") == f"sha1${await path.checksum()}"
         assert res
         assert input_value.get("size") == await path.size()
     elif isinstance(output_token, ListToken):
+        assert len(input_value) == len(output_token.value)
         for inner_value, inner_token in zip(
-            input_value, output_token.value, strict=True
+            input_value,
+            output_token.value,
+            strict=True,
         ):
             await _assert_token_result(inner_value, inner_token, context, location)
     elif isinstance(output_token, ObjectToken):
@@ -471,7 +479,7 @@ async def test_resume_scatter_step(context: StreamFlowContext) -> None:
 
 @pytest.mark.asyncio
 async def test_scatter(fault_tolerant_context: StreamFlowContext):
-    num_of_failures = 0
+    num_of_failures = 1
     deployment_t = "local-fs-volatile"
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
@@ -506,7 +514,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
     )
     scatter_step.add_input_port(output_name, step.get_output_port(output_name))
     scatter_step.add_output_port(output_name, workflow.create_port())
-    step = translator.get_execute_pipeline(
+    b_step = translator.get_execute_pipeline(
         command=f"lambda x : ('copy', 'list', x['{output_name}'].value)",
         deployment_names=[deployment_t],
         input_ports={output_name: scatter_step.get_output_port(output_name)},
@@ -522,7 +530,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         name=f"{scatter_step_name}-gather",
         size_port=scatter_step.get_size_port(),
     )
-    gather_step.add_input_port(output_name, step.get_output_port(output_name))
+    gather_step.add_input_port(output_name, b_step.get_output_port(output_name))
     gather_step.add_output_port(output_name, workflow.create_port())
     # ExecuteStep after the gather
     step = translator.get_execute_pipeline(
@@ -551,11 +559,11 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         lambda t: t.value.name,
         filter(
             lambda t: isinstance(t, JobToken),
-            step.get_input_port("__job__").token_list,
+            b_step.get_input_port("__job__").token_list,
         ),
     ):
         retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
-        assert retry_request.version == num_of_failures + 1
+        assert retry_request.version ==  num_of_failures + 1
 
 
 @pytest.mark.asyncio

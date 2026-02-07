@@ -1053,11 +1053,11 @@ class GatherStep(BaseStep):
                 task_name = task.get_name()
                 token = task.result()
                 if check_termination(token):
-                    if (
-                        status := _reduce_statuses([status, token.value], self.name)
-                    ) == Status.RECOVERED:
-                        continue
-                    # status = _reduce_statuses([status, token.value], self.name)
+                    # if (
+                    #     status := _reduce_statuses([status, token.value], self.name)
+                    # ) == Status.RECOVERED:
+                    #     continue
+                    status = _reduce_statuses([status, token.value], self.name)
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(
                             f"Step {self.name} received termination token on port {task_name}"

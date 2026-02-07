@@ -9,6 +9,8 @@ from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
+from streamflow.workflow.token import JobToken
+
 
 class ConnectorPort(Port):
     async def get_connector(self, consumer: str) -> Connector:

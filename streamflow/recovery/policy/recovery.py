@@ -28,7 +28,7 @@ from streamflow.workflow.port import (
     JobPort,
     TerminationType,
 )
-from streamflow.workflow.step import ConditionalStep, GatherStep
+from streamflow.workflow.step import ConditionalStep, GatherStep, LoopCombinatorStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -94,8 +94,12 @@ async def _inject_tokens(
             # and any(
             #     isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()
             # )
+            and not any(
+                isinstance(s, GatherStep) for s in port.get_output_steps()
+            )
         ):
             added_inter_port = True
+
             if (
                 not isinstance(port, InterWorkflowJobPort)
                 and port.name not in failed_step_output_ports
@@ -146,6 +150,58 @@ async def _inject_tokens(
                     boundary_tag=b_tag,
                     termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
                 )
+
+
+            # if (
+            #     not isinstance(port, InterWorkflowJobPort)
+            #     and port.name not in failed_step_output_ports
+            # ):
+            #     if False and any(
+            #         isinstance(s, GatherStep) for s in port.get_output_steps()
+            #     ):
+            #         assert len(port.get_output_steps()) == 1
+            #         g_step = next(iter(port.get_output_steps()))
+            #         b_tag = max(
+            #             [
+            #                 mapper.token_instances[token_id].tag
+            #                 for token_id in mapper.port_tokens[port_name]
+            #             ],
+            #             key=cmp_to_key(lambda x, y: compare_tags(x, y)),
+            #         )
+            #         s_port = cast(GatherStep, g_step).get_size_port()
+            #         num_tokens = max(
+            #             [
+            #                 mapper.token_instances[token_id]
+            #                 for token_id in mapper.port_tokens[s_port.name]
+            #             ],
+            #             key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag)),
+            #         )
+            #         b_tag = ".".join(
+            #             [*b_tag.split(".")[:-1], str(num_tokens.value - 1)]
+            #         )
+            #         # a_tag = max(
+            #         #     [
+            #         #         mapper.token_instances[token_id].tag
+            #         #         for token_id in mapper.port_tokens[port_name]
+            #         #     ],
+            #         #     key=cmp_to_key(lambda x, y: compare_tags(x, y)),
+            #         # )
+            #         pass
+            #     else:
+            #         b_tag = max(
+            #             [
+            #                 mapper.token_instances[token_id].tag
+            #                 for token_id in mapper.port_tokens[port_name]
+            #             ],
+            #             key=cmp_to_key(lambda x, y: compare_tags(x, y)),
+            #         )
+            #     if any(isinstance(s, GatherStep) for s in port.get_output_steps()):
+            #         pass
+            #     port.add_inter_port(
+            #         port,
+            #         boundary_tag=b_tag,
+            #         termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
+            #     )
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
@@ -373,17 +429,29 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     logger.debug(
                         f"Synchronizing rollbacks: Job {job_name} has resumed after the rollback workflow is ready."
                     )
-                port_name = await mapper.get_schedule_port_name(job_token)
-                cast(
-                    InterWorkflowJobPort, retry_request.workflow.ports[port_name]
-                ).add_inter_port(
-                    workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
-                    boundary_tag=get_job_tag(job_token.value.name),
-                    termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
-                )
-                # Synchronized schedule step
-                mapper.move_token_to_root(job_token.persistent_id)
-                sync_port_names.append(port_name)
+                for port_name in await mapper.get_output_ports(job_token):
+                    cast(
+                        InterWorkflowPort, retry_request.workflow.ports[port_name]
+                    ).add_inter_port(
+                        workflow.create_port(cls=InterWorkflowPort, name=port_name),
+                        boundary_tag=get_job_tag(job_token.value.name),
+                        termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
+                    )
+                    sync_port_names.append(port_name)
+                for token_id in await mapper.get_output_tokens(job_token.persistent_id):
+                    mapper.move_token_to_root(token_id)
+
+                # port_name = await mapper.get_schedule_port_name(job_token)
+                # cast(
+                #     InterWorkflowJobPort, retry_request.workflow.ports[port_name]
+                # ).add_inter_port(
+                #     workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
+                #     boundary_tag=get_job_tag(job_token.value.name),
+                #     termination_type=TerminationType.PROPAGATE,
+                # )
+                # # Synchronized schedule step
+                # mapper.move_token_to_root(job_token.persistent_id)
+                # sync_port_names.append(port_name)
                 # TODO: Handle the synchronous execution step if it is present in both the
                 #  running recovery workflow and the current recovery workflow
             elif is_available == TokenAvailability.Available:
