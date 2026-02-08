@@ -2,6 +2,29 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/base/queue_manager.json",
   "type": "object",
+  "$defs": {
+    "mount": {
+      "type": "object",
+      "title": "MountPoint",
+      "description": "Mount point configuration on the wrapped location and the worker nodes",
+      "properties": {
+        "source": {
+          "type": "string",
+          "title": "Source",
+          "description": "Path to the mount point on the wrapped location"
+        },
+        "target": {
+          "type": "string",
+          "title": "Target",
+          "description": "Path to the mount point on the worker nodes"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ]
+    }
+  },
   "properties": {
     "checkHostKey": {
       "type": "boolean",
@@ -55,6 +78,21 @@
       "description": "(**Deprecated.** Use the `wraps` directive to wrap a standalone SSH connector.) Maximum number of concurrent connection to open for a single SSH node",
       "deprecated": true,
       "default": 1
+    },
+    "mounts": {
+      "type": "array",
+      "title": "Shared mounts",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/$defs/mount"
+          }
+        ]
+      },
+      "description": "Volumes shared between the target worker nodes and the wrapped location"
     },
     "passwordFile": {
       "type": "string",
