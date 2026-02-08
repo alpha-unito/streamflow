@@ -11,7 +11,6 @@ from streamflow.core import utils
 from streamflow.core.data import DataLocation
 from streamflow.core.deployment import ExecutionLocation, LocalTarget
 from streamflow.core.recovery import CheckpointManager
-from streamflow.core.utils import random_name
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -22,6 +21,7 @@ class DefaultCheckpointManager(CheckpointManager):
         super().__init__(context)
         self.checkpoint_dir = checkpoint_dir or os.path.join(
             os.path.realpath(tempfile.gettempdir()),
+            utils.get_local_username(),
             "streamflow",
             "checkpoint",
             utils.random_name(),
@@ -29,7 +29,7 @@ class DefaultCheckpointManager(CheckpointManager):
         self.copy_tasks: MutableSequence[asyncio.Task[None]] = []
 
     async def _async_local_copy(self, data_location: DataLocation) -> None:
-        parent_directory = os.path.join(self.checkpoint_dir, random_name())
+        parent_directory = os.path.join(self.checkpoint_dir, utils.random_name())
         local_path = os.path.join(parent_directory, data_location.relpath)
         await self.context.data_manager.transfer_data(
             src_location=data_location.location,
