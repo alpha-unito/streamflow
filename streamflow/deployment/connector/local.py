@@ -4,12 +4,14 @@ import asyncio
 import errno
 import logging
 import os
+import shlex
 import shutil
 import sys
 import tempfile
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 
+import mslex
 import psutil
 
 from streamflow.core import utils
@@ -179,13 +181,16 @@ class LocalConnector(BaseConnector):
                     job=f"for job {job_name}" if job_name else "",
                 )
             )
-        command = utils.encode_command(command, self._get_shell())
         return await utils.run_in_subprocess(
             location=location,
             command=[
                 self._get_shell(),
                 "/C" if sys.platform == "win32" else "-c",
-                f"'{command}'",
+                (
+                    mslex.quote(command)
+                    if sys.platform == "win32"
+                    else shlex.quote(command)
+                ),
             ],
             capture_output=capture_output,
             timeout=timeout,
