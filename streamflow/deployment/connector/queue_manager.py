@@ -587,7 +587,6 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
                         job=f"for job {job_name}" if job_name else "",
                     )
                 )
-            command_str = utils.encode_command(command_str)
             if logger.isEnabledFor(logging.WARNING):
                 if not self.template_map.is_empty() and location.service is None:
                     logger.warning(

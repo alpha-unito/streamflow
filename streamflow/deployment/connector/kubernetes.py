@@ -457,7 +457,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         command = (
             ["sh", "-c"]
             + [f"{k}={v}" for k, v in location.environment.items()]
-            + [utils.encode_command(command)]
+            + [command]
         )
         pod, container = location.name.split(":")
         # noinspection PyUnresolvedReferences
