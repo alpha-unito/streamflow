@@ -8,15 +8,12 @@ import os
 import shlex
 from abc import ABC, abstractmethod
 from collections.abc import Collection, MutableMapping, MutableSequence
-from functools import partial
 from importlib.resources import files
 from typing import Any, AsyncContextManager, cast
 
-import cachetools
-from cachetools import keys as cache_keys
+from cachebox import BaseCacheImpl, TTLCache, cached
 
 from streamflow.core import utils
-from streamflow.core.asyncache import cachedmethod
 from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
@@ -34,6 +31,10 @@ from streamflow.deployment.wrapper import (
     get_inner_locations,
 )
 from streamflow.log_handler import logger
+
+
+def _const_key_maker(args: tuple, kwds: dict) -> str:
+    return "running_jobs"
 
 
 class QueueManagerService:
@@ -412,9 +413,7 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
                     "this value to improve performance."
                 )
         self.pollingInterval: int = pollingInterval
-        self._jobs_cache: cachetools.Cache = cachetools.TTLCache(
-            maxsize=1, ttl=self.pollingInterval
-        )
+        self._jobs_cache: BaseCacheImpl = TTLCache(maxsize=1, ttl=self.pollingInterval)
         self._jobs_cache_lock: asyncio.Lock = asyncio.Lock()
         self._scheduled_jobs: MutableMapping[str, ExecutionLocation] = {}
 
@@ -735,9 +734,9 @@ class SlurmConnector(QueueManagerConnector):
                 f"Error while retrieving return code for job {job_id}: {stdout.strip()}"
             )
 
-    @cachedmethod(
-        lambda self: self._jobs_cache,
-        key=partial(cache_keys.hashkey, "running_jobs"),
+    @cached(
+        cache=lambda self: self._jobs_cache,
+        key_maker=_const_key_maker,
     )
     async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         command = [
@@ -954,9 +953,9 @@ class PBSConnector(QueueManagerConnector):
         result = json.loads(await self._run_qstat_command(job_id, location))
         return int(result["Jobs"][job_id]["Exit_status"])
 
-    @cachedmethod(
-        lambda self: self._jobs_cache,
-        key=partial(cache_keys.hashkey, "running_jobs"),
+    @cached(
+        cache=lambda self: self._jobs_cache,
+        key_maker=_const_key_maker,
     )
     async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         command = [
@@ -1157,9 +1156,9 @@ class FluxConnector(QueueManagerConnector):
                 f"Error while retrieving return code for job {job_id}: {stdout.strip()}"
             )
 
-    @cachedmethod(
-        lambda self: self._jobs_cache,
-        key=partial(cache_keys.hashkey, "running_jobs"),
+    @cached(
+        cache=lambda self: self._jobs_cache,
+        key_maker=_const_key_maker,
     )
     async def _get_running_jobs(self, location: ExecutionLocation) -> Collection[str]:
         # If we add the job id, the filter is ignored
