@@ -689,7 +689,6 @@ class InjectorFailureCommand(Command):
                     await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
-            await asyncio.sleep(5)
             try:
                 operation, input_value_type, input_value = eval(self.command)(
                     job.inputs

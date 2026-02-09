@@ -10,7 +10,7 @@ from typing import cast
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
 from streamflow.core.utils import compare_tags, get_job_tag, get_tag
-from streamflow.core.workflow import Job, Status, Step, Token, Workflow
+from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.cwl.step import CWLConditionalStep
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
@@ -28,7 +28,7 @@ from streamflow.workflow.port import (
     JobPort,
     TerminationType,
 )
-from streamflow.workflow.step import ConditionalStep, GatherStep, LoopCombinatorStep
+from streamflow.workflow.step import ConditionalStep, GatherStep
 from streamflow.workflow.token import (
     IterationTerminationToken,
     JobToken,
@@ -88,128 +88,29 @@ async def _inject_tokens(
             for token in token_list
         )
         port = new_workflow.ports[port_name]
-        added_inter_port = False
         if (
             isinstance(port, InterWorkflowPort)
-            # and any(
-            #     isinstance(s, LoopCombinatorStep) for s in port.get_output_steps()
-            # )
-            and not any(
-                isinstance(s, GatherStep) for s in port.get_output_steps()
-            )
+            and not isinstance(port, InterWorkflowJobPort)
+            and port.name not in failed_step_output_ports
+            and not any(isinstance(s, GatherStep) for s in port.get_output_steps())
         ):
-            added_inter_port = True
-
-            if (
-                not isinstance(port, InterWorkflowJobPort)
-                and port.name not in failed_step_output_ports
-            ):
-                if False and any(
-                    isinstance(s, GatherStep) for s in port.get_output_steps()
-                ):
-                    assert len(port.get_output_steps()) == 1
-                    g_step = next(iter(port.get_output_steps()))
-                    b_tag = max(
-                        [
-                            mapper.token_instances[token_id].tag
-                            for token_id in mapper.port_tokens[port_name]
-                        ],
-                        key=cmp_to_key(lambda x, y: compare_tags(x, y)),
-                    )
-                    s_port = cast(GatherStep, g_step).get_size_port()
-                    num_tokens = max(
-                        [
-                            mapper.token_instances[token_id]
-                            for token_id in mapper.port_tokens[s_port.name]
-                        ],
-                        key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag)),
-                    )
-                    b_tag = ".".join(
-                        [*b_tag.split(".")[:-1], str(num_tokens.value - 1)]
-                    )
-                    # a_tag = max(
-                    #     [
-                    #         mapper.token_instances[token_id].tag
-                    #         for token_id in mapper.port_tokens[port_name]
-                    #     ],
-                    #     key=cmp_to_key(lambda x, y: compare_tags(x, y)),
-                    # )
-                    pass
-                else:
-                    b_tag = max(
-                        [
-                            mapper.token_instances[token_id].tag
-                            for token_id in mapper.port_tokens[port_name]
-                        ],
-                        key=cmp_to_key(lambda x, y: compare_tags(x, y)),
-                    )
-                if any(isinstance(s, GatherStep) for s in port.get_output_steps()):
-                    pass
-                port.add_inter_port(
-                    port,
-                    boundary_tag=b_tag,
-                    termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
-                )
-
-
-            # if (
-            #     not isinstance(port, InterWorkflowJobPort)
-            #     and port.name not in failed_step_output_ports
-            # ):
-            #     if False and any(
-            #         isinstance(s, GatherStep) for s in port.get_output_steps()
-            #     ):
-            #         assert len(port.get_output_steps()) == 1
-            #         g_step = next(iter(port.get_output_steps()))
-            #         b_tag = max(
-            #             [
-            #                 mapper.token_instances[token_id].tag
-            #                 for token_id in mapper.port_tokens[port_name]
-            #             ],
-            #             key=cmp_to_key(lambda x, y: compare_tags(x, y)),
-            #         )
-            #         s_port = cast(GatherStep, g_step).get_size_port()
-            #         num_tokens = max(
-            #             [
-            #                 mapper.token_instances[token_id]
-            #                 for token_id in mapper.port_tokens[s_port.name]
-            #             ],
-            #             key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag)),
-            #         )
-            #         b_tag = ".".join(
-            #             [*b_tag.split(".")[:-1], str(num_tokens.value - 1)]
-            #         )
-            #         # a_tag = max(
-            #         #     [
-            #         #         mapper.token_instances[token_id].tag
-            #         #         for token_id in mapper.port_tokens[port_name]
-            #         #     ],
-            #         #     key=cmp_to_key(lambda x, y: compare_tags(x, y)),
-            #         # )
-            #         pass
-            #     else:
-            #         b_tag = max(
-            #             [
-            #                 mapper.token_instances[token_id].tag
-            #                 for token_id in mapper.port_tokens[port_name]
-            #             ],
-            #             key=cmp_to_key(lambda x, y: compare_tags(x, y)),
-            #         )
-            #     if any(isinstance(s, GatherStep) for s in port.get_output_steps()):
-            #         pass
-            #     port.add_inter_port(
-            #         port,
-            #         boundary_tag=b_tag,
-            #         termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
-            #     )
+            port.add_inter_port(
+                port,
+                boundary_tag=max(
+                    [
+                        mapper.token_instances[token_id].tag
+                        for token_id in mapper.port_tokens[port_name]
+                    ],
+                    key=cmp_to_key(lambda x, y: compare_tags(x, y)),
+                ),
+                termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
+            )
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
                     f"Injecting token {token.persistent_id} {token.tag} of port {port.name} ({type(port)})"
                 )
             port.put(token)
-        if not added_inter_port:
-            port.put(TerminationToken(Status.COMPLETED))
     logger.info("Injected all tokens")
 
 

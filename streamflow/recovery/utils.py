@@ -14,7 +14,7 @@ from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.workflow.step import ExecuteStep, ScheduleStep, TransferStep
+from streamflow.workflow.step import ExecuteStep, ScheduleStep
 from streamflow.workflow.token import JobToken
 
 
@@ -321,9 +321,7 @@ class GraphMapper:
                     for row in step_rows
                 )
             ):
-                if issubclass(
-                    get_class_from_name(step_row["type"]), (ExecuteStep, TransferStep)
-                ):
+                if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
                     port_names.add(port_name)
         return list(port_names)
 
@@ -450,10 +448,15 @@ class GraphMapper:
                     self.port_tokens[port_name].remove(removed_token_id)
                 if len(self.port_tokens[port_name]) == 0:
                     empty_ports.add(port_name)
-        removed_ports = []
-        for port_name in empty_ports:
-            if port_name not in removed_ports:
-                removed_ports.extend(self.remove_port(port_name))
+
+        ports_to_process = empty_ports
+        processed_ports = set()
+        while ports_to_process:
+            if (current_port := ports_to_process.pop()) not in processed_ports:
+                cascade_removed = self.remove_port(current_port)
+                processed_ports.add(current_port)
+                processed_ports.update(cascade_removed)
+                ports_to_process.difference_update(processed_ports)
 
     def remove_token(self, token_id: int) -> None:
         if logger.isEnabledFor(logging.INFO):

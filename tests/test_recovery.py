@@ -7,7 +7,6 @@ import posixpath
 import tempfile
 import uuid
 from collections.abc import AsyncGenerator, MutableMapping, MutableSequence
-from functools import cmp_to_key
 from pathlib import Path
 from typing import Any
 
@@ -563,7 +562,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext):
         ),
     ):
         retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
-        assert retry_request.version ==  num_of_failures + 1
+        assert retry_request.version == num_of_failures + 1
 
 
 @pytest.mark.asyncio
