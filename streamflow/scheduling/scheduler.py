@@ -72,7 +72,7 @@ class DefaultScheduler(Scheduler):
         connector: Connector,
         selected_locations: MutableSequence[AvailableLocation],
         target: Target,
-    ):
+    ) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             if len(selected_locations) == 1:
                 logger.debug(
@@ -188,7 +188,7 @@ class DefaultScheduler(Scheduler):
                             job_hardware,
                         )
 
-    def _get_binding_filter(self, config: FilterConfig):
+    def _get_binding_filter(self, config: FilterConfig) -> BindingFilter:
         if config.name not in self.binding_filter_map:
             self.binding_filter_map[config.name] = binding_filter_classes[config.type](
                 config.name, **config.config
@@ -228,7 +228,7 @@ class DefaultScheduler(Scheduler):
                     return []
             return selected_locations
 
-    def _get_policy(self, config: Config):
+    def _get_policy(self, config: Config) -> Policy:
         if config.name not in self.policy_map:
             self.policy_map[config.name] = policy_classes[config.type](**config.config)
         return self.policy_map[config.name]
@@ -293,7 +293,7 @@ class DefaultScheduler(Scheduler):
         target: Target,
         job_context: JobContext,
         hardware_requirement: HardwareRequirement | None,
-    ):
+    ) -> None:
         deployment = target.deployment.name
         if deployment not in self.wait_queues:
             self.wait_queues[deployment] = asyncio.Condition()

@@ -6,7 +6,7 @@ import os
 import tarfile
 from collections.abc import MutableMapping, MutableSequence
 from types import TracebackType
-from typing import Any, AsyncContextManager, cast
+from typing import Any, AsyncContextManager, Literal, cast
 
 import asyncssh
 from asyncssh import SSHClient, SSHClientConnection
@@ -45,7 +45,7 @@ class AioTarStreamReaderWrapper(StreamReaderWrapper):
             os.close(self.stream)
             self.stream = None
 
-    async def read(self, size: int | None = None):
+    async def read(self, size: int | None = None) -> bytes:
         return os.read(self.stream, size)
 
 
@@ -58,11 +58,13 @@ class AioTarStreamWriterWrapper(StreamWriterWrapper):
 
 
 class AioTarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
-    def __init__(self, fileobj: Any, mode: str, tar_format: str) -> None:
+    def __init__(
+        self, fileobj: Any, mode: Literal["r", "a", "w", "x"], tar_format: str
+    ) -> None:
         super().__init__()
         self.fileobj: Any = fileobj
         self.stream: StreamWrapper | None = None
-        self.mode: str = mode
+        self.mode: Literal["r", "a", "w", "x"] = mode
         # TODO: add type (in particular to test `sparse`)
         # FORMATS:
         # - gnu           GNU tar 1.13.x format.
@@ -104,7 +106,6 @@ class AioTarStreamWrapperContextManager(AsyncContextManager[StreamWrapper]):
 
 
 class AioTarConnector(BaseConnector):
-
     def __init__(
         self,
         deployment_name: str,
@@ -280,11 +281,11 @@ class FailureConnector(Connector):
 class ParameterizableHardwareConnector(LocalConnector):
     def __init__(
         self, deployment_name: str, config_dir: str, transferBufferSize: int = 2**16
-    ):
+    ) -> None:
         super().__init__(deployment_name, config_dir, transferBufferSize)
         self.hardware = None
 
-    def set_hardware(self, hardware: Hardware):
+    def set_hardware(self, hardware: Hardware) -> None:
         self.hardware = hardware
 
     async def get_available_locations(
@@ -321,7 +322,7 @@ class SSHChannelErrorContext(SSHContext):
             return None
         hostname, port = parse_hostname(config.hostname)
 
-        def get_client_factory():
+        def get_client_factory() -> SSHChannelErrorClient:
             return SSHChannelErrorClient(config.connector)
 
         return await asyncssh.connect(

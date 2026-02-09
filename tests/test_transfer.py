@@ -186,7 +186,7 @@ async def test_file_to_entity(
 @pytest.mark.asyncio
 async def test_multiple_files(
     context: StreamFlowContext, communication_pattern: tuple[str, str]
-):
+) -> None:
     """Test transferring multiple files simultaneously from one location to another."""
     await asyncio.gather(
         *(

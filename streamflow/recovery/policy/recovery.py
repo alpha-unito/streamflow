@@ -66,8 +66,6 @@ async def _inject_tokens(
     new_workflow: Workflow,
     failed_step_output_ports: MutableSequence[str],
 ) -> None:
-    if any(isinstance(s, GatherStep) for s in new_workflow.steps.values()):
-        pass
     for port_name in mapper.port_tokens.keys():
         token_list = sorted(
             [

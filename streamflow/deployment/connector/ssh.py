@@ -6,6 +6,7 @@ import os
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
+from types import TracebackType
 from typing import Any, AsyncContextManager
 
 import asyncssh
@@ -237,7 +238,12 @@ class SSHContextManager:
                                 await context.reset()
                     await asyncio.sleep(self._retry_delay)
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         async with self._condition:
             if self._selected_context:
                 if self._proc:
@@ -308,7 +314,12 @@ class SSHStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
         self.ssh_context: SSHContextManager | None = None
         self.stream: StreamWrapper | None = None
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         if self.stream:
             await self.stream.close()
         await self.ssh_context.__aexit__(exc_type, exc_val, exc_tb)
@@ -539,7 +550,7 @@ class SSHConnector(BaseConnector):
                     command_str, location, f" for job {job_name}" if job_name else ""
                 )
             )
-        return utils.encode_command(command_str)
+        return command_str
 
     def _get_config(
         self, node: str | MutableMapping[str, Any] | None
@@ -714,7 +725,6 @@ class SSHConnector(BaseConnector):
                 environment=environment,
                 workdir=workdir,
             )
-            command = utils.encode_command(command)
         async with self._get_ssh_client_process(
             location=location.name,
             command=command,

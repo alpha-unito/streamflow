@@ -60,7 +60,6 @@ from streamflow.cwl.processor import (
 )
 from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
 from streamflow.cwl.requirement.docker.translator import (
-    CWLDockerTranslator,
     CWLDockerTranslatorConfig,
 )
 from streamflow.cwl.step import (
@@ -746,7 +745,7 @@ def _create_nested_size_tag(
 ) -> MutableSequence[Port]:
     if len(size_ports) == 0:
         return [next(iter(replicas_port.values()))]
-    new_replicas_port = {}
+    new_replicas_port: dict[str, Port] = {}
     new_size_ports = {}
     for port_name, port in size_ports.items():
         output_port_name = f"{port_name}-{next(iter(replicas_port.keys()))}"
@@ -1281,7 +1280,7 @@ def _get_secondary_files(
     return secondary_files
 
 
-def _inject_value(value: Any):
+def _inject_value(value: Any) -> Any:
     if isinstance(value, MutableSequence):
         return [_inject_value(v) for v in value]
     elif isinstance(value, MutableMapping):
@@ -1401,13 +1400,10 @@ def _process_docker_requirement(
             f"Container type `{config.type}` not supported"
         )
     translator_type = cwl_docker_translator_classes[config.type]
-    translator = cast(
-        CWLDockerTranslator,
-        translator_type(
-            config_dir=config_dir,
-            wrapper=(config.wrapper if target.deployment.type != "local" else False),
-            **config.config,
-        ),
+    translator = translator_type(
+        config_dir=config_dir,
+        wrapper=(config.wrapper if target.deployment.type != "local" else False),
+        **config.config,
     )
     return translator.get_target(
         image=_process_docker_image(docker_requirement=docker_requirement),
@@ -1619,7 +1615,9 @@ class CWLTranslator:
         self.scatter: MutableMapping[str, Any] = {}
         self.workflow_config: WorkflowConfig = workflow_config
 
-    def _get_deploy_step(self, deployment_config: DeploymentConfig, workflow: Workflow):
+    def _get_deploy_step(
+        self, deployment_config: DeploymentConfig, workflow: Workflow
+    ) -> DeployStep:
         if deployment_config.name not in self.deployment_map:
             self.deployment_map[deployment_config.name] = workflow.create_step(
                 cls=DeployStep,
@@ -1757,7 +1755,7 @@ class CWLTranslator:
         self,
         workflow: Workflow,
         global_name: str,
-        port_name,
+        port_name: str,
         port: Port,
         output_directory: str,
         value: Any,
@@ -1943,7 +1941,7 @@ class CWLTranslator:
         context: MutableMapping[str, Any],
         name_prefix: str,
         cwl_name_prefix: str,
-    ):
+    ) -> None:
         context["elements"][cwl_element.id] = cwl_element
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating {cwl_element.__class__.__name__} {name_prefix}")
@@ -2017,7 +2015,7 @@ class CWLTranslator:
         # Process inputs
         input_ports = {}
         token_transformers = []
-        default_ports = {}
+        default_ports: dict[str, Port] = {}
         for element_input in cwl_element.inputs:
             global_name = utils.get_name(name_prefix, cwl_name_prefix, element_input.id)
             port_name = posixpath.relpath(global_name, name_prefix)
@@ -2447,10 +2445,7 @@ class CWLTranslator:
         # If there are scatter inputs
         if scatter_inputs:
             # Retrieve scatter method (default to dotproduct)
-            scatter_method = (
-                cast(cwl_utils.parser.ScatterWorkflowStep, cwl_element).scatterMethod
-                or "dotproduct"
-            )
+            scatter_method = cwl_element.scatterMethod or "dotproduct"
             # If any scatter input is null, propagate an empty array on the output ports
             empty_scatter_conditional_step = workflow.create_step(
                 cls=CWLEmptyScatterConditionalStep,
@@ -2618,12 +2613,7 @@ class CWLTranslator:
             # If there are scatter inputs
             if scatter_inputs:
                 # Retrieve scatter method (default to dotproduct)
-                scatter_method = (
-                    cast(
-                        cwl_utils.parser.ScatterWorkflowStep, cwl_element
-                    ).scatterMethod
-                    or "dotproduct"
-                )
+                scatter_method = cwl_element.scatterMethod or "dotproduct"
                 # Perform a gather on the outputs
                 if scatter_method == "nested_crossproduct":
                     gather_steps = []
@@ -2758,10 +2748,10 @@ class CWLTranslator:
                 )
                 loop_terminator_combinator.add_item(port_name)
             # Process inputs
-            loop_input_ports = {}
-            loop_default_ports = {}
-            loop_value_from_transformers = {}
-            loop_input_dependencies = {}
+            loop_input_ports: dict[str, Port] = {}
+            loop_default_ports: dict[str, Port] = {}
+            loop_value_from_transformers: dict[str, ValueFromTransformer] = {}
+            loop_input_dependencies: dict[str, set[str]] = {}
             for loop_input in loop["loop"] or []:
                 # Extract element source
                 if "Loop" in requirements:
@@ -2991,7 +2981,7 @@ class CWLTranslator:
             # Otherwise, the input element depends on a single output port
             else:
                 source_name = utils.get_name(
-                    name_prefix, cwl_name_prefix, cast(str, element_source)
+                    name_prefix, cwl_name_prefix, element_source
                 )
                 source_port = self._get_source_port(workflow, source_name)
                 # If there is a default value, construct a default port block

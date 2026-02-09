@@ -6,7 +6,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast, overload
 
 from typing_extensions import Self
 
@@ -382,7 +382,7 @@ class Step(PersistableEntity, ABC):
     def add_output_port(self, name: str, port: Port) -> None:
         self._add_port(name, port, DependencyType.OUTPUT)
 
-    def get_input_port(self, name: str | None = None) -> Port | None:
+    def get_input_port(self, name: str | None = None) -> Port:
         if name is None:
             if len(self.input_ports) == 1:
                 return self.workflow.ports.get(next(iter(self.input_ports.values())))
@@ -390,16 +390,18 @@ class Step(PersistableEntity, ABC):
                 raise WorkflowExecutionException(
                     f"Cannot retrieve default input port as step {self.name} contains multiple input ports."
                 )
-        return (
-            self.workflow.ports.get(self.input_ports[name])
-            if name in self.input_ports
-            else None
-        )
+        else:
+            if name in self.input_ports:
+                return self.workflow.ports[self.input_ports[name]]
+            else:
+                raise WorkflowExecutionException(
+                    f"Cannot retrieve input port {name} from step {self.name}"
+                )
 
     def get_input_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.input_ports.items()}
 
-    def get_output_port(self, name: str | None = None) -> Port | None:
+    def get_output_port(self, name: str | None = None) -> Port:
         if name is None:
             if len(self.output_ports) == 1:
                 return self.workflow.ports.get(next(iter(self.output_ports.values())))
@@ -407,11 +409,13 @@ class Step(PersistableEntity, ABC):
                 raise WorkflowExecutionException(
                     f"Cannot retrieve default output port as step {self.name} contains multiple output ports."
                 )
-        return (
-            self.workflow.ports.get(self.output_ports[name])
-            if name in self.output_ports
-            else None
-        )
+        else:
+            if name in self.output_ports:
+                return self.workflow.ports[self.output_ports[name]]
+            else:
+                raise WorkflowExecutionException(
+                    f"Cannot retrieve output port {name} from step {self.name}"
+                )
 
     def get_output_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.output_ports.items()}
@@ -479,7 +483,7 @@ class Step(PersistableEntity, ABC):
                 self.persistent_id = await context.database.add_step(
                     name=self.name,
                     workflow_id=self.workflow.persistent_id,
-                    status=cast(int, self.status.value),
+                    status=self.status.value,
                     type=type(self),
                     params=await self._save_additional_params(context),
                 )
@@ -622,6 +626,16 @@ class Workflow(PersistableEntity):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         return {"config": self.config, "output_ports": self.output_ports}
+
+    if TYPE_CHECKING:
+
+        @overload
+        def create_port(self) -> Port: ...
+
+        @overload
+        def create_port(
+            self, cls: type[P] = ..., name: str | None = ..., **kwargs
+        ) -> P: ...
 
     def create_port(self, cls: type[P] = Port, name: str | None = None, **kwargs) -> P:
         if name is None:

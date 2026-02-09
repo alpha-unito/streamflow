@@ -98,7 +98,7 @@ async def _fill_context(
     output_eval: str,
     full_js: bool,
     expression_lib: MutableSequence[str] | None,
-):
+) -> None:
     # Fill context with exit code if required
     if "exitCode" in resolve_dependencies(
         expression=output_eval,
@@ -516,7 +516,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         # Generate the output object as described in `outputs` field
         if self.glob is not None:
             # Adjust glob path
-            globpaths = []
+            globpaths: list[str] = []
             for glob in (
                 self.glob if isinstance(self.glob, MutableSequence) else [self.glob]
             ):

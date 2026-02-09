@@ -440,7 +440,7 @@ class ConditionalStep(BaseStep):
     async def run(self) -> None:
         try:
             if self.input_ports:
-                inputs_map = {}
+                inputs_map: dict[str, dict[str, Token]] = {}
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(self.get_input_ports())
@@ -561,7 +561,7 @@ class DeployStep(BaseStep):
             )
         try:
             if self.input_ports:
-                inputs_map = {}
+                inputs_map: dict[str, dict[str, Token]] = {}
                 while True:
                     # Wait for input tokens to be available
                     inputs = await self._get_inputs(self.get_input_ports())
@@ -841,7 +841,7 @@ class ExecuteStep(BaseStep):
             output_processor or DefaultCommandOutputProcessor(name, self.workflow)
         )
 
-    def get_job_port(self):
+    def get_job_port(self) -> Port:
         return self.get_input_port("__job__")
 
     async def run(self) -> None:
@@ -875,7 +875,7 @@ class ExecuteStep(BaseStep):
             if k != "__job__" and not isinstance(v, ConnectorPort)
         }:
             statuses = []
-            inputs_map = {}
+            inputs_map: dict[str, dict[str, Token]] = {}
             unfinished = {
                 asyncio.create_task(
                     self._get_inputs(input_ports), name="retrieve_inputs"
@@ -1611,7 +1611,7 @@ class ScheduleStep(BaseStep):
     async def _schedule(
         self,
         job: Job,
-    ):
+    ) -> None:
         await self.workflow.context.scheduler.schedule(
             job,
             self.binding_config,
@@ -1764,7 +1764,7 @@ class ScheduleStep(BaseStep):
                 )
             )
             if input_ports:
-                inputs_map = {}
+                inputs_map: dict[str, dict[str, Token]] = {}
                 while True:
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
@@ -1988,7 +1988,7 @@ class TransferStep(BaseStep, ABC):
             k: v for k, v in self.get_input_ports().items() if k != "__job__"
         }
         if input_ports:
-            inputs_map = {}
+            inputs_map: dict[str, dict[str, Token]] = {}
             try:
                 while True:
                     # Retrieve input tokens
@@ -2042,7 +2042,7 @@ class Transformer(BaseStep, ABC):
     async def run(self) -> None:
         try:
             if input_ports := self._filter_input_ports():
-                inputs_map = {}
+                inputs_map: dict[str, dict[str, Token]] = {}
 
                 while True:
                     # Retrieve input tokens

@@ -190,8 +190,8 @@ def create_schedule_step(
     workflow: Workflow,
     deploy_steps: Iterable[DeployStep],
     cls: type[ScheduleStep] | None = None,
-    binding_config: BindingConfig = None,
-    hardware_requirement: HardwareRequirement = None,
+    binding_config: BindingConfig | None = None,
+    hardware_requirement: HardwareRequirement | None = None,
     name_prefix: str | None = None,
     **arguments,
 ) -> ScheduleStep:
@@ -350,7 +350,7 @@ def get_nested_crossproduct(
     return combinator
 
 
-def random_job_name(step_name: str | None = None):
+def random_job_name(step_name: str | None = None) -> str:
     step_name = step_name or utils.random_name()
     return os.path.join(posixpath.sep, step_name, "0.0")
 
@@ -837,7 +837,7 @@ class InjectorFailureScheduleStep(ScheduleStep):
         connector: Connector,
         locations: MutableSequence[ExecutionLocation],
         job: Job,
-    ):
+    ) -> None:
         # Counts the number of step rollbacks
         loading_context = DefaultDatabaseLoadingContext()
         workflows = await asyncio.gather(
@@ -1001,7 +1001,7 @@ class RecoveryTranslator:
         self.deployment_configs: MutableMapping[str, DeploymentConfig] = {}
         self.workflow: Workflow = workflow
 
-    def _get_deploy_step(self, deployment_name: str):
+    def _get_deploy_step(self, deployment_name: str) -> DeployStep:
         step_name = posixpath.join("__deploy__", deployment_name)
         if step_name not in self.workflow.steps.keys():
             return self.workflow.create_step(

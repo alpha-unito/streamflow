@@ -299,7 +299,7 @@ def _merge_tokens(token: CommandToken) -> Any:
         case ListCommandToken():
             return [_merge_tokens(t) for t in token.value if t is not None]
         case ObjectCommandToken():
-            tokens = sorted(
+            tokens: list[CommandToken] = sorted(
                 filter(
                     lambda t: t.position is not None,
                     flatten_list(

@@ -80,12 +80,14 @@ def _prepare_connector(
 
 
 @pytest_asyncio.fixture(scope="session")
-async def deployment_config(context, deployment) -> DeploymentConfig:
+async def deployment_config(
+    context: StreamFlowContext, deployment: str
+) -> DeploymentConfig:
     return await get_deployment_config(context, deployment)
 
 
 @pytest.fixture(scope="session")
-def service(context, deployment) -> str | None:
+def service(context: StreamFlowContext, deployment: str) -> str | None:
     return get_service(context, deployment)
 
 
