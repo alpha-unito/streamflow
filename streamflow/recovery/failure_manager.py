@@ -25,17 +25,13 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int | None = max_retries
         self.retry_delay: int | None = retry_delay
         self._retry_requests: MutableMapping[str, RetryRequest] = {}
-        self.counter_workflows = 0
 
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
-        self.counter_workflows += 1
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
         try:
-            await RollbackRecoveryPolicy(self.context).recover(
-                job, step, self.counter_workflows
-            )
+            await RollbackRecoveryPolicy(self.context).recover(job, step)
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
         # When receiving a FailureHandlingException, simply fail

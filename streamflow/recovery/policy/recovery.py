@@ -99,7 +99,7 @@ async def _inject_tokens(
                         mapper.token_instances[token_id].tag
                         for token_id in mapper.port_tokens[port_name]
                     ],
-                    key=cmp_to_key(lambda x, y: compare_tags(x, y)),
+                    key=cmp_to_key(compare_tags),
                 ),
                 termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
             )
@@ -252,9 +252,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 if len(port.token_list) == 0:
                     logger.info(f"Port {port.name} has no tokens")
                     raise FailureHandlingException(f"Port {port.name} has no tokens")
-                # elif len(port.token_list) == 1:
-                #     logger.info(f"Port {port.name} has 1 token")
-                #     raise FailureHandlingException(f"Port {port.name} has 1 token")
             for p in new_workflow.ports.values():
                 if len(steps := p.get_input_steps()) == 1:
                     for s in steps:
@@ -377,17 +374,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 new_job_names.append(job_name)
         return new_job_names
 
-    async def recover(
-        self, failed_job: Job, failed_step: Step, counter_wf: int
-    ) -> None:
+    async def recover(self, failed_job: Job, failed_step: Step) -> None:
         # Create recover workflow
         new_workflow = await self._recover_workflow(failed_job, failed_step)
-        # import os
-        # new_steps = {}
-        # for s in new_workflow.steps.values():
-        #     s.name = str(os.path.join(s.name, str(counter_wf)))
-        #     new_steps[s.name] = s
-        # new_workflow.steps = new_steps
         # Execute new workflow
         await _execute_recover_workflow(new_workflow, failed_step)
         for p in failed_step.get_output_ports().values():
@@ -404,5 +393,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     )
                     == TerminationType.TERMINATE
                 ):
-                    pass
+                    raise FailureHandlingException(
+                        f"The output ports of the workflow to recover the failed step {failed_step.name} don't have termination condition"
+                    )
         return
