@@ -333,6 +333,11 @@ class LocalStreamFlowPath(
             super().__init__(*args)
         self.context: StreamFlowContext = context
 
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, RemoteStreamFlowPath):
+            return False
+        return super().__eq__(other)
+
     async def checksum(self) -> str | None:
         if await self.is_file():
             loop = asyncio.get_running_loop()
@@ -469,7 +474,7 @@ class RemoteStreamFlowPath(
     PurePosixPath,
     __LegacyStreamFlowPath if sys.version_info < (3, 12) else StreamFlowPath,
 ):
-    __slots__ = ("context", "connector", "location")
+    __slots__ = ("context", "connector", "location", "_inner_path")
 
     def __init__(
         self,
@@ -487,6 +492,13 @@ class RemoteStreamFlowPath(
         )
         self.location: ExecutionLocation = location
         self._inner_path: StreamFlowPath | None = None
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, RemoteStreamFlowPath):
+            return False
+        if other.connector != self.connector or other.location != self.location:
+            return False
+        return super().__eq__(other)
 
     def _is_valid_inner_path(self, location: DataLocation) -> bool:
         return (
