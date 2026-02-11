@@ -103,16 +103,6 @@ class InterWorkflowPort(Port):
     ) -> None:
         self.boundaries.setdefault(boundary_tag, []).append((port, termination_type))
 
-        # Range of tag necessary before to propagate the boundary tag
-        # NOTE. currently the range start from 0 to boundary tag
-        #  it is better pass as argument the min of the range.
-        #  It can be necessary for the loop (?)
-        # levels = boundary_tag.split(".")
-        # a = not bool(
-        #     {".".join((*levels[:-1], str(i))) for i in range(int(levels[-1]))}
-        #     - {t.tag for t in self.token_list if not isinstance(t, TerminationToken)}
-        # )
-
         # hard copy because the list can be increased in self._handle_self_boundary
         for token in list(self.token_list):
             if token.tag == boundary_tag:

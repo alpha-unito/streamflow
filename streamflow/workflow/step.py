@@ -1064,6 +1064,10 @@ class GatherStep(BaseStep):
                         )
                 else:
                     if task_name == "__size__":
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Step {self.name} received size token with {token.tag} tag"
+                            )
                         self.size_map[token.tag] = token
                         port = size_port
                         if len(self.token_map.setdefault(token.tag, [])) == token.value:

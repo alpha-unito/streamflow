@@ -56,9 +56,15 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
             )
         )
     else:
-        await new_workflow.save(new_workflow.context)
-        executor = StreamFlowExecutor(new_workflow)
-        await executor.run()
+        try:
+            await new_workflow.save(new_workflow.context)
+            executor = StreamFlowExecutor(new_workflow)
+            await executor.run()
+        except BaseException as e:
+            logger.info(f"Error {e}: {type(e)}")
+            for step in new_workflow.steps.values():
+                logger.debug(f"Step {step.name} exits with status {step.status.name}")
+            raise
 
 
 async def _inject_tokens(
@@ -86,11 +92,36 @@ async def _inject_tokens(
             for token in token_list
         )
         port = new_workflow.ports[port_name]
+
+        # TerminationType.PROPAGATE_AND_TERMINATE
+        # The inter port propagates termination upon receiving a token
+        # with a tag matching the boundary tag, after propagating the
+        # received token. The boundary tag is defined as the largest
+        # tag within the mapper.
+        #
+        # There are some exceptions:
+        # - The propagate-and-terminate condition is not added to the
+        #   output ports of the `ScheduleStep` because JobTokens lack
+        #   tags. Since they all use tag 0, enabling this condition
+        #   would trigger termination as soon as the first token is
+        #   generated.
+        # - The condition is not added to the output ports of a failed
+        #   step because they are handled differently. They must
+        #   terminate themselves and propagate the token to the port
+        #   of the original failed step.
+        # - The input ports of the `GatherStep` are handled differently
+        #   because if the token with the maximum tag is already
+        #   available as an input token, the inter port triggers
+        #   termination immediately. This bypasses the recovery process
+        #   for any missing or lost tokens.
         if (
             isinstance(port, InterWorkflowPort)
             and not isinstance(port, InterWorkflowJobPort)
             and port.name not in failed_step_output_ports
-            and not any(isinstance(s, GatherStep) for s in port.get_output_steps())
+            and not any(
+                isinstance(s, GatherStep) and s.input_ports["__size__"] != port.name
+                for s in port.get_output_steps()
+            )
         ):
             port.add_inter_port(
                 port,
