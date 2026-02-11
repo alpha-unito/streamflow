@@ -341,6 +341,9 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
         maxConcurrentJobs: int | None = 1,
         maxConcurrentSessions: int | None = 10,
         maxConnections: int | None = 1,
+        mounts: (
+            MutableSequence[str] | MutableSequence[MutableMapping[str, str]] | None
+        ) = None,
         passwordFile: str | None = None,
         pollingInterval: int = 5,
         services: MutableMapping[str, QueueManagerService] | None = None,
@@ -378,12 +381,24 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
             service=service,
             transferBufferSize=transferBufferSize,
         )
-        files_map: MutableMapping[str, Any] = {}
+        files_map: dict[str, type[QueueManagerService]] = {}
         self.services = (
             {k: self._service_class(**v) for k, v in services.items()}
             if services
             else {}
         )
+        self.mounts: dict[str, str] = {}
+        if mounts is not None:
+            for mount in mounts:
+                match mount:
+                    case str():
+                        self.mounts[mount] = mount
+                    case MutableMapping():
+                        self.mounts[mount["source"]] = mount["target"]
+                    case _:
+                        raise WorkflowDefinitionException(
+                            f"Invalid mount `{mount}` for deployment `{deployment_name}`"
+                        )
         if self.services:
             for name, service in self.services.items():
                 if service.file is not None:
@@ -532,17 +547,17 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
             )
         location = next(iter(locations.values()))
         name = f"{location.name}/slurmctld"
-        return {
-            name: AvailableLocation(
-                name=name,
-                deployment=self.deployment_name,
-                service=service,
-                hostname=location.hostname,
-                slots=self.maxConcurrentJobs,
-                stacked=False,
-                wraps=location,
-            )
-        }
+        loc = AvailableLocation(
+            name=name,
+            deployment=self.deployment_name,
+            service=service,
+            hostname=location.hostname,
+            slots=self.maxConcurrentJobs,
+            stacked=False,
+            wraps=location,
+        )
+        loc.location.mounts = self.mounts
+        return {name: loc}
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation

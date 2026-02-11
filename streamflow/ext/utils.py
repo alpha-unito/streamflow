@@ -120,8 +120,13 @@ def _get_type_repr(
                 return obj["title"]
             else:
                 return "object"
+        elif obj["type"] == "array":
+            return f"List[{_get_type_repr(obj['items'], refs)}]"
         else:
             return obj["type"]
+    elif "oneOf" in obj:
+        types = [_get_type_repr(oo, refs) for oo in obj["oneOf"] if "type" in oo]
+        return f"Union[{', '.join(types)}]"
     else:
         return None
 
