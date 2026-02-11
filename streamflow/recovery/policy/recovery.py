@@ -29,11 +29,7 @@ from streamflow.workflow.port import (
     TerminationType,
 )
 from streamflow.workflow.step import ConditionalStep, GatherStep
-from streamflow.workflow.token import (
-    IterationTerminationToken,
-    JobToken,
-    TerminationToken,
-)
+from streamflow.workflow.token import JobToken
 from streamflow.workflow.utils import get_job_token
 
 
@@ -44,7 +40,10 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
                 f"Workflow {new_workflow.name} is empty. "
                 f"Waiting output ports {list(failed_step.output_ports.values())}"
             )
-        assert set(new_workflow.ports.keys()) == set(failed_step.output_ports.values())
+        if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
+            raise FailureHandlingException(
+                f"Recovery workflow for {failed_step.name} step has no all the output ports"
+            )
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -87,10 +86,6 @@ async def _inject_tokens(
             raise FailureHandlingException(
                 f"Port {port_name} has multiple tokens with same tag (id, tag): {tags}"
             )
-        assert not any(
-            isinstance(token, (TerminationToken, IterationTerminationToken))
-            for token in token_list
-        )
         port = new_workflow.ports[port_name]
 
         # TerminationType.PROPAGATE_AND_TERMINATE
