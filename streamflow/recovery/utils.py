@@ -60,6 +60,9 @@ class DirectedGraph:
             self._successors[u].add(v)
             self._predecessors[v].add(u)
 
+    def contains(self, u: T) -> bool:
+        return u in self._successors.keys()
+
     def get_nodes(self) -> MutableSet[T]:
         return set(self._successors.keys())
 
@@ -276,7 +279,11 @@ class GraphMapper:
 
     async def get_output_tokens(self, job_token_id: int) -> Iterable[int]:
         execute_step_out_token_ids = set()
-        for token_id in self.dag_tokens.successors(job_token_id):
+        for token_id in (
+            self.dag_tokens.successors(job_token_id)
+            if self.dag_tokens.contains(job_token_id)
+            else ()
+        ):
             port_row = await self.context.database.get_port_from_token(token_id)
             for step_id_row in await self.context.database.get_input_steps(
                 port_row["id"]
@@ -288,24 +295,26 @@ class GraphMapper:
 
     async def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
         port_names = set()
-        for port_name in self.dcg_port.successors(
-            next(
+        if job_port := next(
+            (
                 port
                 for port, token_ids in self.port_tokens.items()
                 if job_token.persistent_id in token_ids
-            )
+            ),
+            None,
         ):
-            # Get newest port
-            port_id = max(self.port_name_ids[port_name])
-            step_rows = await self.context.database.get_input_steps(port_id)
-            for step_row in await asyncio.gather(
-                *(
-                    asyncio.create_task(self.context.database.get_step(row["step"]))
-                    for row in step_rows
-                )
-            ):
-                if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
-                    port_names.add(port_name)
+            for port_name in self.dcg_port.successors(job_port):
+                # Get newest port
+                port_id = max(self.port_name_ids[port_name])
+                step_rows = await self.context.database.get_input_steps(port_id)
+                for step_row in await asyncio.gather(
+                    *(
+                        asyncio.create_task(self.context.database.get_step(row["step"]))
+                        for row in step_rows
+                    )
+                ):
+                    if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
+                        port_names.add(port_name)
         return list(port_names)
 
     async def get_port_and_step_ids(

@@ -238,7 +238,7 @@ async def test_execute(
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
     # Check workflow output token
-    assert all(s.status == Status.COMPLETED for s in workflow.steps.values())
+    assert all([s.status == Status.COMPLETED for s in workflow.steps.values()])
     result_token = execute_steps[-1].get_output_port(output_name).token_list
     assert len(result_token) == 2
     await _assert_token_result(
