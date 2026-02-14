@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, MutableSequence
+from collections.abc import Callable, MutableMapping, MutableSequence
+from enum import Enum
 
 from streamflow.core.deployment import Connector
 from streamflow.core.workflow import Job, Port, Token, Workflow
@@ -49,20 +50,61 @@ class FilterTokenPort(Port):
             logger.debug(f"Port {self.name} skips {token.tag}")
 
 
+class TerminationType(Enum):
+    PROPAGATE_AND_TERMINATE = 0
+    TERMINATE = 1
+    PROPAGATE = 2
+
+
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
-        self.inter_ports: MutableSequence[tuple[Port, str | None]] = []
+        self.boundaries: MutableMapping[
+            str, MutableSequence[tuple[Port, TerminationType]]
+        ] = {}
 
-    def add_inter_port(self, port: Port, border_tag: str | None = None) -> None:
-        self.inter_ports.append((port, border_tag))
+    def _handle_boundary(
+        self, port: Port, token: Token, termination_type: TerminationType
+    ) -> None:
+        if termination_type in (
+            TerminationType.PROPAGATE,
+            TerminationType.PROPAGATE_AND_TERMINATE,
+        ):
+            if port is self:
+                super().put(token)
+            else:
+                port.put(token)
+        if termination_type in (
+            TerminationType.TERMINATE,
+            TerminationType.PROPAGATE_AND_TERMINATE,
+        ):
+            if port is self:
+                super().put(TerminationToken())
+            else:
+                port.put(TerminationToken())
+
+    def add_inter_port(
+        self,
+        port: Port,
+        boundary_tag: str,
+        termination_type: TerminationType = TerminationType.TERMINATE,
+    ) -> None:
+        self.boundaries.setdefault(boundary_tag, []).append((port, termination_type))
+
+        # Create a copy of `token_list` because the list can be modified within `_handle_self_boundary` method
+        for token in list(self.token_list):
+            if token.tag == boundary_tag:
+                self._handle_boundary(port, token, termination_type)
 
     def put(self, token: Token) -> None:
-        if not isinstance(token, TerminationToken):
-            for port, border_tag in self.inter_ports:
-                if border_tag is None or border_tag == token.tag:
-                    port.put(token)
-        super().put(token)
+        if (
+            isinstance(token, TerminationToken)
+            or token.tag not in self.boundaries.keys()
+        ):
+            super().put(token)
+        else:
+            for boundary in self.boundaries[token.tag]:
+                self._handle_boundary(boundary[0], token, boundary[1])
 
 
 class InterWorkflowJobPort(InterWorkflowPort, JobPort):

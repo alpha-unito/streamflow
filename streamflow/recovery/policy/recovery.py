@@ -8,7 +8,7 @@ from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
-from streamflow.core.utils import get_tag
+from streamflow.core.utils import get_job_tag, get_tag
 from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
@@ -24,6 +24,7 @@ from streamflow.workflow.port import (
     InterWorkflowJobPort,
     InterWorkflowPort,
     JobPort,
+    TerminationType,
 )
 from streamflow.workflow.token import (
     IterationTerminationToken,
@@ -129,7 +130,14 @@ async def _populate_workflow(
             )
     for port in failed_step.get_output_ports().values():
         cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
-            port, border_tag=get_tag(failed_job.inputs.values())
+            port,
+            boundary_tag=get_tag(failed_job.inputs.values()),
+            termination_type=TerminationType.PROPAGATE,
+        )
+        cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
+            new_workflow.ports[port.name],
+            boundary_tag=get_tag(failed_job.inputs.values()),
+            termination_type=TerminationType.TERMINATE,
         )
 
 
@@ -213,9 +221,14 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 for port_name in await mapper.get_output_ports(job_token):
                     if port_name in retry_request.workflow.ports.keys():
                         cast(
-                            InterWorkflowPort, retry_request.workflow.ports[port_name]
+                            InterWorkflowJobPort,
+                            retry_request.workflow.ports[port_name],
                         ).add_inter_port(
-                            workflow.create_port(cls=InterWorkflowPort, name=port_name)
+                            workflow.create_port(
+                                cls=InterWorkflowJobPort, name=port_name
+                            ),
+                            boundary_tag=get_job_tag(job_token.value.name),
+                            termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
                         )
                 # Remove tokens recovered in other workflows
                 for token_id in await mapper.get_output_tokens(job_token.persistent_id):
