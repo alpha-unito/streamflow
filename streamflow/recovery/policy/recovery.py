@@ -228,7 +228,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                                 cls=InterWorkflowJobPort, name=port_name
                             ),
                             boundary_tag=get_job_tag(job_token.value.name),
-                            termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
+                            termination_type=(
+                                TerminationType.PROPAGATE | TerminationType.TERMINATE
+                            ),
                         )
                 # Remove tokens recovered in other workflows
                 for token_id in await mapper.get_output_tokens(job_token.persistent_id):

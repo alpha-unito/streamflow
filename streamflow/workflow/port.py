@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, MutableMapping, MutableSequence
-from enum import Enum
+from enum import Flag, auto
 
 from streamflow.core.deployment import Connector
 from streamflow.core.workflow import Job, Port, Token, Workflow
@@ -50,10 +50,9 @@ class FilterTokenPort(Port):
             logger.debug(f"Port {self.name} skips {token.tag}")
 
 
-class TerminationType(Enum):
-    PROPAGATE_AND_TERMINATE = 0
-    TERMINATE = 1
-    PROPAGATE = 2
+class TerminationType(Flag):
+    PROPAGATE = auto()
+    TERMINATE = auto()
 
 
 class InterWorkflowPort(Port):
@@ -66,18 +65,12 @@ class InterWorkflowPort(Port):
     def _handle_boundary(
         self, port: Port, token: Token, termination_type: TerminationType
     ) -> None:
-        if termination_type in (
-            TerminationType.PROPAGATE,
-            TerminationType.PROPAGATE_AND_TERMINATE,
-        ):
+        if TerminationType.PROPAGATE in termination_type:
             if port is self:
                 super().put(token)
             else:
                 port.put(token)
-        if termination_type in (
-            TerminationType.TERMINATE,
-            TerminationType.PROPAGATE_AND_TERMINATE,
-        ):
+        if TerminationType.TERMINATE in termination_type:
             if port is self:
                 super().put(TerminationToken())
             else:
@@ -87,7 +80,7 @@ class InterWorkflowPort(Port):
         self,
         port: Port,
         boundary_tag: str,
-        termination_type: TerminationType = TerminationType.TERMINATE,
+        termination_type: TerminationType,
     ) -> None:
         self.boundaries.setdefault(boundary_tag, []).append((port, termination_type))
 
