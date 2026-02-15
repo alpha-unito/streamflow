@@ -232,7 +232,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             new_workflow,
             workflow_builder,
             failed_job,
-            failed_job.name in job_names,
+            True,  # failed_job.name in job_names,
         )
 
         # import datetime

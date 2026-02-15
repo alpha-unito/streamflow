@@ -5,7 +5,7 @@ from collections.abc import Callable, MutableMapping, MutableSequence
 from enum import Flag, auto
 
 from streamflow.core.deployment import Connector
-from streamflow.core.workflow import Job, Port, Token, Workflow
+from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
@@ -72,9 +72,9 @@ class InterWorkflowPort(Port):
                 port.put(token)
         if TerminationType.TERMINATE in termination_type:
             if port is self:
-                super().put(TerminationToken())
+                super().put(TerminationToken(Status.RECOVERED))
             else:
-                port.put(TerminationToken())
+                port.put(TerminationToken(Status.RECOVERED))
 
     def add_inter_port(
         self,

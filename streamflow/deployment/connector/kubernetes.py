@@ -229,16 +229,12 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
-        try:
-            await super().copy_local_to_remote(
-                src=src,
-                dst=dst,
-                locations=await self._get_effective_locations(locations, dst),
-                read_only=read_only,
-            )
-        except Exception as e:
-            # ClientConnectionResetError
-            raise WorkflowExecutionException(e)
+        await super().copy_local_to_remote(
+            src=src,
+            dst=dst,
+            locations=await self._get_effective_locations(locations, dst),
+            read_only=read_only,
+        )
 
     async def copy_remote_to_remote(
         self,
@@ -249,42 +245,37 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         source_connector: Connector | None = None,
         read_only: bool = False,
     ) -> None:
-        try:
-            source_connector = source_connector or self
-            if locations := await copy_same_connector(
+        source_connector = source_connector or self
+        if locations := await copy_same_connector(
+            connector=self,
+            locations=await self._get_effective_locations(locations, dst),
+            source_location=source_location,
+            src=src,
+            dst=dst,
+            read_only=read_only,
+        ):
+            await copy_remote_to_remote(
                 connector=self,
-                locations=await self._get_effective_locations(locations, dst),
-                source_location=source_location,
+                locations=locations,
                 src=src,
                 dst=dst,
-                read_only=read_only,
-            ):
-                await copy_remote_to_remote(
-                    connector=self,
-                    locations=locations,
-                    src=src,
-                    dst=dst,
-                    source_connector=source_connector,
-                    source_location=source_location,
-                    writer_command=[
-                        "sh",
-                        "-c",
-                        " ".join(
-                            await utils.get_remote_to_remote_write_command(
-                                src_connector=source_connector,
-                                src_location=source_location,
-                                src=src,
-                                dst_connector=self,
-                                dst_locations=locations,
-                                dst=dst,
-                            )
-                        ),
-                    ],
-                )
-        except Exception as e:
-            # ClientConnectorError(ConnectionKey(host='130.192.100.107', port=6443, is_ssl=True, ssl=True, proxy=None, proxy_auth=None, proxy_headers_hash=None),
-            # ConnectionRefusedError(111, "Connect call failed ('130.192.100.107', 6443)")))
-            raise WorkflowExecutionException(e)
+                source_connector=source_connector,
+                source_location=source_location,
+                writer_command=[
+                    "sh",
+                    "-c",
+                    " ".join(
+                        await utils.get_remote_to_remote_write_command(
+                            src_connector=source_connector,
+                            src_location=source_location,
+                            src=src,
+                            dst_connector=self,
+                            dst_locations=locations,
+                            dst=dst,
+                        )
+                    ),
+                ],
+            )
 
     async def _get_container(
         self, location: ExecutionLocation
@@ -468,59 +459,51 @@ class KubernetesBaseConnector(BaseConnector, ABC):
             + [command]
         )
         pod, container = location.name.split(":")
-        try:
-            # noinspection PyUnresolvedReferences
-            result = await asyncio.wait_for(
-                cast(
-                    Awaitable,
-                    self.client_ws.connect_get_namespaced_pod_exec(
-                        name=pod,
-                        namespace=self.namespace or "default",
-                        container=container,
-                        command=command,
-                        stderr=True,
-                        stdin=False,
-                        stdout=True,
-                        tty=False,
-                        _preload_content=not capture_output,
-                    ),
+        # noinspection PyUnresolvedReferences
+        result = await asyncio.wait_for(
+            cast(
+                Awaitable,
+                self.client_ws.connect_get_namespaced_pod_exec(
+                    name=pod,
+                    namespace=self.namespace or "default",
+                    container=container,
+                    command=command,
+                    stderr=True,
+                    stdin=False,
+                    stdout=True,
+                    tty=False,
+                    _preload_content=not capture_output,
                 ),
-                timeout=timeout,
-            )
-            if capture_output:
-                with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
-                    async with result as response:
-                        while not response.closed:
-                            async for msg in response:
-                                data = msg.data.decode("utf-8", "replace")
-                                channel = ord(data[0])
-                                data = data[1:]
-                                if data and channel in [
-                                    ws_client.STDOUT_CHANNEL,
-                                    ws_client.STDERR_CHANNEL,
-                                ]:
-                                    out_buffer.write(data)
-                                elif data and channel == ws_client.ERROR_CHANNEL:
-                                    err_buffer.write(data)
-                    err = yaml.safe_load(err_buffer.getvalue())
-                    if err["status"] == "Success":
-                        return out_buffer.getvalue(), 0
+            ),
+            timeout=timeout,
+        )
+        if capture_output:
+            with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
+                async with result as response:
+                    while not response.closed:
+                        async for msg in response:
+                            data = msg.data.decode("utf-8", "replace")
+                            channel = ord(data[0])
+                            data = data[1:]
+                            if data and channel in [
+                                ws_client.STDOUT_CHANNEL,
+                                ws_client.STDERR_CHANNEL,
+                            ]:
+                                out_buffer.write(data)
+                            elif data and channel == ws_client.ERROR_CHANNEL:
+                                err_buffer.write(data)
+                err = yaml.safe_load(err_buffer.getvalue())
+                if err["status"] == "Success":
+                    return out_buffer.getvalue(), 0
+                else:
+                    if "code" in err:
+                        return err["message"], int(err["code"])
                     else:
-                        if "code" in err:
-                            return err["message"], int(err["code"])
-                        else:
-                            return err["message"], int(
-                                err["details"]["causes"][0]["message"]
-                            )
-            else:
-                return None
-        except TimeoutError as e:
-            raise WorkflowExecutionException(e)
-        except Exception as e:
-            # AttributeError("'ServerTimeoutError' object has no attribute 'decode'")
-            # ClientConnectorError(ConnectionKey(host='130.192.100.107', port=6443, is_ssl=True, ssl=True, proxy=None, proxy_auth=None, proxy_headers_hash=None),
-            # ConnectionRefusedError(111, "Connect call failed ('130.192.100.107', 6443)"))
-            raise WorkflowExecutionException(e)
+                        return err["message"], int(
+                            err["details"]["causes"][0]["message"]
+                        )
+        else:
+            return None
 
     async def undeploy(self, external: bool) -> None:
         if self.client is not None:

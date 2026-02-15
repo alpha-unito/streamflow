@@ -8,6 +8,7 @@ class ProcessorTypeError(Exception):
 class WorkflowException(Exception):
     pass
 
+
 class UnrecoverableWorkflowException(WorkflowException):
     pass
 
