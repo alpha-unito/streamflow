@@ -8,8 +8,11 @@ class ProcessorTypeError(Exception):
 class WorkflowException(Exception):
     pass
 
+class UnrecoverableWorkflowException(WorkflowException):
+    pass
 
-class WorkflowDefinitionException(WorkflowException):
+
+class WorkflowDefinitionException(UnrecoverableWorkflowException):
     pass
 
 
@@ -21,7 +24,7 @@ class WorkflowProvenanceException(WorkflowException):
     pass
 
 
-class FailureHandlingException(WorkflowException):
+class FailureHandlingException(UnrecoverableWorkflowException):
     pass
 
 

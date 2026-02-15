@@ -7,7 +7,7 @@ from importlib.resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException, WorkflowException
-from streamflow.core.recovery import FailureManager, RetryRequest, TokenAvailability
+from streamflow.core.recovery import FailureManager, RetryRequest, TokenAvailability, recoverable
 from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
@@ -26,28 +26,14 @@ class DefaultFailureManager(FailureManager):
         self.retry_delay: int | None = retry_delay
         self._retry_requests: MutableMapping[str, RetryRequest] = {}
 
+    @recoverable
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
-        try:
-            await RollbackRecoveryPolicy(self.context).recover(job, step)
-            if logger.isEnabledFor(logging.INFO):
-                logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
-        # When receiving a FailureHandlingException, simply fail
-        except FailureHandlingException as e:
-            logger.exception(e)
-            raise
-        # Recovery exceptions
-        except WorkflowException as e:
-            logger.exception(e)
-            await self.recover(job, step, e)
-        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-        except KeyboardInterrupt:
-            raise
-        except Exception as e:
-            logger.exception(e)
-            raise
+        await RollbackRecoveryPolicy(self.context).recover(job, step)
+        if logger.isEnabledFor(logging.INFO):
+            logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
 
     async def close(self) -> None:
         pass
