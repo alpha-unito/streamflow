@@ -127,7 +127,7 @@ async def _inject_tokens(
                     ],
                     key=cmp_to_key(compare_tags),
                 ),
-                termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
+                termination_type=TerminationType.PROPAGATE | TerminationType.TERMINATE,
             )
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
