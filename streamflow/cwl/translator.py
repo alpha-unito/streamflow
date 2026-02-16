@@ -660,10 +660,23 @@ def _create_list_merger(
                 cls=AllNonNullTransformer, name=name + "-transformer"
             )
             transformer.add_input_port(output_port_name, combinator.get_output_port())
-            transformer.add_output_port(
-                output_port_name, output_port or workflow.create_port()
-            )
-            return transformer
+            if len(ports) == 1:
+                transformer.add_output_port(output_port_name, workflow.create_port())
+                list_to_element = workflow.create_step(
+                    cls=ListToElementTransformer, name=name + "-list-to-element"
+                )
+                list_to_element.add_input_port(
+                    output_port_name, transformer.get_output_port()
+                )
+                list_to_element.add_output_port(
+                    output_port_name, output_port or workflow.create_port()
+                )
+                return list_to_element
+            else:
+                transformer.add_output_port(
+                    output_port_name, output_port or workflow.create_port()
+                )
+                return transformer
         case _:
             if link_merge is None:
                 combinator.add_output_port(output_port_name, workflow.create_port())
@@ -1064,10 +1077,7 @@ def _create_token_processor_optional(
             name=processor.name,
             workflow=processor.workflow,
             processors=[
-                NullTokenProcessor(
-                    name=processor.name,
-                    workflow=processor.workflow,
-                ),
+                NullTokenProcessor(name=processor.name, workflow=processor.workflow),
                 processor,
             ],
         )
