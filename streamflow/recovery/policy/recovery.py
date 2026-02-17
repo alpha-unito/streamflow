@@ -348,11 +348,16 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 else:
                     for port_name in output_ports:
                         cast(
-                            InterWorkflowPort, retry_request.workflow.ports[port_name]
+                            InterWorkflowJobPort,
+                            retry_request.workflow.ports[port_name],
                         ).add_inter_port(
-                            workflow.create_port(cls=InterWorkflowPort, name=port_name),
+                            workflow.create_port(
+                                cls=InterWorkflowJobPort, name=port_name
+                            ),
                             boundary_tag=get_job_tag(job_token.value.name),
-                            termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
+                            termination_type=(
+                                TerminationType.PROPAGATE | TerminationType.TERMINATE
+                            ),
                         )
                         sync_port_names.append(port_name)
                     for token_id in await mapper.get_output_tokens(

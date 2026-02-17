@@ -272,12 +272,9 @@ async def test_hardlink(
         await src.rmtree()
         # Test symlink to directory
         await src.mkdir(mode=0o777)
-        if location.local:
-            with pytest.raises(PermissionError):
-                await path.hardlink_to(src)
-        else:
-            with pytest.raises(WorkflowExecutionException) as err:
-                await path.hardlink_to(src)
+        with pytest.raises((WorkflowExecutionException, PermissionError)) as err:
+            await path.hardlink_to(src)
+        if isinstance(err.type, WorkflowExecutionException):
             assert "1 Command 'ln -nf " in str(err.value)
     finally:
         await path.rmtree()

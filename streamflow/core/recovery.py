@@ -47,7 +47,8 @@ def recoverable(func):
             asyncio.CancelledError,
             KeyboardInterrupt,
             UnrecoverableWorkflowException,
-        ):
+        ) as e:
+            logger.exception(e)
             raise
         # When receiving a generic exception, try to handle it
         except Exception as e:

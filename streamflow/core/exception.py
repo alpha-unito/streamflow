@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 
+class InvalidPluginException(Exception):
+    pass
+
+
 class ProcessorTypeError(Exception):
     pass
 
@@ -13,6 +17,10 @@ class UnrecoverableWorkflowException(WorkflowException):
     pass
 
 
+class FailureHandlingException(UnrecoverableWorkflowException):
+    pass
+
+
 class WorkflowDefinitionException(UnrecoverableWorkflowException):
     pass
 
@@ -22,12 +30,4 @@ class WorkflowExecutionException(WorkflowException):
 
 
 class WorkflowProvenanceException(WorkflowException):
-    pass
-
-
-class FailureHandlingException(UnrecoverableWorkflowException):
-    pass
-
-
-class InvalidPluginException(Exception):
     pass
