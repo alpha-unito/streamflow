@@ -7,10 +7,13 @@ import itertools
 import os
 import posixpath
 import shlex
+import sys
 import uuid
 from collections.abc import Iterable, MutableMapping, MutableSequence
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
+
+import mslex
 
 from streamflow.core.exception import ProcessorTypeError, WorkflowExecutionException
 from streamflow.core.persistence import PersistableEntity
@@ -125,6 +128,27 @@ def create_command(
     )
 
 
+if sys.platform == "win32":
+
+    def create_shell_command(command: MutableSequence[str], local: bool) -> list[str]:
+        cmd = " ".join(command)
+        return (
+            ["cmd", "/C", quote(value=cmd, local=local)]
+            if local
+            else ["sh", "-c", shlex.quote(cmd)]
+        )
+
+else:
+
+    def create_shell_command(command: MutableSequence[str], local: bool) -> list[str]:
+        cmd = " ".join(command)
+        return (
+            [os.environ.get("SHELL", "sh"), "-c", quote(value=cmd, local=local)]
+            if local
+            else ["sh", "-c", shlex.quote(cmd)]
+        )
+
+
 def get_job_step_name(job_name: str) -> str:
     return PurePosixPath(job_name).parent.as_posix()
 
@@ -210,7 +234,7 @@ async def get_local_to_remote_destination(
 ) -> str:
     is_dst_dir, status = await dst_connector.run(
         location=dst_location,
-        command=[f'test -d "{dst}"'],
+        command=["test", "-d", shlex.quote(dst)],
         capture_output=True,
     )
     if status > 1:
@@ -253,21 +277,21 @@ async def get_remote_to_remote_write_command(
 ) -> MutableSequence[str]:
     is_dst_dir, status = await dst_connector.run(
         location=dst_locations[0],
-        command=[f'test -d "{dst}"'],
+        command=["test", "-d", shlex.quote(dst)],
         capture_output=True,
     )
     if status > 1:
         raise WorkflowExecutionException(is_dst_dir)
     # If destination path exists and is a directory
     elif status == 0:
-        return ["tar", "xf", "-", "-C", dst]
+        return ["tar", "xf", "-", "-C", shlex.quote(dst)]
     # Otherwise, if destination path does not exist
     else:
         # If basename must be renamed during transfer
         if posixpath.basename(src) != posixpath.basename(dst):
             is_src_dir, status = await src_connector.run(
                 location=src_location,
-                command=[f'test -d "{src}"'],
+                command=["test", "-d", shlex.quote(src)],
                 capture_output=True,
             )
             if status > 1:
@@ -278,19 +302,44 @@ async def get_remote_to_remote_write_command(
                     *(
                         asyncio.create_task(
                             dst_connector.run(
-                                location=dst_location, command=["mkdir", "-p", dst]
+                                location=dst_location,
+                                command=["mkdir", "-p", shlex.quote(dst)],
                             )
                         )
                         for dst_location in dst_locations
                     )
                 )
-                return ["tar", "xf", "-", "-C", dst, "--strip-components", "1"]
+                return [
+                    "tar",
+                    "xf",
+                    "-",
+                    "-C",
+                    shlex.quote(dst),
+                    "--strip-components",
+                    "1",
+                ]
             # Otherwise, if source path is a file
             else:
-                return ["tar", "xf", "-", "-O", "|", "tee", dst, ">", "/dev/null"]
+                return [
+                    "tar",
+                    "xf",
+                    "-",
+                    "-O",
+                    "|",
+                    "tee",
+                    shlex.quote(dst),
+                    ">",
+                    "/dev/null",
+                ]
         # Otherwise, if basename must be preserved
         else:
-            return ["tar", "xf", "-", "-C", posixpath.dirname(dst)]
+            return [
+                "tar",
+                "xf",
+                "-",
+                "-C",
+                shlex.quote(posixpath.dirname(dst)),
+            ]
 
 
 def get_tag(tokens: Iterable[Token]) -> str:
@@ -334,6 +383,17 @@ async def run_in_subprocess(
     else:
         await asyncio.wait_for(proc.wait(), timeout=timeout)
         return None
+
+
+if sys.platform == "win32":
+
+    def quote(value: str, local: bool) -> str:
+        return mslex.quote(value) if local else shlex.quote(value)
+
+else:
+
+    def quote(value: str, local: bool) -> str:
+        return shlex.quote(value)
 
 
 def wrap_command(command: str) -> list[str]:

@@ -4,19 +4,18 @@ import asyncio
 import errno
 import logging
 import os
-import shlex
 import shutil
 import sys
 import tempfile
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 
-import mslex
 import psutil
 
 from streamflow.core import utils
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
+from streamflow.core.utils import create_shell_command
 from streamflow.deployment.connector.base import FS_TYPES_TO_SKIP, BaseConnector
 from streamflow.log_handler import logger
 
@@ -74,15 +73,6 @@ class LocalConnector(BaseConnector):
             memory=float(psutil.virtual_memory().total / 2**20),
             storage=storage,
         )
-
-    def _get_shell(self) -> str:
-        match sys.platform:
-            case "win32":
-                return "cmd"
-            case "darwin":
-                return "bash"
-            case _:
-                return "sh"
 
     async def copy_local_to_remote(
         self,
@@ -183,15 +173,7 @@ class LocalConnector(BaseConnector):
             )
         return await utils.run_in_subprocess(
             location=location,
-            command=[
-                self._get_shell(),
-                "/C" if sys.platform == "win32" else "-c",
-                (
-                    mslex.quote(command)
-                    if sys.platform == "win32"
-                    else shlex.quote(command)
-                ),
-            ],
+            command=create_shell_command(command=[command], local=True),
             capture_output=capture_output,
             timeout=timeout,
         )

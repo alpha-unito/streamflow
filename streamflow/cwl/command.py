@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import posixpath
-import shlex
 import time
 from asyncio.subprocess import STDOUT
 from collections.abc import MutableMapping, MutableSequence
@@ -30,7 +28,7 @@ from streamflow.core.processor import (
     MapCommandOutputProcessor,
     UnionCommandOutputProcessor,
 )
-from streamflow.core.utils import flatten_list
+from streamflow.core.utils import create_shell_command, flatten_list, quote
 from streamflow.core.workflow import (
     Command,
     CommandOptions,
@@ -226,11 +224,11 @@ def _build_command_output_processor(
             )
 
 
-def _escape_value(value: Any) -> Any:
+def _escape_value(value: Any, local: bool) -> Any:
     if isinstance(value, MutableSequence):
-        return [_escape_value(v) for v in value]
+        return [_escape_value(value=v, local=local) for v in value]
     else:
-        return shlex.quote(_get_value_repr(value))
+        return quote(value=_get_value_repr(value), local=local)
 
 
 async def _get_source_location(
@@ -706,17 +704,22 @@ class CWLCommand(TokenizedCommand):
         )
 
     def _get_executable_command(
-        self, context: MutableMapping[str, Any], inputs: MutableMapping[str, Token]
+        self,
+        context: MutableMapping[str, Any],
+        inputs: MutableMapping[str, Token],
+        local: bool,
     ) -> MutableSequence[str]:
-        command = []
         options = CWLCommandOptions(
             context=context,
             expression_lib=self.expression_lib,
             full_js=self.full_js,
         )
         # Process baseCommand
-        if self.base_command:
-            command.append(shlex.join(self.base_command))
+        command = (
+            [quote(cmd, local=options.local) for cmd in self.base_command]
+            if self.base_command
+            else []
+        )
         # Process tokens
         bindings = ListCommandToken(name=None, position=None, value=[])
         for processor in self.processors:
@@ -803,8 +806,14 @@ class CWLCommand(TokenizedCommand):
             )
         else:
             inputs = job.inputs
+        # Get execution target
+        connector = self.step.workflow.context.scheduler.get_connector(job.name)
+        locations = self.step.workflow.context.scheduler.get_locations(job.name)
+        local = all(loc.local for loc in locations)
         # Build command string
-        cmd = self._get_executable_command(context, inputs)
+        cmd = self._get_executable_command(context=context, inputs=inputs, local=local)
+        if self.is_shell_command:
+            cmd = create_shell_command(cmd, local=local)
         # Build environment variables
         parsed_env = {
             k: str(
@@ -821,24 +830,14 @@ class CWLCommand(TokenizedCommand):
             parsed_env["HOME"] = job.output_directory
         if "TMPDIR" not in parsed_env:
             parsed_env["TMPDIR"] = job.tmp_directory
-        # Get execution target
-        connector = self.step.workflow.context.scheduler.get_connector(job.name)
-        locations = self.step.workflow.context.scheduler.get_locations(job.name)
-        cmd_string = " \\\n\t".join(
-            ["/bin/sh", "-c", '"{cmd}"'.format(cmd=" ".join(cmd))]
-            if self.is_shell_command
-            else cmd
-        )
+        # Log and persist command
+        cmd_string = " \\\n\t".join(cmd)
         if logger.isEnabledFor(logging.INFO):
             logger.info(
                 "EXECUTING step {step} (job {job}) {location} into directory {outdir}:\n{command}".format(
                     step=self.step.name,
                     job=job.name,
-                    location=(
-                        "locally"
-                        if locations[0].local
-                        else f"on location {locations[0]}"
-                    ),
+                    location=("locally" if local else f"on location {locations[0]}"),
                     outdir=job.output_directory,
                     command=cmd_string,
                 )
@@ -852,17 +851,6 @@ class CWLCommand(TokenizedCommand):
             job_token_id=job_token.persistent_id,
             cmd=cmd_string,
         )
-        # Escape shell command when needed
-        if self.is_shell_command:
-            cmd = [
-                "/bin/sh",
-                "-c",
-                '"$(echo {command} | base64 -d)"'.format(
-                    command=base64.b64encode(" ".join(cmd).encode("utf-8")).decode(
-                        "utf-8"
-                    )
-                ),
-            ]
         # If step is assigned to multiple locations, add the STREAMFLOW_HOSTS environment variable
         if len(locations) > 1 and (
             hostnames := [loc.hostname for loc in locations if loc.hostname is not None]
@@ -976,17 +964,19 @@ class CWLCommand(TokenizedCommand):
 
 
 class CWLCommandOptions(CommandOptions):
-    __slots__ = ("context", "expression_lib", "full_js")
+    __slots__ = ("context", "expression_lib", "full_js", "local")
 
     def __init__(
         self,
         context: MutableMapping[str, Any],
         expression_lib: MutableSequence[str] | None = None,
         full_js: bool = False,
+        local: bool = False,
     ):
         self.context: MutableMapping[str, Any] = context
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
+        self.local: bool = local
 
 
 class CWLCommandTokenProcessor(CommandTokenProcessor):
@@ -1072,7 +1062,7 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
                     value = [value]
                 # Process shell escape only on the single command token
                 if not self.is_shell_command or self.shell_quote:
-                    value = [_escape_value(v) for v in value]
+                    value = [_escape_value(value=v, local=options.local) for v in value]
                 # Obtain token position
                 if isinstance(self.position, str) and not self.position.isnumeric():
                     position = utils.eval_expression(
@@ -1216,6 +1206,7 @@ class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
             | {"inputs": {self.name: get_token_value(token)}},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
+            local=options.local,
         )
 
 
@@ -1233,6 +1224,7 @@ class CWLMapCommandTokenProcessor(MapCommandTokenProcessor):
             | {"inputs": {self.name: value}, "self": value},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
+            local=options.local,
         )
 
 

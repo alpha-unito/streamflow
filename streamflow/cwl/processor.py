@@ -559,7 +559,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                                             if self.target
                                             else job.tmp_directory
                                         ),
-                                        path=cast(str, path),
+                                        path=path,
                                     )
                                 )
                                 for path in globpaths
