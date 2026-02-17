@@ -67,7 +67,10 @@ def _check_helm_installed() -> None:
 
 async def _get_helm_version() -> str:
     proc = await asyncio.create_subprocess_exec(
-        *shlex.split("helm version --template '{{.Version}}'"),
+        "helm",
+        "version",
+        "--template",
+        "'{{.Version}}'",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -184,7 +187,8 @@ class KubernetesResponseWriterWrapper(BaseStreamWrapper):
                     break
                 else:
                     raise WorkflowExecutionException(
-                        f"Kubernetes connection terminated with status {result['status']}."
+                        f"Kubernetes connection terminated with status {result['status']}: "
+                        f"{result.get('reason', result.get( 'message', '' ))}"
                     )
 
     async def read(self, size: int | None = None) -> bytes | None:
@@ -555,7 +559,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
             )
         command = (
             ["sh", "-c"]
-            + [f"{k}={v}" for k, v in location.environment.items()]
+            + [f"{k}={shlex.quote(v)}" for k, v in location.environment.items()]
             + [command]
         )
         pod, container = location.name.split(":")

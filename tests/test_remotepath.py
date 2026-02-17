@@ -45,19 +45,22 @@ async def test_directory(
         # ./
         #   file1.txt
         #   file2.csv
+        #   file with spaces.txt
         #   dir1/
         #   dir2/
         await (path / "dir1").mkdir(mode=0o777)
         await (path / "dir2").mkdir(mode=0o777)
         await (path / "file1.txt").write_text("StreamFlow")
         await (path / "file2.csv").write_text("StreamFlow")
+        await (path / "file with spaces.txt").write_text("StreamFlow")
         async for dirpath, dirnames, filenames in path.walk(follow_symlinks=True):
             assert len(dirnames) == 2
             assert "dir1" in dirnames
             assert "dir2" in dirnames
-            assert len(filenames) == 2
+            assert len(filenames) == 3
             assert "file1.txt" in filenames
             assert "file2.csv" in filenames
+            assert "file with spaces.txt" in filenames
             break
         await path.rmtree()
         assert not await path.exists()
@@ -149,6 +152,7 @@ async def test_glob(
         #   dir1/
         #     file1.txt
         #     file2.csv
+        #     file with spaces.txt
         #     dir2/
         #       file1.txt
         #       file2.csv
@@ -157,6 +161,7 @@ async def test_glob(
         await (path / "dir1" / "dir2").mkdir(mode=0o777, parents=True)
         await (path / "dir1" / "file1.txt").write_text("StreamFlow")
         await (path / "dir1" / "file2.csv").write_text("StreamFlow")
+        await (path / "dir1" / "file with spaces.txt").write_text("StreamFlow")
         await (path / "dir1" / "dir2" / "file1.txt").write_text("StreamFlow")
         await (path / "dir1" / "dir2" / "file2.csv").write_text("StreamFlow")
         # Test *.txt
@@ -170,8 +175,9 @@ async def test_glob(
         assert path / "file2.csv" in result
         # Test */*.txt
         result = [p async for p in path.glob("*/*.txt")]
-        assert len(result) == 1
+        assert len(result) == 2
         assert path / "dir1" / "file1.txt" in result
+        assert path / "dir1" / "file with spaces.txt" in result
     finally:
         await path.rmtree()
 

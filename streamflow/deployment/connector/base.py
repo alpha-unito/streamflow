@@ -173,7 +173,13 @@ async def copy_remote_to_remote(
             )
     # Build reader and writer commands
     if reader_command is None:
-        reader_command = ["tar", "chf", "-", "-C", *posixpath.split(src)]
+        reader_command = [
+            "tar",
+            "chf",
+            "-",
+            "-C",
+            *(shlex.quote(path) for path in posixpath.split(src)),
+        ]
     if writer_command is None:
         writer_command = await utils.get_remote_to_remote_write_command(
             src_connector=source_connector,
@@ -418,7 +424,13 @@ class BaseConnector(Connector, FutureAware, ABC):
             location=location,
             src=src,
             dst=dst,
-            reader_command=["tar", "chf", "-", "-C", *posixpath.split(src)],
+            reader_command=[
+                "tar",
+                "chf",
+                "-",
+                "-C",
+                *(shlex.quote(path) for path in posixpath.split(src)),
+            ],
         )
 
     async def copy_remote_to_remote(
