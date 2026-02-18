@@ -231,6 +231,8 @@ jobs:
         include:
           - on: "macos-15-intel"
             python: "3.14"
+          - on: "windows-2025"
+            python: "3.14"
     runs-on: ${{ matrix.on }}
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
@@ -272,10 +274,62 @@ jobs:
           kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+      - name: "Install WSL (Windows)"
+        uses: Vampire/setup-wsl@v6
+        with:
+          distribution: Ubuntu-24.04
+          wsl-conf: |
+            [automount]
+            root = /
+            options = "metadata"
+            
+            [boot]
+            systemd=true
+          wsl-version: 2
+        if: ${{ startsWith(matrix.on, 'windows-') }}
+      - name: "Install Docker on WSL (Windows)"
+        shell: wsl-bash {0}
+        run: |
+          install -m 0755 -d /etc/apt/keyrings \
+            && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc \
+            && chmod a+r /etc/apt/keyrings/docker.asc
+          
+          cat > /etc/apt/sources.list.d/docker.sources <<EOF
+          Types: deb
+          URIs: https://download.docker.com/linux/ubuntu
+          Suites: $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+          Components: stable
+          Signed-By: /etc/apt/keyrings/docker.asc
+          EOF
+          
+          apt update \
+            && apt install -y --no-install-recommends docker-ce \
+            && mkdir /etc/systemd/system/docker.service.d
+          
+          cat > /etc/systemd/system/docker.service.d/override.conf << EOF
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/dockerd -H unix:///var/run/docker.sock -H tcp://0.0.0.0:2375 --containerd=/run/containerd/containerd.sock
+          EOF
+
+          systemctl daemon-reload \
+            && systemctl restart docker \
+            && systemctl status docker \
+            && docker run hello-world
+        if: ${{ startsWith(matrix.on, 'windows-') }}
+      - name: "Configure Docker to use WSL2 (Windows)"
+        run: |
+          docker context create wsl --docker ("host=tcp://$((wsl hostname -I).Split()[0].Trim()):2375")
+          docker context use wsl
+          docker info
+          docker run hello-world
+        if: ${{ startsWith(matrix.on, 'windows-') }}
       - name: "Install Tox"
         run: uv tool install tox --with tox-uv
       - name: "Run StreamFlow tests via Tox"
-        run: tox
+        run: |
+          docker info
+          tox
       - name: "Upload test results"
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
