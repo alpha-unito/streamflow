@@ -516,7 +516,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         # Generate the output object as described in `outputs` field
         if self.glob is not None:
             # Adjust glob path
-            globpaths: list[str] = []
+            globpaths = []
             for glob in (
                 self.glob if isinstance(self.glob, MutableSequence) else [self.glob]
             ):
@@ -793,7 +793,11 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         token = await self._build_token(
             job, connector, context, token_value, recoverable
         )
-        if self.single or isinstance(token, ListToken):
+        if (
+            self.single
+            or isinstance(token, ListToken)
+            or (self.optional and token.value is None)
+        ):
             return token
         else:
             return ListToken(
