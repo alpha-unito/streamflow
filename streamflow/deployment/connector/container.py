@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import posixpath
+import shlex
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
@@ -218,7 +219,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
-        bind_locations = {}
+        bind_locations: dict[str, ExecutionLocation] = {}
         copy_tasks = []
         dst = await get_local_to_remote_destination(self, locations[0], src, dst)
         for location in await self._get_effective_locations(locations, dst):
@@ -388,7 +389,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 effective_locations = await self._get_effective_locations(
                     locations, dst
                 )
-                bind_locations = {}
+                bind_locations: dict[str, ExecutionLocation] = {}
                 unbound_locations = []
                 copy_tasks = []
                 for location in effective_locations:
@@ -577,7 +578,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
     ) -> AsyncContextManager[StreamWrapper]:
         return await self.connector.get_stream_reader(
             command=self._get_run_command(
-                command=utils.encode_command(" ".join(command), "sh"),
+                command=" ".join(command),
                 location=location,
                 interactive=False,
             ),
@@ -632,7 +633,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         return await self.connector.run(
             location=get_inner_location(location),
             command=self._get_run_command(
-                command=utils.encode_command(command, "sh"),
+                command=command,
                 location=location,
             ),
             capture_output=capture_output,
@@ -691,7 +692,7 @@ class DockerBaseConnector(ContainerConnector, ABC):
             location.name,
             "sh",
             "-c",
-            f"'{command}'",
+            shlex.quote(command),
         ]
 
     async def _populate_instance(self, name: str) -> None:
@@ -1673,7 +1674,7 @@ class SingularityConnector(ContainerConnector):
             f"instance://{location.name}",
             "sh",
             "-c",
-            f"'{command}'",
+            shlex.quote(command),
         ]
 
     async def _get_singularity_version(self) -> str:

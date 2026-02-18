@@ -60,7 +60,9 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
 
 
 async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for port_name in mapper.port_tokens.keys():
+    for port_name in [
+        p for p, degree in mapper.dcg_port.in_degree().items() if degree == 0
+    ]:
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
@@ -213,7 +215,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 )
             ) == TokenAvailability.FutureAvailable:
                 job_token = get_job_token(job_name, job_tokens)
-                # `retry_request` represents the currently running job.
+                # The `retry_request` represents the currently running job.
                 # `job_token` refers to the token that needs to be removed from the graph,
                 # as the workflow depends on the already running job.
                 if logger.isEnabledFor(logging.DEBUG):
@@ -238,7 +240,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 ).add_inter_port(
                     workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
                     boundary_tag=get_job_tag(job_token.value.name),
-                    termination_type=TerminationType.PROPAGATE_AND_TERMINATE,
+                    termination_type=TerminationType.PROPAGATE | TerminationType.TERMINATE,
                 )
                 # Synchronized schedule step
                 mapper.move_token_to_root(job_token.persistent_id)

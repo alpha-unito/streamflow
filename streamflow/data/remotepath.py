@@ -7,6 +7,7 @@ import io
 import os
 import pathlib
 import posixpath
+import shlex
 import shutil
 import sys
 from abc import ABC, abstractmethod
@@ -332,6 +333,11 @@ class LocalStreamFlowPath(
             super().__init__(*args)
         self.context: StreamFlowContext = context
 
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, RemoteStreamFlowPath):
+            return False
+        return super().__eq__(other)
+
     async def checksum(self) -> str | None:
         if await self.is_file():
             loop = asyncio.get_running_loop()
@@ -468,7 +474,7 @@ class RemoteStreamFlowPath(
     PurePosixPath,
     __LegacyStreamFlowPath if sys.version_info < (3, 12) else StreamFlowPath,
 ):
-    __slots__ = ("context", "connector", "location")
+    __slots__ = ("context", "connector", "location", "_inner_path")
 
     def __init__(
         self,
@@ -486,6 +492,13 @@ class RemoteStreamFlowPath(
         )
         self.location: ExecutionLocation = location
         self._inner_path: StreamFlowPath | None = None
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, RemoteStreamFlowPath):
+            return False
+        if other.connector != self.connector or other.location != self.location:
+            return False
+        return super().__eq__(other)
 
     def _is_valid_inner_path(self, location: DataLocation) -> bool:
         return (
@@ -569,13 +582,14 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.checksum()
         else:
+            path = shlex.quote(self.__str__())
             command = [
                 "test",
                 "-f",
-                f"'{self.__str__()}'",
+                path,
                 "&&",
                 "sha1sum",
-                f"'{self.__str__()}'",
+                path,
                 "|",
                 "awk",
                 "'{print $1}'",
@@ -595,7 +609,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.exists()
         else:
-            return await self._test(command=(["-e", f"'{self.__str__()}'"]))
+            return await self._test(command=(["-e", shlex.quote(self.__str__())]))
 
     async def glob(
         self, pattern: str, *, case_sensitive: bool | None = None
@@ -635,16 +649,16 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.is_dir()
         else:
-            return await self._test(command=["-d", f"'{self.__str__()}'"])
+            return await self._test(command=["-d", shlex.quote(self.__str__())])
 
     async def is_file(self) -> bool:
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.is_file()
         else:
-            return await self._test(command=["-f", f"'{self.__str__()}'"])
+            return await self._test(command=["-f", shlex.quote(self.__str__())])
 
     async def is_symlink(self) -> bool:
-        return await self._test(command=["-L", f"'{self.__str__()}'"])
+        return await self._test(command=["-L", shlex.quote(self.__str__())])
 
     async def mkdir(
         self, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
@@ -687,14 +701,15 @@ class RemoteStreamFlowPath(
                 if loc.data_type == DataType.PRIMARY:
                     return self.with_segments(loc.path)
         # Otherwise, analyse the remote path
+        path = shlex.quote(self.__str__())
         command = [
             "test",
             "-e",
-            f"'{self.__str__()}'",
+            path,
             "&&",
             "readlink",
             "-f",
-            f"'{self.__str__()}'",
+            path,
         ]
         result, status = await self.connector.run(
             location=self.location, command=command, capture_output=True
@@ -793,7 +808,9 @@ class RemoteStreamFlowPath(
                 command = ["find"]
                 if follow_symlinks:
                     command.append("-L")
-                command.extend([f"'{str(path)}'", "-mindepth", "1", "-maxdepth", "1"])
+                command.extend(
+                    [shlex.quote(str(path)), "-mindepth", "1", "-maxdepth", "1"]
+                )
                 try:
                     content, status = await self.connector.run(
                         location=self.location,

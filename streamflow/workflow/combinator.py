@@ -49,7 +49,7 @@ class CartesianProductCombinator(Combinator):
             )
             # Return all combination schemas
             for config in cartesian_product:
-                schema = {}
+                schema: dict[str, Token] = {}
                 for key in self.items:
                     if key in self.combinators:
                         schema |= config[key]
@@ -121,7 +121,7 @@ class DotProductCombinator(Combinator):
                 num_items = min(len(i) for i in self._token_values[tag].values())
                 for _ in range(num_items):
                     # Return the relative combination schema
-                    schema = {}
+                    schema: dict[str, dict[str, Token | list[int]]] = {}
                     for key, elements in self._token_values[tag].items():
                         element = elements.pop()
                         if key in self.combinators:

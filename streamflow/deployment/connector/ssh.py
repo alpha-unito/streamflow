@@ -550,7 +550,7 @@ class SSHConnector(BaseConnector):
                     command_str, location, f" for job {job_name}" if job_name else ""
                 )
             )
-        return utils.encode_command(command_str)
+        return command_str
 
     def _get_config(
         self, node: str | MutableMapping[str, Any] | None
@@ -725,7 +725,6 @@ class SSHConnector(BaseConnector):
                 environment=environment,
                 workdir=workdir,
             )
-            command = utils.encode_command(command)
         async with self._get_ssh_client_process(
             location=location.name,
             command=command,

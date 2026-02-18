@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import datetime
 import importlib
 import itertools
@@ -139,10 +138,6 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
     vals = kwargs.values()
     for instance in itertools.product(*vals):
         yield dict(zip(keys, list(instance), strict=True))
-
-
-def encode_command(command: str, shell: str = "sh") -> str:
-    return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | {shell}"
 
 
 async def eval_processors(unfinished: Iterable[asyncio.Task], name: str) -> Token:
@@ -307,7 +302,7 @@ def get_tag(tokens: Iterable[Token]) -> str:
 
 
 def make_future(obj: T) -> asyncio.Future[T]:
-    future = asyncio.Future()
+    future: asyncio.Future[T] = asyncio.Future()
     future.set_result(obj)
     return future
 

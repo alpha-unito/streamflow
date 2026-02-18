@@ -146,7 +146,6 @@ class DirectedGraph:
 
 
 class DirectedAcyclicGraph(DirectedGraph):
-
     def get_sources(self) -> MutableSet[T]:
         return {n for n, nodes in self._predecessors.items() if len(nodes) == 0}
 
@@ -389,7 +388,7 @@ class GraphMapper:
                     self.port_tokens[port_name].remove(removed_token_id)
                 if len(self.port_tokens[port_name]) == 0:
                     empty_ports.add(port_name)
-        removed_ports = []
+        removed_ports: list[str] = []
         for port_name in empty_ports:
             if port_name not in removed_ports:
                 removed_ports.extend(self.remove_port(port_name))
