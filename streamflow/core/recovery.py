@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from abc import abstractmethod
-from collections.abc import MutableMapping
+from abc import ABC, abstractmethod
+from collections.abc import MutableSequence
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
@@ -103,7 +103,7 @@ class FailureManager(SchemaEntity):
     async def update_request(self, job_name: str) -> None: ...
 
 
-class RecoveryPolicy:
+class RecoveryPolicy(ABC):
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
 
@@ -115,7 +115,7 @@ class RetryRequest:
     __slots__ = (
         "job_token",
         "lock",
-        "output_tokens",
+        "output_ports",
         "version",
         "workflow",
         "workflow_ready",
@@ -124,7 +124,7 @@ class RetryRequest:
     def __init__(self) -> None:
         self.job_token: JobToken | None = None
         self.lock: asyncio.Lock = asyncio.Lock()
-        self.output_tokens: MutableMapping[str, Token] = {}
+        self.output_ports: MutableSequence[str] = []
         self.version: int = 1
         self.workflow: Workflow | None = None
         self.workflow_ready: asyncio.Event = asyncio.Event()

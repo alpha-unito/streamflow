@@ -49,7 +49,7 @@ from streamflow.workflow.combinator import (
     LoopCombinator,
     LoopTerminationCombinator,
 )
-from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.workflow.port import ConnectorPort, InterWorkflowPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
     DefaultCommandOutputProcessor,
@@ -596,9 +596,18 @@ class InjectorFailureCommand(Command):
                     for k, t in job.inputs.items():
                         output_tokens[k] = t.update(t.value)
                         output_tokens[k].recoverable = True
-                    context.failure_manager.get_request(job.name).output_tokens = (
-                        output_tokens
+                    r = context.failure_manager.get_request(job.name)
+                    r.workflow = Workflow(
+                        self.step.workflow.context,
+                        self.step.workflow.config,
+                        self.step.workflow.name,
                     )
+                    for port_name in self.step.output_ports.values():
+                        r.workflow.create_port(InterWorkflowPort, port_name)
+                    r.workflow_ready.set()
+                    # context.failure_manager.get_request(job.name).output_tokens = (
+                    #     output_tokens
+                    # )
                 case InjectorFailureCommand.FAIL_STOP:
                     await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
