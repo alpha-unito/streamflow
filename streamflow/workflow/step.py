@@ -296,6 +296,7 @@ class Combinator(ABC):
         token: Token | MutableMapping[str, Token],
         port_name: str,
         depth: int = 0,
+        propagate: bool = True,
     ) -> None:
         tag = (
             utils.get_tag([t["token"] for t in token.values()])
@@ -304,17 +305,18 @@ class Combinator(ABC):
         )
         if depth:
             tag = ".".join(tag.split(".")[:-depth])
-        for key in list(self._token_values.keys()):
-            if tag == key:
-                continue
-            elif _is_parent_tag(key, tag):
-                self._add_to_port(token, self._token_values[key], port_name)
-            elif _is_parent_tag(tag, key):
-                if tag not in self._token_values:
-                    self._token_values[tag] = {}
-                for p in self._token_values[key]:
-                    for t in self._token_values[key][p]:
-                        self._add_to_port(t, self._token_values[tag], p)
+        if propagate:
+            for key in list(self._token_values.keys()):
+                if tag == key:
+                    continue
+                elif _is_parent_tag(key, tag):
+                    self._add_to_port(token, self._token_values[key], port_name)
+                elif _is_parent_tag(tag, key):
+                    if tag not in self._token_values:
+                        self._token_values[tag] = {}
+                    for p in self._token_values[key]:
+                        for t in self._token_values[key][p]:
+                            self._add_to_port(t, self._token_values[tag], p)
         if tag not in self._token_values:
             self._token_values[tag] = {}
         self._add_to_port(token, self._token_values[tag], port_name)
@@ -1216,6 +1218,7 @@ class LoopCombinatorStep(CombinatorStep):
     def __init__(self, name: str, workflow: Workflow, combinator: Combinator):
         super().__init__(name, workflow, combinator)
         self.iteration_termination_checklist: MutableMapping[str, set[str]] = {}
+        self.store_restore = None
 
     async def restore(
         self, on_tokens: MutableMapping[str, MutableSequence[Token]]
@@ -1258,17 +1261,19 @@ class LoopCombinatorStep(CombinatorStep):
                 #     )
                 # If tag depth levels are different, it means that it is necessary to restart from the first iteration
                 if len(parent_tag.split(".")) != len(token.tag.split(".")):
-                    # tags.add(token.tag)
-                    pass
+                    tags.add(parent_tag)
+                    tags.add(token.tag)
                 else:
-                    tags |= parent_tags
+                    tags.add(parent_tag)
+                    tags.add(".".join(parent_tag.split(".")[:-1]))
                 from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
+        self.store_restore = from_tags
         await self.combinator.restore(from_tags)
 
     async def run(self) -> None:
         # Set default status to SKIPPED
         status = Status.SKIPPED
-        inputs_map = {}
+        tokens = []
         if self.input_ports:
             input_tasks, terminated = [], []
             for port_name, port in self.get_input_ports().items():
@@ -1323,47 +1328,36 @@ class LoopCombinatorStep(CombinatorStep):
                             self.iteration_termination_checklist[task_name].add(
                                 token.tag
                             )
-
-                        _group_by_tag({task_name: token}, inputs_map)
-                        logger.info(
-                            f"Step {self.name} grouping tag: {token.tag} on port {task_name}"
-                        )
-                        # Process tags
-                        if len(inputs_map[token.tag]) == len(self.input_ports):
-                            logger.info(
-                                f"Step {self.name} combining {token.tag} tokens"
-                            )
-                            inputs = inputs_map.pop(token.tag)
-                            # Run combinator
-                            for p, t in inputs.items():
-                                async for schema in self.combinator.combine(p, t):
-                                    ins = [
-                                        in_id
-                                        for t in schema.values()
-                                        for in_id in t["input_ids"]
-                                    ]
-                                    # DEBUG
-                                    ts = [
-                                        t
-                                        for p in self.get_input_ports().values()
-                                        for t in p.token_list
-                                        if t.persistent_id in ins
-                                    ]
-                                    if (
-                                        logger.isEnabledFor(logging.DEBUG)
-                                        and len(ts_tag := {t.tag for t in ts}) > 1
-                                    ):
-                                        logger.debug(
-                                            f"Step {self.name} received got inputs with different tags {ts_tag}"
-                                        )
-                                    for port_name, new_token in schema.items():
-                                        self.get_output_port(port_name).put(
-                                            await self._persist_token(
-                                                token=new_token["token"],
-                                                port=self.get_output_port(port_name),
-                                                input_token_ids=ins,
-                                            )
-                                        )
+                        tokens.append((task_name, token))
+                        async for schema in self.combinator.combine(task_name, token):
+                            ins = [
+                                in_id
+                                for t in schema.values()
+                                for in_id in t["input_ids"]
+                            ]
+                            if (
+                                len(
+                                    tags := {
+                                        next(
+                                            t
+                                            for p in self.get_input_ports().values()
+                                            for t in p.token_list
+                                            if t.persistent_id == i
+                                        ).tag
+                                        for i in ins
+                                    }
+                                )
+                                != 1
+                            ):
+                                raise Exception(f"Inputs has different tags. {tags}")
+                            for port_name, new_token in schema.items():
+                                self.get_output_port(port_name).put(
+                                    await self._persist_token(
+                                        token=new_token["token"],
+                                        port=self.get_output_port(port_name),
+                                        input_token_ids=ins,
+                                    )
+                                )
                     # Create a new task in place of the completed one if the port is not terminated
                     if not (
                         task_name in terminated
@@ -1379,69 +1373,6 @@ class LoopCombinatorStep(CombinatorStep):
                         )
         # Terminate step
         await self.terminate(self._get_status(status))
-
-    # async def restore(
-    #     self, on_tokens: MutableMapping[str, MutableSequence[Token]]
-    # ) -> None:
-    #     # The `on_tokens` parameter contains the output tokens, and the iteration begins from the
-    #     # token with the smallest tag. First, we need to determine whether a tag is a starting tag
-    #     # or an intermediate tag. For example, if the input tag is `0.1`, the next tag must be
-    #     # either `0.2` or `0.1.0`. To make this distinction, we use the port history by retrieving
-    #     # all the tokens from the previous execution.
-    #
-    #     # Input port tags: ['0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0', '0.0', '0.1', '0']
-    #     # Input method tags: ['0.1', '0.2']
-    #     # Input combinator tags: [['0.0']]
-    #
-    #     # Input port tags: ['0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0', '0.0', '0']
-    #     # Input method tags: ['0.1']
-    #     # Input combinator tags: [['0.0']]
-    #
-    #     # Input port tags: ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0']
-    #     # Input method tags: ['0.0']
-    #     # Input combinator tags: [['0']]
-    #
-    #     from_tags = {}
-    #     loading_context = DefaultDatabaseLoadingContext()
-    #     for name, tokens in on_tokens.items():
-    #         if tokens:
-    #             tags = set()
-    #             token = min(
-    #                 tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
-    #             )
-    #             tokens = await load_dependee_tokens(
-    #                 persistent_id=token.persistent_id,
-    #                 context=self.workflow.context,
-    #                 loading_context=loading_context,
-    #             )
-    #             prev_tags = {t.tag for t in tokens}
-    #             if len(prev_tags) == 0:
-    #                 raise WorkflowDefinitionException(
-    #                     "Output token must have previous tokens."
-    #                 )
-    #             prev_iter = iter(prev_tags)
-    #             fst = next(prev_iter)
-    #             if any(len(fst.split(".")) != len(t.split(".")) for t in prev_iter):
-    #                 raise WorkflowDefinitionException(
-    #                     "Input of a LoopCombinatorStep must have the same tag depth level"
-    #                 )
-    #             # If tags are different, it means that it is necessary to restart from the first iteration
-    #             if len(fst.split(".")) != len(token.tag.split(".")):
-    #                 tags.add(token.tag)
-    #             else:
-    #                 tags |= prev_tags
-    #             from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
-    #     input_port_tags = [
-    #         t.tag for p in self.get_input_ports().values() for t in p.token_list
-    #     ]
-    #     input_method_tags = [t.tag for ts in on_tokens.values() for t in ts]
-    #     input_combinator_tags = list(from_tags.values())
-    #     logger.info(
-    #         f"TAGS\nInput port tags: {input_port_tags}\n"
-    #         f"Input method tags: {input_method_tags}\n"
-    #         f"Input combinator tags: {input_combinator_tags}\n"
-    #     )
-    #     await self.combinator.resume(from_tags)
 
 
 class LoopOutputStep(BaseStep, ABC):
