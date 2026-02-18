@@ -73,9 +73,9 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOS X)"
-        uses: douglascamata/setup-docker-macos-action@v1
-        with:
-          colima-additional-options: '--mount /private/var/folders:w'
+        uses: docker/setup-docker-action@v4
+        env:
+          LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
@@ -246,9 +246,12 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOs X)"
-        uses: douglascamata/setup-docker-macos-action@v1
-        with:
-          colima-additional-options: '--mount /private/var/folders:w'
+        uses: docker/setup-docker-action@v4
+        env:
+          LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
+        if: ${{ startsWith(matrix.on, 'macos-') }}
+      - name: "Install Docker Compose (MacOS X)"
+        uses: docker/setup-compose-action@v1
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
