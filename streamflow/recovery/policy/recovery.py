@@ -240,7 +240,8 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 ).add_inter_port(
                     workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
                     boundary_tag=get_job_tag(job_token.value.name),
-                    termination_type=TerminationType.PROPAGATE | TerminationType.TERMINATE,
+                    termination_type=TerminationType.PROPAGATE
+                    | TerminationType.TERMINATE,
                 )
                 # Synchronized schedule step
                 mapper.move_token_to_root(job_token.persistent_id)
