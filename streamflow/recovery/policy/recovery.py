@@ -4,12 +4,14 @@ import asyncio
 import logging
 import posixpath
 from collections.abc import Iterable, MutableSequence, MutableSet
+from functools import cmp_to_key
 from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
-from streamflow.core.utils import get_job_tag, get_tag
+from streamflow.core.utils import compare_tags, get_job_tag, get_tag
 from streamflow.core.workflow import Job, Step, Token, Workflow
+from streamflow.cwl.step import CWLConditionalStep
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.utils import (
@@ -26,11 +28,8 @@ from streamflow.workflow.port import (
     JobPort,
     TerminationType,
 )
-from streamflow.workflow.token import (
-    IterationTerminationToken,
-    JobToken,
-    TerminationToken,
-)
+from streamflow.workflow.step import ConditionalStep, GatherStep
+from streamflow.workflow.token import JobToken
 from streamflow.workflow.utils import get_job_token
 
 
@@ -42,7 +41,9 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
                 f"Waiting output ports {list(failed_step.output_ports.values())}"
             )
         if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
-            raise FailureHandlingException("Recovered workflow construction invalid")
+            raise FailureHandlingException(
+                f"Recovery workflow for {failed_step.name} step has no all the output ports"
+            )
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -54,15 +55,23 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
             )
         )
     else:
-        await new_workflow.save(new_workflow.context)
-        executor = StreamFlowExecutor(new_workflow)
-        await executor.run()
+        try:
+            await new_workflow.save(new_workflow.context)
+            executor = StreamFlowExecutor(new_workflow)
+            await executor.run()
+        except BaseException as e:
+            logger.info(f"Error {e}: {type(e)}")
+            for step in new_workflow.steps.values():
+                logger.debug(f"Step {step.name} exits with status {step.status.name}")
+            raise
 
 
-async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
-    for port_name in [
-        p for p, degree in mapper.dcg_port.in_degree().items() if degree == 0
-    ]:
+async def _inject_tokens(
+    mapper: GraphMapper,
+    new_workflow: Workflow,
+    failed_step_output_ports: MutableSequence[str],
+) -> None:
+    for port_name in mapper.port_tokens.keys():
         token_list = sorted(
             [
                 mapper.token_instances[token_id]
@@ -77,22 +86,56 @@ async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
             raise FailureHandlingException(
                 f"Port {port_name} has multiple tokens with same tag (id, tag): {tags}"
             )
-        if any(
-            isinstance(token, (TerminationToken, IterationTerminationToken))
-            for token in token_list
-        ):
-            raise FailureHandlingException("Impossible to load a TerminationToken")
         port = new_workflow.ports[port_name]
+
+        # TerminationType.PROPAGATE_AND_TERMINATE
+        # The inter port propagates termination upon receiving a token
+        # with a tag matching the boundary tag, after propagating the
+        # received token. The boundary tag is defined as the largest
+        # tag within the mapper.
+        #
+        # There are some exceptions:
+        # - The propagate-and-terminate condition is not added to the
+        #   output ports of the `ScheduleStep` because JobTokens lack
+        #   tags. Since they all use tag 0, enabling this condition
+        #   would trigger termination as soon as the first token is
+        #   generated.
+        # - The condition is not added to the output ports of a failed
+        #   step because they are handled differently. They must
+        #   terminate themselves and propagate the token to the port
+        #   of the original failed step.
+        # - The input ports of the `GatherStep` are handled differently
+        #   because if the token with the maximum tag is already
+        #   available as an input token, the inter port triggers
+        #   termination immediately. This bypasses the recovery process
+        #   for any missing or lost tokens.
+        if (
+            isinstance(port, InterWorkflowPort)
+            and not isinstance(port, InterWorkflowJobPort)
+            and port.name not in failed_step_output_ports
+            and not any(
+                isinstance(s, GatherStep) and s.input_ports["__size__"] != port.name
+                for s in port.get_output_steps()
+            )
+        ):
+            port.add_inter_port(
+                port,
+                boundary_tag=max(
+                    [
+                        mapper.token_instances[token_id].tag
+                        for token_id in mapper.port_tokens[port_name]
+                    ],
+                    key=cmp_to_key(compare_tags),
+                ),
+                termination_type=TerminationType.PROPAGATE | TerminationType.TERMINATE,
+            )
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Injecting token {token.tag} of port {port.name}")
+                logger.debug(
+                    f"Injecting token {token.persistent_id} {token.tag} of port {port.name} ({type(port)})"
+                )
             port.put(token)
-        if len(port.token_list) > 0 and len(port.token_list) == len(
-            mapper.port_tokens[port_name]
-        ):
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Injecting termination token on port {port.name}")
-            port.put(TerminationToken())
+    logger.info("Injected all tokens")
 
 
 async def _populate_workflow(
@@ -101,6 +144,7 @@ async def _populate_workflow(
     new_workflow: Workflow,
     workflow_builder: WorkflowBuilder,
     failed_job: Job,
+    load_failed_step: bool,
 ) -> None:
     await asyncio.gather(
         *(
@@ -111,10 +155,10 @@ async def _populate_workflow(
         )
     )
     # Add the failed step to the new workflow
-    await workflow_builder.load_step(
-        new_workflow.context,
-        failed_step.persistent_id,
-    )
+    if load_failed_step:
+        await workflow_builder.load_step(
+            new_workflow.context, failed_step.persistent_id
+        )
     # Instantiate ports that can transfer tokens between workflows
     for port in new_workflow.ports.values():
         if not isinstance(
@@ -128,17 +172,18 @@ async def _populate_workflow(
                 ),
                 port.name,
             )
-    for port in failed_step.get_output_ports().values():
-        cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
-            port,
-            boundary_tag=get_tag(failed_job.inputs.values()),
-            termination_type=TerminationType.PROPAGATE,
-        )
-        cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
-            new_workflow.ports[port.name],
-            boundary_tag=get_tag(failed_job.inputs.values()),
-            termination_type=TerminationType.TERMINATE,
-        )
+    if load_failed_step:
+        for port in failed_step.get_output_ports().values():
+            cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
+                port,
+                boundary_tag=get_tag(failed_job.inputs.values()),
+                termination_type=TerminationType.PROPAGATE,
+            )
+            cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
+                new_workflow.ports[port.name],
+                boundary_tag=get_tag(failed_job.inputs.values()),
+                termination_type=TerminationType.TERMINATE,
+            )
 
 
 class RollbackRecoveryPolicy(RecoveryPolicy):
@@ -170,19 +215,56 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         job_tokens = list(
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
-        await self._sync_workflows(
-            {*(t.value.name for t in job_tokens), failed_job.name},
-            job_tokens,
-            mapper,
-            new_workflow,
+        sync_port_names = []
+        job_names = await self._sync_workflows(
+            failed_job=failed_job.name,
+            job_names={*(t.value.name for t in job_tokens), failed_job.name},
+            job_tokens=job_tokens,
+            mapper=mapper,
+            workflow=new_workflow,
+            sync_port_names=sync_port_names,
         )
         # Populate new workflow
         steps = await mapper.get_port_and_step_ids(failed_step.output_ports.values())
         await _populate_workflow(
-            steps, failed_step, new_workflow, workflow_builder, failed_job
+            steps,
+            failed_step,
+            new_workflow,
+            workflow_builder,
+            failed_job,
+            True,  # failed_job.name in job_names,
         )
-        await _inject_tokens(mapper, new_workflow)
+
+        # import datetime
+        # import os
+        #
+        # from streamflow.token_printer import dag_workflow
+        #
+        # dag_workflow(
+        #     new_workflow,
+        #     title=posixpath.join(
+        #         os.getcwd(),
+        #         "dev",
+        #         str(datetime.datetime.now()).replace(" ", "_").replace(":", "."),
+        #         "wf" + failed_job.name.replace(posixpath.sep, "."),
+        #     ),
+        # )
+        logger.info(
+            f"Failed step {failed_job.name} has output ports: {[p for p in failed_step.output_ports.values()]}"
+        )
+        await _inject_tokens(
+            mapper, new_workflow, [p for p in failed_step.output_ports.values()]
+        )
+
+        for job_name in job_names:
+            self.context.failure_manager.get_request(job_name).workflow_ready.set()
+
         # Resume steps
+        skip_ports = []
+        for s in new_workflow.steps.values():
+            if isinstance(s, ConditionalStep):
+                # DEBUG: CWL dependent implementation
+                skip_ports.extend(cast(CWLConditionalStep, s).skip_ports.values())
         for step in new_workflow.steps.values():
             await step.restore(
                 on_tokens={
@@ -195,15 +277,31 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     if port.name in mapper.port_tokens.keys()
                 }
             )
+
+            for port in (
+                p
+                for p in new_workflow.ports.values()
+                if len(p.get_input_steps()) == 0
+                and p.name not in sync_port_names
+                and p.name not in skip_ports
+                and p.name not in failed_step.output_ports.values()
+            ):
+                if len(port.token_list) == 0:
+                    logger.info(f"Port {port.name} has no tokens")
+                    # raise FailureHandlingException(f"Port {port.name} has no tokens")
+
         return new_workflow
 
     async def _sync_workflows(
         self,
+        failed_job: str,
         job_names: MutableSet[str],
         job_tokens: MutableSequence[Token],
         mapper: GraphMapper,
         workflow: Workflow,
-    ) -> None:
+        sync_port_names: MutableSequence[str],
+    ) -> MutableSequence[str]:
+        new_job_names = []
         for job_name in job_names:
             retry_request = self.context.failure_manager.get_request(job_name)
             if (
@@ -212,14 +310,43 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 )
             ) == TokenAvailability.FutureAvailable:
                 job_token = get_job_token(job_name, job_tokens)
-                # The `retry_request` is the current job running, instead
-                # the `job_token` is the token to remove in the graph because
-                # the workflow will depend on the already running job
+                # `retry_request` represents the currently running job.
+                # `job_token` refers to the token that needs to be removed from the graph,
+                # as the workflow depends on the already running job.
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Synchronize rollbacks: job {job_name} is running")
-                # todo: create a unit test for this case
-                for port_name in await mapper.get_output_ports(job_token):
-                    if port_name in retry_request.workflow.ports.keys():
+                    if not (is_wf_ready := retry_request.workflow_ready.is_set()):
+                        logger.debug(
+                            f"Synchronizing rollbacks (for {failed_job}): Job {job_name} is waiting for the rollback workflow to be ready."
+                        )
+                    else:
+                        logger.debug(
+                            f"Synchronizing rollbacks (for {failed_job}): Job {job_name} is currently executing."
+                        )
+                else:
+                    is_wf_ready = True
+                await retry_request.workflow_ready.wait()
+                if logger.isEnabledFor(logging.DEBUG) and not is_wf_ready:
+                    logger.debug(
+                        f"Synchronizing rollbacks (for {failed_job}): Job {job_name} has resumed after the rollback workflow is ready."
+                    )
+                output_ports = await mapper.get_output_ports(job_token)
+                if set(output_ports) - retry_request.workflow.ports.keys():
+                    port_name = await mapper.get_schedule_port_name(job_token)
+                    cast(
+                        InterWorkflowJobPort, retry_request.workflow.ports[port_name]
+                    ).add_inter_port(
+                        workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
+                        boundary_tag=get_job_tag(job_token.value.name),
+                        termination_type=TerminationType.PROPAGATE,
+                    )
+                    # Synchronized schedule step
+                    mapper.move_token_to_root(job_token.persistent_id)
+                    sync_port_names.append(port_name)
+                    logger.debug(
+                        f"Synchronizing rollbacks (for {failed_job}): Job {job_name} synchronizes on schedule step."
+                    )
+                else:
+                    for port_name in output_ports:
                         cast(
                             InterWorkflowJobPort,
                             retry_request.workflow.ports[port_name],
@@ -232,16 +359,21 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                                 TerminationType.PROPAGATE | TerminationType.TERMINATE
                             ),
                         )
-                # Remove tokens recovered in other workflows
-                for token_id in await mapper.get_output_tokens(job_token.persistent_id):
-                    mapper.move_token_to_root(token_id)
+                        sync_port_names.append(port_name)
+                    for token_id in await mapper.get_output_tokens(
+                        job_token.persistent_id
+                    ):
+                        mapper.move_token_to_root(token_id)
+                    logger.debug(
+                        f"Synchronizing rollbacks (for {failed_job}): Job {job_name} synchronizes on execute step."
+                    )
             elif is_available == TokenAvailability.Available:
                 job_token = get_job_token(job_name, job_tokens)
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Synchronize rollbacks: job {job_token.value.name} output available"
+                        f"Synchronize rollbacks (for {failed_job}): job {job_token.value.name} output available"
                     )
-                # Search execute token after job token, replace this token with job_req token.
+                # Search execute token after job token, replace this token with retry_request output tokens.
                 # Then remove all the prev tokens
                 for port_name in await mapper.get_output_ports(job_token):
                     if port_name in retry_request.output_tokens.keys():
@@ -254,10 +386,31 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         mapper.move_token_to_root(new_token.persistent_id)
             else:
                 await self.context.failure_manager.update_request(job_name)
+                retry_request.workflow_ready.clear()
                 retry_request.workflow = workflow
+                new_job_names.append(job_name)
+        return new_job_names
 
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
         # Create recover workflow
         new_workflow = await self._recover_workflow(failed_job, failed_step)
         # Execute new workflow
         await _execute_recover_workflow(new_workflow, failed_step)
+        # for p in failed_step.get_output_ports().values():
+        #     if get_job_tag(failed_job.name) not in (t.tag for t in p.token_list):
+        #         # DEBUG: Il tag può non essere nella port di recupero SE
+        #         #   è una InterWorkflowPort in cui tra i boundaries contiene se stessa
+        #         #   e la cui condizione di terminazione è Terminate (o detto in altri modi non è Propagate)
+        #         if not (
+        #             isinstance(p, InterWorkflowPort)
+        #             and next(
+        #                 ip[1]
+        #                 for ip in p.boundaries[get_job_tag(failed_job.name)]
+        #                 if ip[0] is p
+        #             )
+        #             == TerminationType.TERMINATE
+        #         ):
+        #             raise FailureHandlingException(
+        #                 f"The output ports of the workflow to recover the failed step {failed_step.name} don't have termination condition"
+        #             )
+        return
