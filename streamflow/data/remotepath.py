@@ -10,6 +10,7 @@ import posixpath
 import shlex
 import shutil
 import sys
+import tarfile
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, MutableMapping, MutableSequence
 from email.message import Message
@@ -22,6 +23,7 @@ from typing_extensions import Self
 
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
+from streamflow.deployment import aiotarstream
 
 if sys.version_info >= (3, 13):
     from pathlib import UnsupportedOperation
@@ -625,18 +627,19 @@ class RemoteStreamFlowPath(
             if not pattern:
                 raise ValueError(f"Unacceptable pattern: {pattern!r}")
             command = [
+                "set",
+                "--",
+                f"{shlex.quote(str(self))}/{pattern}",
+                ";",
+                "test",
+                "-e",
+                '"$1"',
+                "&&",
                 "printf",
-                '"%s\\0"',
-                str(self / pattern),
-                "|",
-                "xargs",
-                "-0",
-                "-I{}",
-                "sh",
-                "-c",
-                '"if [ -e \\"{}\\" ]; then echo \\"{}\\"; fi"',
-                "|",
-                "sort",
+                "'%s\\n'",
+                '"$@"',
+                ";",
+                ":",
             ]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
@@ -726,7 +729,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.rmtree()
         else:
-            command = ["rm", "-rf ", self.__str__()]
+            command = ["rm", "-rf", self.__str__()]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
             )
@@ -863,12 +866,20 @@ class RemoteStreamFlowPath(
             if not isinstance(data, str):
                 raise TypeError("data must be str, not %s" % data.__class__.__name__)
             async with await self.connector.get_stream_writer(
-                command=["tee", str(self), ">", "/dev/null"], location=self.location
+                command=["tar", "xf", "-", "-C", "/"], location=self.location
             ) as writer:
-                reader = io.BytesIO(data.encode("utf-8"))
-                while content := reader.read(self.connector.transferBufferSize):
-                    await writer.write(content)
-                reader.close()
+                async with aiotarstream.open(
+                    stream=writer,
+                    format=tarfile.GNU_FORMAT,
+                    mode="w",
+                    dereference=True,
+                    copybufsize=self.connector.transferBufferSize,
+                ) as tar:
+                    tar_info = aiotarstream.AioTarInfo(name=str(self))
+                    tar_info.size = len(data)
+                    await tar.addfile(
+                        tarinfo=tar_info, fileobj=io.BytesIO(data.encode("utf-8"))
+                    )
             return len(data)
 
 
