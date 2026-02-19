@@ -302,7 +302,9 @@ class CWLTokenProcessor(TokenProcessor):
                     )
                 # Add all secondary files to the token
                 if sf_map:
-                    token_value["secondaryFiles"] = list(sf_map.values())
+                    token_value = cast(dict, token_value) | {
+                        "secondaryFiles": list(sf_map.values())
+                    }
                 # Register path
                 await utils.register_data(
                     context=self.workflow.context,

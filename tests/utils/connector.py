@@ -12,7 +12,7 @@ import asyncssh
 from asyncssh import SSHClient, SSHClientConnection
 
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector import LocalConnector, SSHConnector
 from streamflow.deployment.connector.base import BaseConnector
@@ -137,6 +137,11 @@ class AioTarConnector(BaseConnector):
                 hardware=None,
             )
         }
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        raise NotImplementedError("AioTarConnector get_shell")
 
     @classmethod
     def get_schema(cls) -> str:
@@ -266,6 +271,11 @@ class FailureConnector(Connector):
 
     async def undeploy(self, external: bool) -> None:
         raise FailureConnectorException("FailureConnector undeploy")
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ):
+        raise FailureConnectorException("FailureConnector get_shell")
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation

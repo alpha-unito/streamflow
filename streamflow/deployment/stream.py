@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import asyncio.subprocess
-from abc import ABC
-from types import TracebackType
-from typing import Any, AsyncContextManager
+from typing import Any
 
 from streamflow.core.data import StreamWrapper
 
@@ -48,48 +45,3 @@ class StreamWriterWrapper(StreamWrapper):
     async def write(self, data: Any) -> None:
         self.stream.write(data)
         await self.stream.drain()
-
-
-class SubprocessStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
-    def __init__(self, coro) -> None:
-        self.coro = coro
-        self.proc: asyncio.subprocess.Process | None = None
-        self.stream: StreamWrapper | None = None
-
-
-class SubprocessStreamReaderWrapperContextManager(
-    SubprocessStreamWrapperContextManager
-):
-    async def __aenter__(self) -> StreamReaderWrapper:
-        self.proc = await self.coro
-        self.stream = StreamReaderWrapper(self.proc.stdout)
-        return self.stream
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        await self.proc.wait()
-        if self.stream:
-            await self.stream.close()
-
-
-class SubprocessStreamWriterWrapperContextManager(
-    SubprocessStreamWrapperContextManager
-):
-    async def __aenter__(self) -> StreamWriterWrapper:
-        self.proc = await self.coro
-        self.stream = StreamWriterWrapper(self.proc.stdin)
-        return self.stream
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        if self.stream:
-            await self.stream.close()
-        await self.proc.wait()
