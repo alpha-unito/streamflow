@@ -49,7 +49,7 @@ from streamflow.workflow.combinator import (
     LoopCombinator,
     LoopTerminationCombinator,
 )
-from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.workflow.port import ConnectorPort, InterWorkflowPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
     DefaultCommandOutputProcessor,
@@ -69,6 +69,32 @@ if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
 
 CWL_VERSION = "v1.2"
+
+
+async def _copy_file(job: Job, context: StreamFlowContext, value: str) -> str:
+    connector = context.scheduler.get_connector(job.name)
+    locations = context.scheduler.get_locations(job.name)
+    if not await StreamFlowPath(value, context=context, location=locations[0]).exists():
+        raise WorkflowExecutionException(
+            f"Job {job.name} input does not exist: File {value}"
+        )
+    output = f"result-{PurePath(job.name).parts[1]}"
+    await StreamFlowPath(
+        job.output_directory, context=context, location=locations[0]
+    ).mkdir(parents=True, exist_ok=True)
+    await connector.run(
+        location=locations[0],
+        command=["cp", "-r", value, output],
+        workdir=job.output_directory,
+    )
+    output = os.path.join(job.output_directory, output)
+    if not await StreamFlowPath(
+        output, context=context, location=locations[0]
+    ).exists():
+        raise WorkflowExecutionException(
+            f"CMD Job {job.name} output does not exist: File {output}"
+        )
+    return output
 
 
 async def _delete_job_workdir(context: StreamFlowContext, job: Job) -> None:
@@ -570,9 +596,18 @@ class InjectorFailureCommand(Command):
                     for k, t in job.inputs.items():
                         output_tokens[k] = t.update(t.value)
                         output_tokens[k].recoverable = True
-                    context.failure_manager.get_request(job.name).output_tokens = (
-                        output_tokens
+                    r = context.failure_manager.get_request(job.name)
+                    r.workflow = Workflow(
+                        self.step.workflow.context,
+                        self.step.workflow.config,
+                        self.step.workflow.name,
                     )
+                    for port_name in self.step.output_ports.values():
+                        r.workflow.create_port(InterWorkflowPort, port_name)
+                    r.workflow_ready.set()
+                    # context.failure_manager.get_request(job.name).output_tokens = (
+                    #     output_tokens
+                    # )
                 case InjectorFailureCommand.FAIL_STOP:
                     await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
@@ -583,30 +618,11 @@ class InjectorFailureCommand(Command):
                 )
                 if operation == "copy":
                     if input_value_type == "file":
-                        connector = context.scheduler.get_connector(job.name)
-                        locations = context.scheduler.get_locations(job.name)
-                        if not await StreamFlowPath(
-                            input_value, context=context, location=locations[0]
-                        ).exists():
-                            raise WorkflowExecutionException(
-                                f"Job {job.name} input does not exist: File {input_value}"
-                            )
-                        output = f"result-{PurePath(job.name).parts[1]}"
-                        await StreamFlowPath(
-                            job.output_directory, context=context, location=locations[0]
-                        ).mkdir(parents=True, exist_ok=True)
-                        await connector.run(
-                            location=locations[0],
-                            command=["cp", "-r", input_value, output],
-                            workdir=job.output_directory,
-                        )
-                        output = os.path.join(job.output_directory, output)
-                        if not await StreamFlowPath(
-                            output, context=context, location=locations[0]
-                        ).exists():
-                            raise WorkflowExecutionException(
-                                f"CMD Job {job.name} output does not exist: File {output}"
-                            )
+                        output = await _copy_file(job, context, input_value)
+                    elif input_value_type == "list[file]":
+                        output = []
+                        for iv in input_value:
+                            output.append(await _copy_file(job, context, iv))
                     else:
                         output = input_value
                 else:
@@ -817,13 +833,18 @@ class InjectorFailureTransferStep(TransferStep):
             dst_path = dst_path_processor.join(
                 job.input_directory, source_location.relpath
             )
-            await self.workflow.context.data_manager.transfer_data(
-                src_location=source_location.location,
-                src_path=source_location.path,
-                dst_locations=dst_locations,
-                dst_path=dst_path,
-                writable=True,  # To avoid symbolic links, as recovery could be as simple as creating a new one.
-            )
+            try:
+                await self.workflow.context.data_manager.transfer_data(
+                    src_location=source_location.location,
+                    src_path=source_location.path,
+                    dst_locations=dst_locations,
+                    dst_path=dst_path,
+                    writable=True,  # To avoid symbolic links, as recovery could be as simple as creating a new one.
+                )
+            except WorkflowExecutionException as err:
+                raise WorkflowExecutionException(
+                    f"Job {job.name} failed transfer: {err}"
+                )
         else:
             raise WorkflowExecutionException(
                 f"Job {job.name} input does not exist: File {path}"
