@@ -9,6 +9,7 @@ import posixpath
 import shlex
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
+from contextlib import suppress
 from importlib.resources import files
 from shutil import which
 from typing import Any, AsyncContextManager, cast
@@ -17,7 +18,7 @@ import psutil
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -613,6 +614,19 @@ class ContainerConnector(ConnectorWrapper, ABC):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
+        if job_name is None and stdin is None:
+            with suppress(WorkflowExecutionException):
+                return await utils.run_in_shell(
+                    shell=await self.get_shell(
+                        command=["sh"], location=location
+                    ),  # nosec
+                    location=location,
+                    command=command,
+                    environment=environment,
+                    workdir=workdir,
+                    capture_output=capture_output,
+                    timeout=timeout,
+                )
         command = utils.create_command(
             self.__class__.__name__,
             command,
@@ -867,6 +881,21 @@ class DockerBaseConnector(ContainerConnector, ABC):
             memory=memory,
             current_user=host_user == container_user,
             volumes=volumes,
+        )
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        inner_location = get_inner_location(location)
+        return await self.connector.get_shell(
+            command=[
+                "docker",
+                "exec",
+                "--interactive",
+                location.name,
+                *command,
+            ],
+            location=inner_location,
         )
 
 
@@ -1970,6 +1999,19 @@ class SingularityConnector(ContainerConnector):
             .joinpath("schemas")
             .joinpath("singularity.json")
             .read_text("utf-8")
+        )
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        return await self.connector.get_shell(
+            command=[
+                "singularity",
+                "exec",
+                f"instance://{location.name}",
+                *command,
+            ],
+            location=get_inner_location(location),
         )
 
     async def undeploy(self, external: bool) -> None:
