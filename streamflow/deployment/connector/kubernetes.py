@@ -8,7 +8,8 @@ import re
 import shlex
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Coroutine, MutableMapping, MutableSequence
+from collections.abc import Awaitable, MutableMapping, MutableSequence
+from contextlib import suppress
 from importlib.resources import files
 from math import ceil, floor
 from pathlib import Path
@@ -17,6 +18,8 @@ from types import TracebackType
 from typing import Any, AsyncContextManager, cast
 
 import yaml
+from aiohttp import ClientWebSocketResponse, WSMsgType
+from aiohttp.client import _BaseRequestContextManager
 from cachebox import BaseCacheImpl, TTLCache, cached
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiClient, Configuration, V1Container, V1PodList
@@ -30,7 +33,7 @@ from kubernetes_asyncio.utils import create_from_yaml
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -43,6 +46,7 @@ from streamflow.deployment.connector.base import (
     copy_remote_to_remote,
     copy_same_connector,
 )
+from streamflow.deployment.shell import BaseShell
 from streamflow.log_handler import logger
 
 SERVICE_NAMESPACE_FILENAME = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
@@ -95,53 +99,10 @@ def _selector_from_set(selector: MutableMapping[str, Any]) -> str:
     return ",".join(requirements)
 
 
-class KubernetesResponseWrapper(BaseStreamWrapper):
-    def __init__(self, stream: Any) -> None:
-        super().__init__(stream)
-        self.msg: bytes = b""
-
-    async def read(self, size: int | None = None) -> bytes | None:
-        if len(self.msg) > 0:
-            if len(self.msg) > size:
-                data = self.msg[0:size]
-                self.msg = self.msg[size:]
-                return data
-            else:
-                data = self.msg
-                size -= len(self.msg)
-                self.msg = b""
-        else:
-            data = b""
-        while size > 0 and not self.stream.closed:
-            async for msg in self.stream:
-                channel = msg.data[0]
-                self.msg = msg.data[1:]
-                if self.msg and channel == ws_client.STDOUT_CHANNEL:
-                    if len(self.msg) > size:
-                        data += self.msg[0:size]
-                        self.msg = self.msg[size:]
-                        return data
-                    else:
-                        data += self.msg
-                        size -= len(self.msg)
-                        self.msg = b""
-        return data if len(data) > 0 else None
-
-    async def write(self, data: Any) -> None:
-        channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
-        payload = channel_prefix + data
-        await self.stream.send_bytes(payload)
-
-
-class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]):
-    def __init__(self, coro) -> None:
-        self.coro = coro
-        self.response: KubernetesResponseWrapper | None = None
-
-    async def __aenter__(self) -> KubernetesResponseWrapper:
-        response = await self.coro
-        self.response = KubernetesResponseWrapper(await response.__aenter__())
-        return self.response
+class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
+    def __init__(self, request: _BaseRequestContextManager) -> None:
+        self.request: _BaseRequestContextManager = request
+        self.response: StreamWrapper | None = None
 
     async def __aexit__(
         self,
@@ -151,6 +112,101 @@ class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]
     ) -> None:
         if self.response:
             await self.response.close()
+
+
+class KubernetesResponseReaderWrapper(BaseStreamWrapper):
+    def __init__(self, stream: Any, flush: bool = False) -> None:
+        super().__init__(stream)
+        self.flush: bool = flush
+        self._buffer: bytearray = bytearray()
+
+    async def read(self, size: int | None = None) -> bytes | None:
+        if self._buffer:
+            if size is None:
+                data = bytes(self._buffer)
+                self._buffer.clear()
+            else:
+                data = bytes(self._buffer[:size])
+                del self._buffer[:size]
+                size -= len(data)
+        else:
+            data = b""
+        while (size is None or size > 0) and not self.stream.closed:
+            msg = await self.stream.receive()
+            if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                self.closed = True
+                break
+            if msg.data[0] == ws_client.STDOUT_CHANNEL and (payload := msg.data[1:]):
+                if size is None:
+                    data += payload
+                else:
+                    if (n := len(payload)) <= size:
+                        data += payload
+                        size -= n
+                    else:
+                        data += payload[:size]
+                        self._buffer.extend(payload[size:])
+                        break
+                if self.flush:
+                    break
+        return data if len(data) > 0 else None
+
+    async def write(self, data: Any) -> None:
+        raise NotImplementedError
+
+
+class KubernetesResponseReaderWrapperContextManager(
+    KubernetesResponseWrapperContextManager
+):
+
+    async def __aenter__(self) -> StreamWrapper:
+        response = await self.request
+        self.response = KubernetesResponseReaderWrapper(await response.__aenter__())
+        return self.response
+
+
+class KubernetesResponseWriterWrapper(BaseStreamWrapper):
+    async def _close(self) -> None:
+        while not self.stream.closed:
+            msg = await self.stream.receive()
+            if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                break
+
+    async def read(self, size: int | None = None) -> bytes | None:
+        raise NotImplementedError
+
+    async def write(self, data: Any) -> None:
+        channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
+        payload = channel_prefix + data
+        await self.stream.send_bytes(payload)
+
+
+class KubernetesResponseWriterWrapperContextManager(
+    KubernetesResponseWrapperContextManager
+):
+
+    async def __aenter__(self) -> StreamWrapper:
+        response = await self.request
+        self.response = KubernetesResponseWriterWrapper(await response.__aenter__())
+        return self.response
+
+
+class KubernetesShell(BaseShell):
+
+    def __init__(
+        self,
+        command: MutableSequence[str],
+        buffer_size: int,
+        stream: ClientWebSocketResponse,
+    ):
+        super().__init__(command=command, buffer_size=buffer_size)
+        self._reader: StreamWrapper = KubernetesResponseReaderWrapper(
+            stream, flush=True
+        )
+        self._writer: StreamWrapper = KubernetesResponseWriterWrapper(stream)
+
+    async def _close(self) -> None:
+        await self._reader.close()
 
 
 class KubernetesBaseConnector(BaseConnector, ABC):
@@ -222,60 +278,26 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                 if not self.namespace:
                     raise ConfigException("Namespace file exists but empty.")
 
-    async def copy_local_to_remote(
-        self,
-        src: str,
-        dst: str,
-        locations: MutableSequence[ExecutionLocation],
-        read_only: bool = False,
-    ) -> None:
-        await super().copy_local_to_remote(
-            src=src,
-            dst=dst,
-            locations=await self._get_effective_locations(locations, dst),
-            read_only=read_only,
+    async def _create_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        pod, container = location.name.split(":")
+        response = await self.client_ws.connect_get_namespaced_pod_exec(
+            name=pod,
+            namespace=self.namespace or "default",
+            container=container,
+            command=command,
+            stderr=True,
+            stdin=True,
+            stdout=True,
+            tty=False,
+            _preload_content=False,
         )
-
-    async def copy_remote_to_remote(
-        self,
-        src: str,
-        dst: str,
-        locations: MutableSequence[ExecutionLocation],
-        source_location: ExecutionLocation,
-        source_connector: Connector | None = None,
-        read_only: bool = False,
-    ) -> None:
-        source_connector = source_connector or self
-        if locations := await copy_same_connector(
-            connector=self,
-            locations=await self._get_effective_locations(locations, dst),
-            source_location=source_location,
-            src=src,
-            dst=dst,
-            read_only=read_only,
-        ):
-            await copy_remote_to_remote(
-                connector=self,
-                locations=locations,
-                src=src,
-                dst=dst,
-                source_connector=source_connector,
-                source_location=source_location,
-                writer_command=[
-                    "sh",
-                    "-c",
-                    " ".join(
-                        await utils.get_remote_to_remote_write_command(
-                            src_connector=source_connector,
-                            src_location=source_location,
-                            src=src,
-                            dst_connector=self,
-                            dst_locations=locations,
-                            dst=dst,
-                        )
-                    ),
-                ],
-            )
+        return KubernetesShell(
+            command=command,
+            buffer_size=self.transferBufferSize,
+            stream=await response.__aenter__(),
+        )
 
     async def _get_container(
         self, location: ExecutionLocation
@@ -340,6 +362,61 @@ class KubernetesBaseConnector(BaseConnector, ABC):
     @abstractmethod
     async def _get_running_pods(self) -> V1PodList: ...
 
+    async def copy_local_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[ExecutionLocation],
+        read_only: bool = False,
+    ) -> None:
+        await super().copy_local_to_remote(
+            src=src,
+            dst=dst,
+            locations=await self._get_effective_locations(locations, dst),
+            read_only=read_only,
+        )
+
+    async def copy_remote_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
+        source_connector: Connector | None = None,
+        read_only: bool = False,
+    ) -> None:
+        source_connector = source_connector or self
+        if locations := await copy_same_connector(
+            connector=self,
+            locations=await self._get_effective_locations(locations, dst),
+            source_location=source_location,
+            src=src,
+            dst=dst,
+            read_only=read_only,
+        ):
+            await copy_remote_to_remote(
+                connector=self,
+                locations=locations,
+                src=src,
+                dst=dst,
+                source_connector=source_connector,
+                source_location=source_location,
+                writer_command=[
+                    "sh",
+                    "-c",
+                    " ".join(
+                        await utils.get_remote_to_remote_write_command(
+                            src_connector=source_connector,
+                            src_location=source_location,
+                            src=src,
+                            dst_connector=self,
+                            dst_locations=locations,
+                            dst=dst,
+                        )
+                    ),
+                ],
+            )
+
     async def deploy(self, external: bool) -> None:
         # Init standard client
         configuration = await self._get_configuration()
@@ -385,20 +462,17 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         self, command: MutableSequence[int], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
         pod, container = location.name.split(":")
-        return KubernetesResponseWrapperContextManager(
-            coro=cast(
-                Coroutine,
-                self.client_ws.connect_get_namespaced_pod_exec(
-                    name=pod,
-                    namespace=self.namespace or "default",
-                    container=container,
-                    command=command,
-                    stderr=True,
-                    stdin=False,
-                    stdout=True,
-                    tty=False,
-                    _preload_content=False,
-                ),
+        return KubernetesResponseReaderWrapperContextManager(
+            request=self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or "default",
+                container=container,
+                command=command,
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _preload_content=False,
             )
         )
 
@@ -406,20 +480,17 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
         pod, container = location.name.split(":")
-        return KubernetesResponseWrapperContextManager(
-            coro=cast(
-                Coroutine,
-                self.client_ws.connect_get_namespaced_pod_exec(
-                    name=pod,
-                    namespace=self.namespace or "default",
-                    container=container,
-                    command=command,
-                    stderr=False,
-                    stdin=True,
-                    stdout=False,
-                    tty=False,
-                    _preload_content=False,
-                ),
+        return KubernetesResponseWriterWrapperContextManager(
+            request=self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or "default",
+                container=container,
+                command=command,
+                stderr=False,
+                stdin=True,
+                stdout=False,
+                tty=False,
+                _preload_content=False,
             )
         )
 
@@ -436,6 +507,19 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
+        if job_name is None and stdin is None:
+            with suppress(WorkflowExecutionException):
+                return await utils.run_in_shell(
+                    shell=await self.get_shell(
+                        command=["sh"], location=location
+                    ),  # nosec
+                    location=location,
+                    command=command,
+                    environment=environment,
+                    workdir=workdir,
+                    capture_output=capture_output,
+                    timeout=timeout,
+                )
         command = utils.create_command(
             self.__class__.__name__,
             command,
@@ -506,6 +590,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
             return None
 
     async def undeploy(self, external: bool) -> None:
+        await super().undeploy(external)
         if self.client is not None:
             await self.client.api_client.close()
             self.client = None

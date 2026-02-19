@@ -47,7 +47,7 @@ def _get_connector_method_params(method_name: str) -> MutableSequence[Any]:
             return ["test_src", "test_dst", [loc], loc]
         case "get_available_locations":
             return []
-        case "get_stream_reader" | "get_stream_writer":
+        case "get_shell" | "get_stream_reader" | "get_stream_writer":
             return [["test_command"], loc]
         case "run":
             return [loc, ["ls"]]

@@ -1375,35 +1375,32 @@ async def update_file_token(
     load_contents: bool | None,
     load_listing: LoadListing | None = None,
 ) -> MutableMapping[str, Any]:
-    if path := get_path_from_token(token_value):
+    new_token_value = dict(token_value)
+    if path := get_path_from_token(new_token_value):
         filepath = StreamFlowPath(path, context=context, location=location)
         # Process contents
-        if get_token_class(token_value) == "File" and load_contents is not None:
-            if load_contents and "contents" not in token_value:
-                token_value |= {
+        if get_token_class(new_token_value) == "File" and load_contents is not None:
+            if load_contents and "contents" not in new_token_value:
+                new_token_value |= {
                     "contents": await _get_contents(
                         filepath,
-                        token_value["size"],
+                        new_token_value["size"],
                         cwl_version,
                     )
                 }
-            elif not load_contents and "contents" in token_value:
-                token_value = {
-                    k: token_value[k] for k in token_value if k != "contents"
-                }
+            elif not load_contents and "contents" in new_token_value:
+                del new_token_value["contents"]
         # Process listings
-        if get_token_class(token_value) == "Directory" and load_listing is not None:
+        if get_token_class(new_token_value) == "Directory" and load_listing is not None:
             # If load listing is set to `no_listing`, remove the listing entries in present
-            if load_listing == LoadListing.no_listing:
-                if "listing" in token_value:
-                    token_value = {
-                        k: token_value[k] for k in token_value if k != "listing"
-                    }
+            if load_listing == LoadListing.no_listing and "listing" in new_token_value:
+                del new_token_value["listing"]
             # If listing is not present or if the token needs a deep listing, process directory contents
             elif (
-                "listing" not in token_value or load_listing == LoadListing.deep_listing
+                "listing" not in new_token_value
+                or load_listing == LoadListing.deep_listing
             ):
-                token_value |= {
+                new_token_value |= {
                     "listing": await _get_listing(
                         context=context,
                         connector=connector,
@@ -1416,13 +1413,13 @@ async def update_file_token(
                 }
             # If load listing is set to `shallow_listing`, remove the deep listing entries if present
             elif load_listing == LoadListing.shallow_listing:
-                token_value |= {
+                new_token_value |= {
                     "listing": [
                         {k: v[k] for k in v if k != "listing"}
-                        for v in token_value["listing"]
+                        for v in new_token_value["listing"]
                     ]
                 }
-    return token_value
+    return new_token_value
 
 
 async def write_remote_file(

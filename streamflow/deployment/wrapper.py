@@ -6,7 +6,7 @@ from collections.abc import MutableMapping, MutableSequence
 from typing import AsyncContextManager
 
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.deployment.future import FutureAware
@@ -96,6 +96,11 @@ class ConnectorWrapper(Connector, FutureAware, ABC):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return await self.connector.get_available_locations(service=service)
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        return await self.connector.get_shell(command, location)
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
