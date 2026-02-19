@@ -7,6 +7,7 @@ import logging
 import os
 import posixpath
 import shlex
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
@@ -728,7 +729,11 @@ class DockerBaseConnector(ContainerConnector, ABC):
             )
         # Check if the container user is the current host user
         if self._wraps_local():
-            host_user = os.getuid()
+            if sys.platform == "win32":
+                # Windows does not support the `getuid` function
+                host_user = -1
+            else:
+                host_user = os.getuid()
         else:
             stdout, returncode = await self.connector.run(
                 location=self._get_inner_location(),
