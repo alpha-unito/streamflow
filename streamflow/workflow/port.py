@@ -74,9 +74,11 @@ class InterWorkflowPort(Port):
                 boundary.port.put(token)
         if TerminationType.TERMINATE in boundary.termination_type:
             if boundary.port is self:
-                super().put(TerminationToken(Status.RECOVERED))
+                # super().put(TerminationToken(Status.RECOVERED))
+                super().put(TerminationToken())
             else:
-                boundary.port.put(TerminationToken(Status.RECOVERED))
+                # boundary.port.put(TerminationToken(Status.RECOVERED))
+                boundary.port.put(TerminationToken())
 
     def add_inter_port(
         self,

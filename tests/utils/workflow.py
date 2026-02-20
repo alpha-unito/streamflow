@@ -50,7 +50,7 @@ from streamflow.workflow.combinator import (
     LoopCombinator,
     LoopTerminationCombinator,
 )
-from streamflow.workflow.port import ConnectorPort, JobPort
+from streamflow.workflow.port import ConnectorPort, InterWorkflowPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
     ConditionalStep,
@@ -682,9 +682,29 @@ class InjectorFailureCommand(Command):
                     for k, t in job.inputs.items():
                         output_tokens[k] = t.update(t.value)
                         output_tokens[k].recoverable = True
-                    context.failure_manager.get_request(job.name).output_tokens = (
-                        output_tokens
+                    r = context.failure_manager.get_request(job.name)
+                    r.workflow = Workflow(
+                        self.step.workflow.context,
+                        self.step.workflow.config,
+                        self.step.workflow.name,
                     )
+                    r.output_ports = []
+
+                    if len(job.inputs) != 1:
+                        raise WorkflowDefinitionException()
+                    for k in job.inputs.keys():
+                        out_port = self.step.get_output_port()
+                        p = r.workflow.create_port(InterWorkflowPort, out_port.name)
+                        p.put(output_tokens[k])
+                        r.output_ports.append(out_port.name)
+                    r.workflow_ready.set()
+                    if set(r.output_ports) - set(r.workflow.ports):
+                        raise Exception(
+                            f"missing ports: {set(r.output_ports) -  set(r.workflow.ports)}"
+                        )
+                    # context.failure_manager.get_request(job.name).output_tokens = (
+                    #     output_tokens
+                    # )
                 case InjectorFailureCommand.FAIL_STOP:
                     await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)

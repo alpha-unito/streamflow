@@ -53,7 +53,7 @@ from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
 from streamflow.workflow.port import ConnectorPort, FilterTokenPort, JobPort
-from streamflow.workflow.token import JobToken, ListToken, TerminationToken
+from streamflow.workflow.token import JobToken, ListToken, TerminationToken, IterationTerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
     check_termination,
@@ -1236,6 +1236,10 @@ class LoopCombinatorStep(CombinatorStep):
                 token = min(
                     tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
                 )
+                # port = self.get_input_port(name)
+                # port.put(IterationTerminationToken( max(
+                #     tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
+                # ).tag))
                 parents = await load_dependee_tokens(
                     persistent_id=token.persistent_id,
                     context=self.workflow.context,
