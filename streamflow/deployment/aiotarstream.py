@@ -21,7 +21,6 @@ from typing_extensions import Self
 
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper
-from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     StrOrBytesPath: TypeAlias = str | bytes | os.PathLike[str] | os.PathLike[bytes]
@@ -840,29 +839,14 @@ class AioTarStream:
 
     async def close(self) -> None:
         if self.closed:
-            logger.debug(
-                f"AioTarStream wrapping {self.stream.__class__.__name__} is already closed."
-            )
             return
         if self._closing is not None:
-            logger.debug(
-                f"AioTarStream wrapping {self.stream.__class__.__name__} is closing."
-            )
             await self._closing.wait()
-            logger.debug(
-                f"AioTarStream wrapping {self.stream.__class__.__name__} has been closed."
-            )
         else:
-            logger.debug(
-                f"Closing AioTarStream wrapping {self.stream.__class__.__name__}."
-            )
             self._closing = asyncio.Event()
             await self._close()
             self.closed = True
             self._closing.set()
-            logger.debug(
-                f"Closed AioTarStream wrapping {self.stream.__class__.__name__}."
-            )
 
     async def extract(
         self,

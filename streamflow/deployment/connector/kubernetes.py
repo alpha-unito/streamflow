@@ -167,10 +167,14 @@ class KubernetesResponseReaderWrapperContextManager(
 
 class KubernetesResponseWriterWrapper(BaseStreamWrapper):
     async def _close(self) -> None:
-        while not self.stream.closed:
-            msg = await self.stream.receive()
-            if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
-                break
+        try:
+            while not self.stream.closed:
+                msg = await self.stream.receive(timeout=5.0)
+                if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                    break
+        except asyncio.TimeoutError:
+            logger.warning("Kubernetes response did not exit gracefully. Killing")
+            await self.stream.close()
 
     async def read(self, size: int | None = None) -> bytes | None:
         raise NotImplementedError
@@ -179,7 +183,6 @@ class KubernetesResponseWriterWrapper(BaseStreamWrapper):
         channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
         payload = channel_prefix + data
         await self.stream.send_bytes(payload)
-        logger.info(f"closed: {self.stream.closed}, protocol: {self.stream.protocol}")
 
 
 class KubernetesResponseWriterWrapperContextManager(
@@ -808,7 +811,7 @@ class KubernetesConnector(KubernetesBaseConnector):
                 name=k8s_object.metadata.name
             )
         if self.debug:
-            logger.info(f"{kind} deleted. status='{str(resp.status)}'")
+            print(f"{kind} deleted. status='{str(resp.status)}'")
         return resp
 
     async def _wait(self, k8s_object: Any) -> None:

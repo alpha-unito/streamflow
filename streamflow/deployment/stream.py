@@ -4,7 +4,6 @@ import asyncio
 from typing import Any
 
 from streamflow.core.data import StreamWrapper
-from streamflow.log_handler import logger
 
 
 class BaseStreamWrapper(StreamWrapper):
@@ -18,19 +17,14 @@ class BaseStreamWrapper(StreamWrapper):
 
     async def close(self) -> None:
         if self.closed:
-            logger.debug(f"{self.stream.__class__.__name__} is already closed.")
             return
         if self._closing is not None:
-            logger.debug(f"{self.stream.__class__.__name__} is closing.")
             await self._closing.wait()
-            logger.debug(f"{self.stream.__class__.__name__} has been closed.")
         else:
-            logger.debug(f"Closing {self.stream.__class__.__name__}.")
             self._closing = asyncio.Event()
             await self._close()
             self.closed = True
             self._closing.set()
-            logger.debug(f"Closed {self.stream.__class__.__name__}.")
 
     async def read(self, size: int | None = None) -> bytes:
         return await self.stream.read(size)
