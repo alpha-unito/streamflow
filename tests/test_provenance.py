@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import cast
 
 import pytest
@@ -36,6 +37,14 @@ from tests.utils.workflow import (
     create_schedule_step,
     create_workflow,
 )
+
+
+async def _lazy_tokens(
+    step: LoopCombinatorStep, token_list, input_port, context
+) -> None:
+    while len(step.iteration_termination_checklist) == 0:
+        await asyncio.sleep(0.5)
+    await inject_tokens(token_list, input_port, context)
 
 
 @pytest.mark.asyncio
@@ -366,3 +375,65 @@ async def test_loop_termination_combinator(context: StreamFlowContext) -> None:
             context=context,
             expected_dependee=[in_token],
         )
+
+
+@pytest.mark.asyncio
+async def test_lazy_loop_combinator(context: StreamFlowContext) -> None:
+    """
+    Test token provenance for LoopCombinator inserting all tokens from all
+    iterations, using a lazy input port. This simulates a recovery workflow.
+    """
+    prefix = "0"
+    num_inputs = 5
+    workflow, ports = await create_workflow(context, num_port=num_inputs * 2)
+    ports = list(ports)
+    prefix_name = "/step1-scatter"
+    step_name = prefix_name + "-combinator"
+    combinator = LoopCombinator(
+        workflow=workflow, name=prefix_name + "-dot-product-combinator"
+    )
+    step = workflow.create_step(
+        cls=LoopCombinatorStep,
+        name=step_name,
+        combinator=combinator,
+    )
+    for i in range(num_inputs):
+        port_name = f"test{i}"
+        combinator.add_item(port_name)
+        input_port = ports.pop()
+        step.add_input_port(port_name, input_port)
+        step.add_output_port(port_name, ports.pop())
+    await workflow.save(context)
+
+    lazy_tokens = None
+    for i, input_port in enumerate(step.get_input_ports().values()):
+        token_list = [
+            Token(i, tag=prefix),
+            Token(i, tag=f"{prefix}.0"),
+            IterationTerminationToken(prefix),
+            TerminationToken(),
+        ]
+        if lazy_tokens is None:
+            lazy_tokens = (token_list, input_port)
+        else:
+            await inject_tokens(token_list, input_port, context)
+
+    executor = StreamFlowExecutor(workflow)
+    t = asyncio.create_task(_lazy_tokens(step, lazy_tokens[0], lazy_tokens[1], context))
+    await executor.run()
+    await asyncio.wait([t])
+
+    for output_port in step.get_output_ports().values():
+        for i, token in enumerate(output_port.token_list[:-1]):
+            assert token.tag == f"{prefix}.{i}"
+            assert token.persistent_id is not None
+            await verify_dependency_tokens(
+                token=token,
+                port=output_port,
+                context=context,
+                expected_dependee=[
+                    input_port.token_list[i]
+                    for input_port in step.get_input_ports().values()
+                ],
+            )
+        assert isinstance(output_port.token_list[-1], TerminationToken)
