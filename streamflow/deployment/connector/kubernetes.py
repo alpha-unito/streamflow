@@ -177,66 +177,11 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
 
         return bytes(output) if output else None
 
-    # async def read(self, size: int | None = None) -> bytes | None:
-    #     data = bytearray()
-    #
-    #     # 1. Always drain the internal buffer first
-    #     if self._buffer:
-    #         if size is None:
-    #             data.extend(self._buffer)
-    #             self._buffer.clear()
-    #         else:
-    #             take = min(len(self._buffer), size)
-    #             data.extend(self._buffer[:take])
-    #             del self._buffer[:take]
-    #             size -= take
-    #
-    #     # 2. Fetch from network
-    #     # IMPORTANT: We keep reading even if closed, until receive() returns None/EOF
-    #     while size is None or size > 0:
-    #         if self.stream.closed and not data:
-    #             # Only exit if we have nothing left to give
-    #             break
-    #
-    #         try:
-    #             msg = await self.stream.receive()
-    #         except Exception:
-    #             logger.info("Received exception while reading from Kubernetes")
-    #             break
-    #
-    #         if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
-    #             # Mark the stream as finished but DON'T return yet.
-    #             # There might be one last payload in this cycle.
-    #             break
-    #
-    #         if msg.type == WSMsgType.BINARY and msg.data:
-    #             if msg.data[0] == ws_client.STDOUT_CHANNEL:
-    #                 payload = msg.data[1:]
-    #                 if size is None:
-    #                     data.extend(payload)
-    #                     # If flush is True, return after first valid packet
-    #                     if self.flush:
-    #                         break
-    #                 else:
-    #
-    #                     if len(payload) <= size:
-    #                         data.extend(payload)
-    #                         size -= len(payload)
-    #                     else:
-    #                         data.extend(payload[:size])
-    #                         self._buffer.extend(payload[size:])
-    #                         size = 0  # Break loop
-    #
-    #         # If we are in 'flush' mode, return as soon as we have ANY data
-    #         if self.flush and data:
-    #             break
-    #
-    #     return bytes(data) if data else None
-
     async def write(self, data: Any) -> None:
         channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
         payload = channel_prefix + data
         await self.stream.send_bytes(payload)
+        logger.info(f"closed: {self.stream.closed}, protocol: {self.stream.protocol}")
 
 
 class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]):
