@@ -175,7 +175,6 @@ class KubernetesResponseWriterWrapper(BaseStreamWrapper):
         except asyncio.TimeoutError:
             raise Exception("Kubernetes response did not exit gracefully. Killing")
 
-
     async def read(self, size: int | None = None) -> bytes | None:
         raise NotImplementedError
 
