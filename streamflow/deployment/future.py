@@ -7,7 +7,7 @@ from collections.abc import MutableMapping, MutableSequence
 from typing import Any, AsyncContextManager
 
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
@@ -150,6 +150,17 @@ class FutureConnector(Connector):
             else:
                 await self._safe_deploy_event_wait()
         return await self._connector.get_available_locations(service=service)
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        if self._connector is None:
+            if not self.deploying:
+                self.deploying = True
+                await self.deploy(self.external)
+            else:
+                await self._safe_deploy_event_wait()
+        return await self._connector.get_shell(command=command, location=location)
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation

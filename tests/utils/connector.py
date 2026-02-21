@@ -12,7 +12,7 @@ import asyncssh
 from asyncssh import SSHClient, SSHClientConnection
 
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.scheduling import AvailableLocation, Hardware
 from streamflow.deployment.connector import LocalConnector, SSHConnector
 from streamflow.deployment.connector.base import BaseConnector
@@ -22,7 +22,7 @@ from streamflow.deployment.connector.ssh import (
     get_param_from_file,
     parse_hostname,
 )
-from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
+from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.log_handler import logger
 
 
@@ -39,7 +39,7 @@ def _get_path_from_cmd(command: MutableSequence[str]) -> str:
             raise NotImplementedError(command)
 
 
-class AioTarStreamReaderWrapper(StreamReaderWrapper):
+class AioTarStreamReaderWrapper(BaseStreamWrapper):
     async def close(self) -> None:
         if self.stream:
             os.close(self.stream)
@@ -48,10 +48,16 @@ class AioTarStreamReaderWrapper(StreamReaderWrapper):
     async def read(self, size: int | None = None) -> bytes:
         return os.read(self.stream, size)
 
+    async def write(self, data: Any) -> None:
+        raise NotImplementedError
 
-class AioTarStreamWriterWrapper(StreamWriterWrapper):
-    async def close(self) -> None:
+
+class AioTarStreamWriterWrapper(BaseStreamWrapper):
+    async def _close(self) -> None:
         self.stream.close()
+
+    async def read(self, size: int | None = None) -> bytes:
+        raise NotImplementedError
 
     async def write(self, data: Any) -> None:
         self.stream.write(data)
@@ -137,6 +143,11 @@ class AioTarConnector(BaseConnector):
                 hardware=None,
             )
         }
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        raise NotImplementedError("AioTarConnector get_shell")
 
     @classmethod
     def get_schema(cls) -> str:
@@ -266,6 +277,11 @@ class FailureConnector(Connector):
 
     async def undeploy(self, external: bool) -> None:
         raise FailureConnectorException("FailureConnector undeploy")
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ):
+        raise FailureConnectorException("FailureConnector get_shell")
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
