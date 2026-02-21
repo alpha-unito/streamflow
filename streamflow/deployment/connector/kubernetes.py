@@ -173,8 +173,8 @@ class KubernetesResponseWriterWrapper(BaseStreamWrapper):
                 if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
                     break
         except asyncio.TimeoutError:
-            logger.warning("Kubernetes response did not exit gracefully. Killing")
-            await self.stream.close()
+            raise Exception("Kubernetes response did not exit gracefully. Killing")
+
 
     async def read(self, size: int | None = None) -> bytes | None:
         raise NotImplementedError
