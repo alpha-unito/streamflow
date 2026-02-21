@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import io
-import json
 import logging
 import os
 import re
 import shlex
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Coroutine, MutableMapping, MutableSequence
+from collections.abc import Awaitable, MutableMapping, MutableSequence
 from contextlib import suppress
 from importlib.resources import files
 from math import ceil, floor
@@ -19,7 +18,8 @@ from types import TracebackType
 from typing import Any, AsyncContextManager, cast
 
 import yaml
-from aiohttp import WSMsgType
+from aiohttp import ClientWebSocketResponse, WSMsgType
+from aiohttp.client import _BaseRequestContextManager
 from cachebox import BaseCacheImpl, TTLCache, cached
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiClient, Configuration, V1Container, V1PodList
@@ -99,100 +99,10 @@ def _selector_from_set(selector: MutableMapping[str, Any]) -> str:
     return ",".join(requirements)
 
 
-class KubernetesResponseWrapper(BaseStreamWrapper):
-    def __init__(self, stream: Any, flush: bool = False) -> None:
-        super().__init__(stream)
-        self.flush: bool = flush
-        self._buffer: bytearray = bytearray()
-
-    async def read(self, size: int | None = None) -> bytes | None:
-        output = bytearray()
-
-        # 1. Drain the existing buffer (handles the off-by-one and size logic)
-        if self._buffer:
-            if size is None:
-                output.extend(self._buffer)
-                self._buffer.clear()
-            else:
-                take = min(len(self._buffer), size)
-                output.extend(self._buffer[:take])
-                del self._buffer[:take]
-                size -= take
-
-        # 2. Network Loop
-        while (size is None or size > 0) and not self.stream.closed:
-            try:
-                msg = await self.stream.receive()
-            except Exception as e:
-                logger.info(f"k8s stream receive raises exception: {e}")
-                break
-
-            # Handle WebSocket closing signals
-            if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
-                break
-
-            if msg.type == WSMsgType.BINARY and msg.data:
-                channel = msg.data[0]
-                payload = msg.data[1:]
-
-                # CHANNEL 1: STDOUT
-                if channel == ws_client.STDOUT_CHANNEL:
-                    if size is None:
-                        output.extend(payload)
-                        if self.flush:
-                            break
-                    else:
-                        if len(payload) <= size:
-                            output.extend(payload)
-                            size -= len(payload)
-                        else:
-                            output.extend(payload[:size])
-                            self._buffer.extend(payload[size:])
-                            size = 0
-                            break
-
-                # CHANNEL 2: STDERR (Optional: you might want to log this)
-                elif channel == ws_client.STDERR_CHANNEL:
-                    # If you want to include stderr in the output, extend output here.
-                    # Otherwise, just log it so you know why the file is "incomplete".
-                    logger.info(
-                        f"K8s Stderr: {payload.decode('utf-8', errors='replace')}"
-                    )
-
-                # CHANNEL 3: STATUS (The "Process Finished" Signal)
-                elif channel == 3:  # Often defined as ws_client.ERROR_CHANNEL
-                    status_data = json.loads(payload.decode("utf-8"))
-                    logger.info(f"checking channel 3: {status_data}")
-                    # if status_data.get("status") == "Success":
-                    #     # Process finished cleanly
-                    #     return bytes(output) if output else None
-                    # else:
-                    #     # Process failed (e.g., exit code 1)
-                    #     error_msg = status_data.get("message", "Unknown error")
-                    #     raise RuntimeError(f"K8s Exec Failed: {error_msg}")
-
-            # If flush is requested and we have some data, return it immediately
-            if self.flush and output:
-                break
-
-        return bytes(output) if output else None
-
-    async def write(self, data: Any) -> None:
-        channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
-        payload = channel_prefix + data
-        await self.stream.send_bytes(payload)
-        logger.info(f"closed: {self.stream.closed}, protocol: {self.stream.protocol}")
-
-
-class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]):
-    def __init__(self, coro) -> None:
-        self.coro = coro
-        self.response: KubernetesResponseWrapper | None = None
-
-    async def __aenter__(self) -> KubernetesResponseWrapper:
-        response = await self.coro
-        self.response = KubernetesResponseWrapper(await response.__aenter__())
-        return self.response
+class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
+    def __init__(self, request: _BaseRequestContextManager) -> None:
+        self.request: _BaseRequestContextManager = request
+        self.response: StreamWrapper | None = None
 
     async def __aexit__(
         self,
@@ -204,11 +114,97 @@ class KubernetesResponseWrapperContextManager(AsyncContextManager[StreamWrapper]
             await self.response.close()
 
 
+class KubernetesResponseReaderWrapper(BaseStreamWrapper):
+    def __init__(self, stream: Any, flush: bool = False) -> None:
+        super().__init__(stream)
+        self.flush: bool = flush
+        self._buffer: bytearray = bytearray()
+
+    async def read(self, size: int | None = None) -> bytes | None:
+        if self._buffer:
+            if size is None:
+                data = bytes(self._buffer)
+                self._buffer.clear()
+            else:
+                data = bytes(self._buffer[:size])
+                del self._buffer[:size]
+                size -= len(data)
+        else:
+            data = b""
+        while (size is None or size > 0) and not self.stream.closed:
+            msg = await self.stream.receive()
+            if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                self.closed = True
+                break
+            if msg.data[0] == ws_client.STDOUT_CHANNEL and (payload := msg.data[1:]):
+                if size is None:
+                    data += payload
+                else:
+                    if (n := len(payload)) <= size:
+                        data += payload
+                        size -= n
+                    else:
+                        data += payload[:size]
+                        self._buffer.extend(payload[size:])
+                        break
+                if self.flush:
+                    break
+        return data if len(data) > 0 else None
+
+    async def write(self, data: Any) -> None:
+        raise NotImplementedError
+
+
+class KubernetesResponseReaderWrapperContextManager(
+    KubernetesResponseWrapperContextManager
+):
+
+    async def __aenter__(self) -> StreamWrapper:
+        response = await self.request
+        self.response = KubernetesResponseReaderWrapper(await response.__aenter__())
+        return self.response
+
+
+class KubernetesResponseWriterWrapper(BaseStreamWrapper):
+    async def _close(self) -> None:
+        while not self.stream.closed:
+            msg = await self.stream.receive()
+            if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+                break
+
+    async def read(self, size: int | None = None) -> bytes | None:
+        raise NotImplementedError
+
+    async def write(self, data: Any) -> None:
+        channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
+        payload = channel_prefix + data
+        await self.stream.send_bytes(payload)
+        logger.info(f"closed: {self.stream.closed}, protocol: {self.stream.protocol}")
+
+
+class KubernetesResponseWriterWrapperContextManager(
+    KubernetesResponseWrapperContextManager
+):
+
+    async def __aenter__(self) -> StreamWrapper:
+        response = await self.request
+        self.response = KubernetesResponseWriterWrapper(await response.__aenter__())
+        return self.response
+
+
 class KubernetesShell(BaseShell):
 
-    def __init__(self, command: MutableSequence[str], buffer_size: int, stream):
+    def __init__(
+        self,
+        command: MutableSequence[str],
+        buffer_size: int,
+        stream: ClientWebSocketResponse,
+    ):
         super().__init__(command=command, buffer_size=buffer_size)
-        self._reader = self._writer = KubernetesResponseWrapper(stream, flush=True)
+        self._reader: StreamWrapper = KubernetesResponseReaderWrapper(
+            stream, flush=True
+        )
+        self._writer: StreamWrapper = KubernetesResponseWriterWrapper(stream)
 
     async def _close(self) -> None:
         await self._reader.close()
@@ -467,20 +463,17 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         self, command: MutableSequence[int], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
         pod, container = location.name.split(":")
-        return KubernetesResponseWrapperContextManager(
-            coro=cast(
-                Coroutine,
-                self.client_ws.connect_get_namespaced_pod_exec(
-                    name=pod,
-                    namespace=self.namespace or "default",
-                    container=container,
-                    command=command,
-                    stderr=True,
-                    stdin=False,
-                    stdout=True,
-                    tty=False,
-                    _preload_content=False,
-                ),
+        return KubernetesResponseReaderWrapperContextManager(
+            request=self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or "default",
+                container=container,
+                command=command,
+                stderr=True,
+                stdin=False,
+                stdout=True,
+                tty=False,
+                _preload_content=False,
             )
         )
 
@@ -488,20 +481,17 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
         pod, container = location.name.split(":")
-        return KubernetesResponseWrapperContextManager(
-            coro=cast(
-                Coroutine,
-                self.client_ws.connect_get_namespaced_pod_exec(
-                    name=pod,
-                    namespace=self.namespace or "default",
-                    container=container,
-                    command=command,
-                    stderr=False,
-                    stdin=True,
-                    stdout=False,
-                    tty=False,
-                    _preload_content=False,
-                ),
+        return KubernetesResponseWriterWrapperContextManager(
+            request=self.client_ws.connect_get_namespaced_pod_exec(
+                name=pod,
+                namespace=self.namespace or "default",
+                container=container,
+                command=command,
+                stderr=False,
+                stdin=True,
+                stdout=False,
+                tty=False,
+                _preload_content=False,
             )
         )
 

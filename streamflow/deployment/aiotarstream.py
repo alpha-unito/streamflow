@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import grp
 import os
@@ -20,6 +21,7 @@ from typing_extensions import Self
 
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     StrOrBytesPath: TypeAlias = str | bytes | os.PathLike[str] | os.PathLike[bytes]
@@ -76,10 +78,7 @@ class CompressionStreamWrapper(BaseStreamWrapper, ABC):
         self.cmp: Compressor | Decompressor | None = cmp
         self.exception: type[Exception] | None = exception
 
-    async def close(self) -> None:
-        if self.closed:
-            return
-        self.closed = True
+    async def _close(self) -> None:
         try:
             if self.mode == "w":
                 await self.stream.write(self.cmp.flush())
@@ -179,10 +178,7 @@ class GZipStreamWrapper(CompressionStreamWrapper):
             b"\037\213\010\010" + timestamp + b"\002\377" + tarfile.NUL
         )
 
-    async def close(self) -> None:
-        if self.closed:
-            return
-        self.closed = True
+    async def _close(self) -> None:
         try:
             await self.stream.write(self.cmp.flush())
             await self.stream.write(struct.pack("<L", self.crc))
@@ -540,6 +536,7 @@ class AioTarStream:
         self.inodes: dict[int, str] = {}
         self._unames: dict[int, str] = {}  # Cached mappings of uid -> uname
         self._gnames: dict[int, str] = {}  # Cached mappings of gid -> gname
+        self._closing: asyncio.Event | None = None
 
     async def __aenter__(self) -> Self:
         self._check()
@@ -664,6 +661,19 @@ class AioTarStream:
             raise OSError("%s is closed" % self.__class__.__name__)
         if mode is not None and self.mode not in mode:
             raise OSError("bad operation for mode %r" % self.mode)
+
+    async def _close(self):
+        try:
+            if self.mode in ("a", "w", "x"):
+                await self.stream.write(tarfile.NUL * (tarfile.BLOCKSIZE * 2))
+                self.offset += tarfile.BLOCKSIZE * 2
+                blocks, remainder = divmod(self.offset, tarfile.RECORDSIZE)
+                if remainder > 0:
+                    await self.stream.write(
+                        tarfile.NUL * (tarfile.RECORDSIZE - remainder)
+                    )
+        finally:
+            await self.stream.close()
 
     def _dbg(self, level: int, msg: str) -> None:
         if level <= self.debug:
@@ -830,19 +840,29 @@ class AioTarStream:
 
     async def close(self) -> None:
         if self.closed:
+            logger.debug(
+                f"AioTarStream wrapping {self.stream.__class__.__name__} is already closed."
+            )
             return
-        self.closed = True
-        try:
-            if self.mode in ("a", "w", "x"):
-                await self.stream.write(tarfile.NUL * (tarfile.BLOCKSIZE * 2))
-                self.offset += tarfile.BLOCKSIZE * 2
-                blocks, remainder = divmod(self.offset, tarfile.RECORDSIZE)
-                if remainder > 0:
-                    await self.stream.write(
-                        tarfile.NUL * (tarfile.RECORDSIZE - remainder)
-                    )
-        finally:
-            await self.stream.close()
+        if self._closing is not None:
+            logger.debug(
+                f"AioTarStream wrapping {self.stream.__class__.__name__} is closing."
+            )
+            await self._closing.wait()
+            logger.debug(
+                f"AioTarStream wrapping {self.stream.__class__.__name__} has been closed."
+            )
+        else:
+            logger.debug(
+                f"Closing AioTarStream wrapping {self.stream.__class__.__name__}."
+            )
+            self._closing = asyncio.Event()
+            await self._close()
+            self.closed = True
+            self._closing.set()
+            logger.debug(
+                f"Closed AioTarStream wrapping {self.stream.__class__.__name__}."
+            )
 
     async def extract(
         self,

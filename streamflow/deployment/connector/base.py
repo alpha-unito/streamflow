@@ -10,7 +10,7 @@ import tarfile
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from types import TracebackType
-from typing import AsyncContextManager
+from typing import Any, AsyncContextManager
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
@@ -20,7 +20,7 @@ from streamflow.core.utils import get_local_to_remote_destination
 from streamflow.deployment import aiotarstream
 from streamflow.deployment.future import FutureAware
 from streamflow.deployment.shell import BaseShell
-from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
+from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.log_handler import logger
 
 FS_TYPES_TO_SKIP = {
@@ -268,12 +268,17 @@ class SubprocessStreamWrapperContextManager(AsyncContextManager[StreamWrapper], 
         self.stream: StreamWrapper | None = None
 
 
+class SubprocessStreamReaderWrapper(BaseStreamWrapper):
+    async def write(self, data: bytes) -> int:
+        raise NotImplementedError
+
+
 class SubprocessStreamReaderWrapperContextManager(
     SubprocessStreamWrapperContextManager
 ):
-    async def __aenter__(self) -> StreamReaderWrapper:
+    async def __aenter__(self) -> StreamWrapper:
         self.proc = await self.coro
-        self.stream = StreamReaderWrapper(self.proc.stdout)
+        self.stream = SubprocessStreamReaderWrapper(self.proc.stdout)
         return self.stream
 
     async def __aexit__(
@@ -287,12 +292,25 @@ class SubprocessStreamReaderWrapperContextManager(
             await self.stream.close()
 
 
+class SubprocessStreamWriterWrapper(BaseStreamWrapper):
+    async def _close(self) -> None:
+        self.stream.close()
+        await self.stream.wait_closed()
+
+    async def read(self, n: int = -1) -> bytes:
+        raise NotImplementedError
+
+    async def write(self, data: Any) -> None:
+        self.stream.write(data)
+        await self.stream.drain()
+
+
 class SubprocessStreamWriterWrapperContextManager(
     SubprocessStreamWrapperContextManager
 ):
-    async def __aenter__(self) -> StreamWriterWrapper:
+    async def __aenter__(self) -> StreamWrapper:
         self.proc = await self.coro
-        self.stream = StreamWriterWrapper(self.proc.stdin)
+        self.stream = SubprocessStreamWriterWrapper(self.proc.stdin)
         return self.stream
 
     async def __aexit__(
@@ -317,8 +335,8 @@ class SubprocessShell(BaseShell):
     ) -> None:
         super().__init__(command, buffer_size)
         self._proc: asyncio.subprocess.Process = process
-        self._reader = StreamReaderWrapper(self._proc.stdout)
-        self._writer = StreamWriterWrapper(self._proc.stdin)
+        self._reader = SubprocessStreamReaderWrapper(self._proc.stdout)
+        self._writer = SubprocessStreamWriterWrapper(self._proc.stdin)
 
     async def _close(self) -> None:
         try:

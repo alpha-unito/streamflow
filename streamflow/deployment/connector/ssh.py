@@ -25,7 +25,7 @@ from streamflow.deployment.connector.base import (
     copy_same_connector,
 )
 from streamflow.deployment.shell import BaseShell
-from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
+from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.log_handler import logger
 
@@ -314,8 +314,8 @@ class SSHShell(BaseShell):
     ):
         super().__init__(command=command, buffer_size=buffer_size)
         self._context: SSHContextManager = context
-        self._reader = StreamReaderWrapper(process.stdout)
-        self._writer = StreamWriterWrapper(process.stdin)
+        self._reader = SSHStreamReaderWrapper(process.stdout)
+        self._writer = SSHStreamWriterWrapper(process.stdin)
 
     async def _close(self) -> None:
         await self._context.__aexit__(None, None, None)
@@ -346,8 +346,13 @@ class SSHStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
         await self.ssh_context.__aexit__(exc_type, exc_val, exc_tb)
 
 
+class SSHStreamReaderWrapper(BaseStreamWrapper):
+    async def write(self, data: Any) -> None:
+        raise NotImplementedError
+
+
 class SSHStreamReaderWrapperContextManager(SSHStreamWrapperContextManager):
-    async def __aenter__(self) -> StreamReaderWrapper:
+    async def __aenter__(self) -> StreamWrapper:
         self.ssh_context = self.ssh_context_factory.get(
             command=" ".join(self.command),
             environment=self.environment,
@@ -355,12 +360,25 @@ class SSHStreamReaderWrapperContextManager(SSHStreamWrapperContextManager):
             encoding=None,
         )
         proc = await self.ssh_context.__aenter__()
-        self.stream = StreamReaderWrapper(proc.stdout)
+        self.stream = SSHStreamReaderWrapper(proc.stdout)
         return self.stream
 
 
+class SSHStreamWriterWrapper(BaseStreamWrapper):
+    async def _close(self) -> None:
+        self.stream.close()
+        await self.stream.wait_closed()
+
+    async def read(self, n: int = -1) -> bytes:
+        raise NotImplementedError
+
+    async def write(self, data: Any) -> None:
+        self.stream.write(data)
+        await self.stream.drain()
+
+
 class SSHStreamWriterWrapperContextManager(SSHStreamWrapperContextManager):
-    async def __aenter__(self) -> StreamWriterWrapper:
+    async def __aenter__(self) -> StreamWrapper:
         self.ssh_context = self.ssh_context_factory.get(
             command=" ".join(self.command),
             environment=self.environment,
@@ -369,7 +387,7 @@ class SSHStreamWriterWrapperContextManager(SSHStreamWrapperContextManager):
             encoding=None,
         )
         proc = await self.ssh_context.__aenter__()
-        self.stream = StreamWriterWrapper(proc.stdin)
+        self.stream = SSHStreamWriterWrapper(proc.stdin)
         return self.stream
 
 
