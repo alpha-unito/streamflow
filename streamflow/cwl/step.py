@@ -658,6 +658,27 @@ class CWLTransferStep(TransferStep):
                         )
                         checksum = f"sha1${await loc_path.checksum()}"
                         if checksum != original_checksum:
+                            original_content = await StreamFlowPath(
+                                selected_location.path,
+                                context=self.workflow.context,
+                                location=selected_location.location,
+                            ).read_text()
+                            logger.info(
+                                f"Original content (len: {len(original_content)}): '{original_content}'"
+                            )
+                            if not await loc_path.exists():
+                                raise WorkflowExecutionException(
+                                    f"File {loc_path} does not exist"
+                                )
+                            copied_content = await loc_path.read_text()
+                            logger.info(
+                                f"Copied content (len: {len(copied_content)}): '{copied_content}'"
+                            )
+                            logger.info(f"original checksum: {original_checksum}")
+                            logger.info(f"copied checksum: {checksum}")
+                            logger.info(
+                                f"copied checksum2: sha1${await loc_path.checksum()}"
+                            )
                             raise WorkflowExecutionException(
                                 "Error transferring file {} in location {} to {} in location {}".format(
                                     selected_location.path,

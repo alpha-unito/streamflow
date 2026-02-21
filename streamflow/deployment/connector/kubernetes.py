@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import re
@@ -105,33 +106,132 @@ class KubernetesResponseWrapper(BaseStreamWrapper):
         self._buffer: bytearray = bytearray()
 
     async def read(self, size: int | None = None) -> bytes | None:
+        output = bytearray()
+
+        # 1. Drain the existing buffer (handles the off-by-one and size logic)
         if self._buffer:
-            n = size if size is not None else -1
-            data = bytes(self._buffer[:n])
-            del self._buffer[:n]
-            if size is not None:
-                size -= len(data)
-        else:
-            data = b""
-        while size > 0 and not self.stream.closed:
-            msg = await self.stream.receive()
+            if size is None:
+                output.extend(self._buffer)
+                self._buffer.clear()
+            else:
+                take = min(len(self._buffer), size)
+                output.extend(self._buffer[:take])
+                del self._buffer[:take]
+                size -= take
+
+        # 2. Network Loop
+        while (size is None or size > 0) and not self.stream.closed:
+            try:
+                msg = await self.stream.receive()
+            except Exception as e:
+                logger.info(f"k8s stream receive raises exception: {e}")
+                break
+
+            # Handle WebSocket closing signals
             if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
                 break
-            if msg.data[0] == ws_client.STDOUT_CHANNEL:
-                if size is None:
-                    data += msg.data[1:]
-                else:
-                    payload = msg.data[1:]
-                    if len(payload) <= size:
-                        data += payload
-                        size -= len(payload)
+
+            if msg.type == WSMsgType.BINARY and msg.data:
+                channel = msg.data[0]
+                payload = msg.data[1:]
+
+                # CHANNEL 1: STDOUT
+                if channel == ws_client.STDOUT_CHANNEL:
+                    if size is None:
+                        output.extend(payload)
+                        if self.flush:
+                            break
                     else:
-                        data += payload[:size]
-                        self._buffer.extend(payload[size:])
-                        break
-                if self.flush:
-                    break
-        return data if len(data) > 0 else None
+                        if len(payload) <= size:
+                            output.extend(payload)
+                            size -= len(payload)
+                        else:
+                            output.extend(payload[:size])
+                            self._buffer.extend(payload[size:])
+                            size = 0
+                            break
+
+                # CHANNEL 2: STDERR (Optional: you might want to log this)
+                elif channel == ws_client.STDERR_CHANNEL:
+                    # If you want to include stderr in the output, extend output here.
+                    # Otherwise, just log it so you know why the file is "incomplete".
+                    logger.info(
+                        f"K8s Stderr: {payload.decode('utf-8', errors='replace')}"
+                    )
+
+                # CHANNEL 3: STATUS (The "Process Finished" Signal)
+                elif channel == 3:  # Often defined as ws_client.ERROR_CHANNEL
+                    status_data = json.loads(payload.decode("utf-8"))
+                    logger.info(f"checking channel 3: {status_data}")
+                    # if status_data.get("status") == "Success":
+                    #     # Process finished cleanly
+                    #     return bytes(output) if output else None
+                    # else:
+                    #     # Process failed (e.g., exit code 1)
+                    #     error_msg = status_data.get("message", "Unknown error")
+                    #     raise RuntimeError(f"K8s Exec Failed: {error_msg}")
+
+            # If flush is requested and we have some data, return it immediately
+            if self.flush and output:
+                break
+
+        return bytes(output) if output else None
+
+    # async def read(self, size: int | None = None) -> bytes | None:
+    #     data = bytearray()
+    #
+    #     # 1. Always drain the internal buffer first
+    #     if self._buffer:
+    #         if size is None:
+    #             data.extend(self._buffer)
+    #             self._buffer.clear()
+    #         else:
+    #             take = min(len(self._buffer), size)
+    #             data.extend(self._buffer[:take])
+    #             del self._buffer[:take]
+    #             size -= take
+    #
+    #     # 2. Fetch from network
+    #     # IMPORTANT: We keep reading even if closed, until receive() returns None/EOF
+    #     while size is None or size > 0:
+    #         if self.stream.closed and not data:
+    #             # Only exit if we have nothing left to give
+    #             break
+    #
+    #         try:
+    #             msg = await self.stream.receive()
+    #         except Exception:
+    #             logger.info("Received exception while reading from Kubernetes")
+    #             break
+    #
+    #         if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING, WSMsgType.CLOSED):
+    #             # Mark the stream as finished but DON'T return yet.
+    #             # There might be one last payload in this cycle.
+    #             break
+    #
+    #         if msg.type == WSMsgType.BINARY and msg.data:
+    #             if msg.data[0] == ws_client.STDOUT_CHANNEL:
+    #                 payload = msg.data[1:]
+    #                 if size is None:
+    #                     data.extend(payload)
+    #                     # If flush is True, return after first valid packet
+    #                     if self.flush:
+    #                         break
+    #                 else:
+    #
+    #                     if len(payload) <= size:
+    #                         data.extend(payload)
+    #                         size -= len(payload)
+    #                     else:
+    #                         data.extend(payload[:size])
+    #                         self._buffer.extend(payload[size:])
+    #                         size = 0  # Break loop
+    #
+    #         # If we are in 'flush' mode, return as soon as we have ANY data
+    #         if self.flush and data:
+    #             break
+    #
+    #     return bytes(data) if data else None
 
     async def write(self, data: Any) -> None:
         channel_prefix = bytes(chr(ws_client.STDIN_CHANNEL), "ascii")
@@ -773,7 +873,7 @@ class KubernetesConnector(KubernetesBaseConnector):
                 name=k8s_object.metadata.name
             )
         if self.debug:
-            print(f"{kind} deleted. status='{str(resp.status)}'")
+            logger.info(f"{kind} deleted. status='{str(resp.status)}'")
         return resp
 
     async def _wait(self, k8s_object: Any) -> None:
