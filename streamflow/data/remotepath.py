@@ -113,9 +113,9 @@ async def _size(
                 [
                     "find -L ",
                     (
-                        " ".join([f'"{p}"' for p in path])
+                        shlex.join(path)
                         if isinstance(path, MutableSequence)
-                        else f'"{path}"'
+                        else shlex.quote(path)
                     ),
                     " -type f -exec ls -ln {} \\+ | ",
                     "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; ",
@@ -669,7 +669,7 @@ class RemoteStreamFlowPath(
             command = ["mkdir", "-m", f"{mode:o}"]
             if parents or exist_ok:
                 command.append("-p")
-            command.append(self.__str__())
+            command.append(shlex.quote(self.__str__()))
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
             )
@@ -726,7 +726,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.rmtree()
         else:
-            command = ["rm", "-rf ", self.__str__()]
+            command = ["rm", "-rf", shlex.quote(self.__str__())]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
             )
@@ -737,14 +737,19 @@ class RemoteStreamFlowPath(
             return await inner_path.size()
         else:
             command = [
-                "".join(
-                    [
-                        "find -L ",
-                        f'"{self.__str__()}"',
-                        " -type f -exec ls -ln {} \\+ | ",
-                        "awk 'BEGIN {sum=0} {sum+=$5} END {print sum}'; ",
-                    ]
-                )
+                "find",
+                "-L",
+                shlex.quote(self.__str__()),
+                "-type",
+                "f",
+                "-exec",
+                "ls",
+                "-ln",
+                "{}",
+                "\\+",
+                "|",
+                "awk",
+                "'BEGIN {sum=0} {sum+=$5} END {print sum}';",
             ]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
@@ -759,7 +764,12 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.symlink_to(target, target_is_directory=target_is_directory)
         else:
-            command = ["ln", "-snf", str(target), self.__str__()]
+            command = [
+                "ln",
+                "-snf",
+                shlex.quote(str(target)),
+                shlex.quote(self.__str__()),
+            ]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
             )
@@ -769,7 +779,12 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.hardlink_to(target)
         else:
-            command = ["ln", "-nf", str(target), self.__str__()]
+            command = [
+                "ln",
+                "-nf",
+                shlex.quote(str(target)),
+                shlex.quote(self.__str__()),
+            ]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
             )
@@ -863,7 +878,8 @@ class RemoteStreamFlowPath(
             if not isinstance(data, str):
                 raise TypeError("data must be str, not %s" % data.__class__.__name__)
             async with await self.connector.get_stream_writer(
-                command=["tee", str(self), ">", "/dev/null"], location=self.location
+                command=["tee", shlex.quote(str(self)), ">", "/dev/null"],
+                location=self.location,
             ) as writer:
                 reader = io.BytesIO(data.encode("utf-8"))
                 while content := reader.read(self.connector.transferBufferSize):
@@ -909,8 +925,8 @@ async def download(
         await connector.run(
             location=location,
             command=[
-                f'if [ command -v curl ]; then curl -L -o "{filepath}" "{url}"; '
-                f'else wget -O "{filepath}" "{url}"; fi'
+                f"if [ command -v curl ]; then curl -L -o {shlex.quote(filepath)} {shlex.quote(url)}; "
+                f'else wget -O {shlex.quote(filepath)} "{shlex.quote(url)}"; fi'
             ],
         )
     return StreamFlowPath(filepath, context=context, location=location)
