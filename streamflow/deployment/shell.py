@@ -42,7 +42,7 @@ def _build_shell_command(
 
 
 class BaseShell(Shell, ABC):
-    __slots__ = ("_closed", "_lock", "_reader", "_writer", "_decoder")
+    __slots__ = ("_closed", "_closing", "_lock", "_reader", "_writer", "_decoder")
 
     def __init__(
         self,
@@ -51,6 +51,7 @@ class BaseShell(Shell, ABC):
     ):
         super().__init__(command=command, buffer_size=buffer_size)
         self._closed: bool = False
+        self._closing: asyncio.Event | None = None
         self._lock: asyncio.Lock = asyncio.Lock()
         self._reader: StreamWrapper | None = None
         self._writer: StreamWrapper | None = None
@@ -111,15 +112,20 @@ class BaseShell(Shell, ABC):
                 return None
 
     async def close(self) -> None:
-        async with self._lock:
-            if self._closed:
-                return
+        if self._closed:
+            return
+        if self._closing is not None:
+            await self._closing.wait()
+        else:
+            self._closing = asyncio.Event()
             await self._close()
             self._closed = True
+            self._closing.set()
 
     async def closed(self) -> bool:
-        async with self._lock:
-            return self._closed
+        if self._closing is not None:
+            await self._closing.wait()
+        return self._closed
 
     async def execute(
         self,
@@ -148,6 +154,7 @@ class BaseShell(Shell, ABC):
                 else:
                     return await self._read_without_output(end_marker, timeout)
             except (BrokenPipeError, ConnectionResetError) as e:
+                await self.close()
                 raise WorkflowExecutionException(f"Shell pipe broken: {e}") from e
             except asyncio.TimeoutError as e:
                 raise WorkflowExecutionException(
