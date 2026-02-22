@@ -131,7 +131,8 @@ dmypy.json
 .DS_Store
 
 # StreamFlow
-.streamflow
+.benchmarks/
+.streamflow/
 
 #SQLite
 *.db-shm

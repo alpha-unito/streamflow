@@ -95,6 +95,7 @@ test = [
     "cwltool==3.2.20260720092025",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "pytest-benchmark==5.2.1",
     "pytest-cov==7.1.0",
     "pytest-xdist==3.8.0"
 ]
