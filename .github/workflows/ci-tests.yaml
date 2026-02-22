@@ -10,6 +10,57 @@ concurrency:
   group: build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  benchmarks:
+    name: "StreamFlow benchmarks"
+    strategy:
+      matrix:
+        on: ["ubuntu-24.04"]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - on: "macos-15-intel"
+            python: "3.14"
+    runs-on: ${{ matrix.on }}
+    env:
+      TOXENV: ${{ format('py{0}-benchmark', matrix.python) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.9.16"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: "Install Docker (MacOs X)"
+        uses: docker/setup-docker-action@v4
+        env:
+          LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
+        if: ${{ startsWith(matrix.on, 'macos-') }}
+      - uses: docker/setup-qemu-action@v3
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+      - name: "Install Apptainer"
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.4.2
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+      - name: "Install KinD"
+        uses: helm/kind-action@v1.14.0
+        with:
+          config: .github/kind/config.yaml
+          kubectl_version: v1.35.0
+          version: v0.31.0
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+      - name: "Configure Calico on KinD"
+        run: |
+          kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+          kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
+        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
+      - name: "Install Tox"
+        run: uv tool install tox --with tox-uv
+      - name: "Run StreamFlow benchmarks via Tox"
+        run: tox
   code-ql-check:
     name: "StreamFlow CodeQL check"
     runs-on: ubuntu-24.04
