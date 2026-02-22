@@ -1,0 +1,30 @@
+name: "Setup Environment"
+description: "Installs dependencies and configures the execution environment for Mac OS runners"
+inputs:
+  node:
+    description: "The NodeJS version to use"
+    required: true
+  python:
+    description: "The Python version to use"
+    required: true
+  uv:
+    description: "The uv version to use"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: astral-sh/setup-uv@v7
+      with:
+        version: ${{ inputs.uv }}
+    - uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python }}
+    - uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node }}
+    - name: "Install Docker"
+      uses: docker/setup-docker-action@v4
+      env:
+        LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
+    - name: "Install Docker Compose"
+      uses: docker/setup-compose-action@v1

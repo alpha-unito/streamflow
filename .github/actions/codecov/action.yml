@@ -1,0 +1,26 @@
+name: "Create Codecov artifacts"
+description: "Create Codecov artifacts for test results and coverage"
+inputs:
+  arch:
+    description: "The NodeJS version to use"
+    required: true
+  artifact:
+    description: "The name of the artifact to upload"
+runs:
+  using: "composite"
+  steps:
+    - name: "Upload test results"
+      if: ${{ !cancelled() }}
+      uses: codecov/codecov-action@v5
+      with:
+        flags: ${{ inputs.arch }}
+        report_type: test_results
+        token: ${{ secrets.CODECOV_TOKEN }}
+    - name: "Upload coverage report for conformance tests"
+      uses: actions/upload-artifact@v6
+      with:
+        name: ${{ inputs.artifact }}
+        path: |
+          ./coverage.xml
+        retention-days: 1
+        if-no-files-found: error

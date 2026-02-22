@@ -1,0 +1,40 @@
+name: "Setup Environment"
+description: "Installs dependencies and configures the execution environment for Ubuntu runners"
+inputs:
+  node:
+    description: "The NodeJS version to use"
+    required: true
+  python:
+    description: "The Python version to use"
+    required: true
+  uv:
+    description: "The uv version to use"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: astral-sh/setup-uv@v7
+      with:
+        version: ${{ inputs.uv }}
+    - uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python }}
+    - uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node }}
+    - uses: docker/setup-qemu-action@v3
+    - name: "Install Apptainer"
+      uses: eWaterCycle/setup-apptainer@v2
+      with:
+        apptainer-version: 1.4.2
+    - name: "Install KinD"
+      uses: helm/kind-action@v1.14.0
+      with:
+        config: .github/kind/config.yaml
+        kubectl_version: v1.35.0
+        version: v0.31.0
+    - name: "Configure Calico on KinD"
+      shell: bash
+      run: |
+        kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+        kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
