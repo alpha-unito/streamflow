@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import functools
 from abc import ABC, abstractmethod
-from collections.abc import MutableSequence
+from collections.abc import MutableMapping
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
@@ -112,22 +112,14 @@ class RecoveryPolicy(ABC):
 
 
 class RetryRequest:
-    __slots__ = (
-        "job_token",
-        "lock",
-        "output_ports",
-        "version",
-        "workflow",
-        "workflow_ready",
-    )
+    __slots__ = ("job_token", "lock", "output_tokens", "version", "workflow")
 
     def __init__(self) -> None:
         self.job_token: JobToken | None = None
         self.lock: asyncio.Lock = asyncio.Lock()
-        self.output_ports: MutableSequence[str] = []
+        self.output_tokens: MutableMapping[str, Token] = {}
         self.version: int = 1
         self.workflow: Workflow | None = None
-        self.workflow_ready: asyncio.Event = asyncio.Event()
 
 
 class TokenAvailability(IntEnum):

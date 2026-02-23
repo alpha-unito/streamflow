@@ -334,10 +334,6 @@ class DefaultRetagTransformer(DefaultTransformer):
                 self._only_default = True
                 token = None
             token = await self._get_next_token(token, inputs)
-        if not token.recoverable:
-            raise WorkflowDefinitionException(
-                "DEBUG: default token must be recoverable"
-            )
         return {self.get_output_name(): token}
 
 

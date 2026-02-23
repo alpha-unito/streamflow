@@ -126,5 +126,5 @@ formatter = logging.Formatter(
 )
 defaultStreamHandler.setFormatter(formatter)
 logger.addHandler(defaultStreamHandler)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 logger.propagate = False

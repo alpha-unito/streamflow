@@ -13,7 +13,6 @@ from streamflow.core.recovery import (
     TokenAvailability,
     recoverable,
 )
-from streamflow.core.utils import get_job_tag
 from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
@@ -76,29 +75,15 @@ class DefaultFailureManager(FailureManager):
                     Status.FIREABLE,
                 ):
                     return TokenAvailability.FutureAvailable
-                elif request.workflow and request.workflow_ready.is_set():
-                    output_tokens = []
-                    for port_name in request.output_ports:
-                        port = request.workflow.ports[port_name]
-                        if t := next(
-                            (
-                                t
-                                for t in port.token_list
-                                if t.tag == get_job_tag(job_name)
-                            ),
-                            None,
-                        ):
-                            output_tokens.append(t)
-                    if len(output_tokens) > 0 and all(
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(t.is_available(self.context))
-                                for t in output_tokens
-                            )
+                elif len(request.output_tokens) > 0 and all(
+                    await asyncio.gather(
+                        *(
+                            asyncio.create_task(t.is_available(self.context))
+                            for t in request.output_tokens.values()
                         )
-                    ):
-                        logger.info(f"Job token {job_name} is available")
-                        return TokenAvailability.Available
+                    )
+                ):
+                    return TokenAvailability.Available
         return TokenAvailability.Unavailable
 
     async def notify(
@@ -112,11 +97,15 @@ class DefaultFailureManager(FailureManager):
             if job_name in self._retry_requests.keys():
                 async with self._retry_requests[job_name].lock:
                     self._retry_requests[job_name].job_token = job_token
+                    self._retry_requests[job_name].output_tokens.setdefault(
+                        output_port, output_token
+                    )
 
     async def update_request(self, job_name: str) -> None:
         retry_request = self._retry_requests[job_name]
         async with retry_request.lock:
             retry_request.job_token = None
+            retry_request.output_tokens = {}
         if self.max_retries is None or retry_request.version < self.max_retries:
             retry_request.version += 1
             if logger.isEnabledFor(logging.DEBUG):

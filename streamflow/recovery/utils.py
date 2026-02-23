@@ -9,11 +9,12 @@ from typing import TypeVar
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import TokenAvailability
-from streamflow.core.utils import contains_persistent_id
+from streamflow.core.utils import contains_persistent_id, get_class_from_name
 from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
+from streamflow.workflow.step import ExecuteStep, TransferStep
 from streamflow.workflow.token import JobToken
 
 T = TypeVar("T")
@@ -251,61 +252,50 @@ class GraphMapper:
                 return token_id
         return None
 
+    async def get_output_tokens(self, job_token_id: int) -> Iterable[int]:
+        execute_step_out_token_ids = set()
+        for token_id in self.dag_tokens.successors(job_token_id):
+            port_row = await self.context.database.get_port_from_token(token_id)
+            for step_id_row in await self.context.database.get_input_steps(
+                port_row["id"]
+            ):
+                step_row = await self.context.database.get_step(step_id_row["step"])
+                if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
+                    execute_step_out_token_ids.add(token_id)
+        return execute_step_out_token_ids
+
     async def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
         port_names = set()
-        if job_port := next(
-            (
+        for port_name in self.dcg_port.successors(
+            next(
                 port
                 for port, token_ids in self.port_tokens.items()
                 if job_token.persistent_id in token_ids
-            ),
-            None,
+            )
         ):
-            for port_name in self.dcg_port.successors(job_port):
-                port_names.add(port_name)
-        else:
-            logger.info(f"Job {job_token.value.name} (id: {job_token.persistent_id}) has no job port in the graph mapper")
+            # Get newest port
+            port_id = max(self.port_name_ids[port_name])
+            step_rows = await self.context.database.get_input_steps(port_id)
+            for step_row in await asyncio.gather(
+                *(
+                    asyncio.create_task(self.context.database.get_step(row["step"]))
+                    for row in step_rows
+                )
+            ):
+                if issubclass(
+                    get_class_from_name(step_row["type"]), (ExecuteStep, TransferStep)
+                ):
+                    port_names.add(port_name)
         return list(port_names)
 
     async def get_port_and_step_ids(
         self, output_port_names: Iterable[str]
     ) -> MutableSet[int]:
-        # Ports are retrieved to identify the steps required for recovery.
-        # A step is retrieved if these ports serve as its outputs.
-        # Certain ports visited within the graph are excluded if their
-        # associated steps are unnecessary or handled in a different phase.
-        # - The output ports of a failed step are not retrieved here,
-        #   as the failed step itself is processed by another function.
-        # - Ports containing an input token are not retrieved explicitly;
-        #   since the required tokens are already present, the related step
-        #   does not need to be executed.
-        # - A port can be the output of multiple steps. In the case of loops,
-        #   some steps might be retrieved that are not strictly necessary.
-        #   Therefore, the method checks if the input ports of those retrieved
-        #   steps fall between the necessary ports in the graph.
-        # Note. An input token is defined as a source node within the
-        # DAG of the provenance token graph.
-        source_token_ids = self.dag_tokens.get_sources()
-        if not all(self.token_available[t] for t in source_token_ids):
-            ta = {t: self.token_available[t] for t in source_token_ids}
-            logger.info(
-                f"Source tokens must be all available: {ta} (exception for token FutureAvailable)"
-            )
-            # The root can have the output of a schedule step.
-            # The token is a root when a synchronization is made, and it is correct that the token is not available
-            # raise FailureHandlingException("Source tokens must be all available")
         port_ids = {
             min(self.port_name_ids[port_name])
-            for port_name, token_ids in self.port_tokens.items()
+            for port_name in self.port_tokens.keys()
             if port_name not in output_port_names
-            and any(t_id not in source_token_ids for t_id in token_ids)
         }
-        discarded_ports = {
-            port_name
-            for port_name, token_ids in self.port_tokens.items()
-            if not any(t_id not in source_token_ids for t_id in token_ids)
-        }
-        logger.info(f"Discarded ports from source tokens: {discarded_ports}")
         step_ids = {
             dependency_row["step"]
             for dependency_rows in await asyncio.gather(
@@ -329,25 +319,15 @@ class GraphMapper:
             ),
             strict=True,
         ):
-            for dep_row, port_row in zip(
-                dependency_rows,
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self.context.database.get_port(row_dependency["port"])
-                        )
-                        for row_dependency in dependency_rows
+            for port_row in await asyncio.gather(
+                *(
+                    asyncio.create_task(
+                        self.context.database.get_port(row_dependency["port"])
                     )
-                ),
-                strict=True,
+                    for row_dependency in dependency_rows
+                )
             ):
                 if port_row["name"] not in self.port_tokens.keys():
-                    if logger.isEnabledFor(logging.DEBUG):
-                        step_row = await self.context.database.get_step(step_id)
-                        logger.debug(
-                            f"The port {port_row['name']} is missing. "
-                            f"However, it is the input, called {dep_row['name']}, of the step {step_row['name']}"
-                        )
                     step_to_remove.add(step_id)
         for step_id in step_to_remove:
             if logger.isEnabledFor(logging.DEBUG):
@@ -476,18 +456,6 @@ class ProvenanceGraph:
             port_row = await self.context.database.get_port_from_token(
                 token.persistent_id
             )
-            step_names = [
-                s["name"]
-                for s in await asyncio.gather(
-                    *(
-                        asyncio.create_task(self.context.database.get_step(row["step"]))
-                        for row in await self.context.database.get_input_steps(
-                            port_row["id"]
-                        )
-                    )
-                )
-            ]
-            logger.debug(f"Token with id {token.persistent_id} arrives {step_names}")
             # The token is a `JobToken` and its job is running on another recovered workflow
             if (
                 isinstance(token, JobToken)
