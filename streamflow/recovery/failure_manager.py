@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
+from types import TracebackType
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
@@ -17,6 +19,31 @@ from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
 from streamflow.workflow.token import JobToken
+
+
+class RetryRequestContextManager:
+    def __init__(self, requests: MutableSequence[RetryRequest]) -> None:
+        self.requests: MutableSequence[RetryRequest] = requests
+        self._stack: contextlib.AsyncExitStack = contextlib.AsyncExitStack()
+
+    async def __aenter__(self) -> MutableSequence[RetryRequest]:
+        try:
+            await self._stack.__aenter__()
+            for lock in sorted({request.lock for request in self.requests}, key=id):
+                await self._stack.enter_async_context(lock)
+
+            return self.requests
+        except Exception:
+            await self._stack.__aexit__(None, None, None)
+            raise
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        await self._stack.__aexit__(exc_type, exc_val, exc_tb)
 
 
 class DefaultFailureManager(FailureManager):
@@ -47,7 +74,12 @@ class DefaultFailureManager(FailureManager):
         if job_name in self._retry_requests.keys():
             return self._retry_requests[job_name]
         else:
-            return self._retry_requests.setdefault(job_name, RetryRequest())
+            return self._retry_requests.setdefault(job_name, RetryRequest(job_name))
+
+    async def acquire_requests(
+        self, job_names: MutableSequence[str]
+    ) -> RetryRequestContextManager:
+        return RetryRequestContextManager([self.get_request(job) for job in job_names])
 
     @classmethod
     def get_schema(cls) -> str:

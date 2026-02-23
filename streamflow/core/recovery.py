@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import MutableMapping
 from enum import IntEnum
 from typing import TYPE_CHECKING
@@ -103,7 +103,7 @@ class FailureManager(SchemaEntity):
     async def update_request(self, job_name: str) -> None: ...
 
 
-class RecoveryPolicy:
+class RecoveryPolicy(ABC):
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
 
@@ -111,19 +111,53 @@ class RecoveryPolicy:
     async def recover(self, failed_job: Job, failed_step: Step) -> None: ...
 
 
+class AsyncRLock:
+    def __init__(self) -> None:
+        self._owner: asyncio.Task | None = None
+        self._count: int = 0
+        self._lock: asyncio.Lock = asyncio.Lock()
+
+    async def acquire(self) -> bool:
+        if self._owner == (current_task := asyncio.current_task()):
+            self._count += 1
+            return True
+        await self._lock.acquire()
+        self._owner = current_task
+        self._count = 1
+        return True
+
+    def release(self) -> None:
+        if self._owner != asyncio.current_task():
+            raise RuntimeError("Cannot release a lock you don't own")
+
+        self._count -= 1
+        if self._count == 0:
+            self._owner = None
+            self._lock.release()
+
+    async def __aenter__(self) -> AsyncRLock:
+        await self.acquire()
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        self.release()
+
+
 class RetryRequest:
     __slots__ = (
         "job_token",
         "lock",
+        "name",
         "output_tokens",
         "version",
         "workflow",
         "workflow_ready",
     )
 
-    def __init__(self) -> None:
+    def __init__(self, name: str) -> None:
         self.job_token: JobToken | None = None
-        self.lock: asyncio.Lock = asyncio.Lock()
+        self.lock: AsyncRLock = AsyncRLock()
+        self.name: str = name
         self.output_tokens: MutableMapping[str, Token] = {}
         self.version: int = 1
         self.workflow: Workflow | None = None
