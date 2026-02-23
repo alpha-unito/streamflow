@@ -92,6 +92,8 @@ def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
                 return Status.CANCELLED
             case Status.SKIPPED:
                 num_skipped += 1
+            case Status.RECOVERED:
+                return Status.RECOVERED
     if num_skipped == len(statuses):
         return Status.SKIPPED
     else:
@@ -133,6 +135,8 @@ class BaseStep(Step, ABC):
     def _get_status(self, status: Status) -> Status:
         if status == Status.FAILED:
             return status
+        elif status == Status.RECOVERED:
+            return Status.COMPLETED
         elif any(p.empty() for p in self.get_output_ports().values()):
             return Status.SKIPPED
         else:
@@ -290,6 +294,7 @@ class Combinator(ABC):
         token: Token | MutableMapping[str, Token],
         port_name: str,
         depth: int = 0,
+        propagate: bool = True,
     ) -> None:
         tag = (
             utils.get_tag([t["token"] for t in token.values()])
@@ -298,17 +303,18 @@ class Combinator(ABC):
         )
         if depth:
             tag = ".".join(tag.split(".")[:-depth])
-        for key in list(self._token_values.keys()):
-            if tag == key:
-                continue
-            elif _is_parent_tag(key, tag):
-                self._add_to_port(token, self._token_values[key], port_name)
-            elif _is_parent_tag(tag, key):
-                if tag not in self._token_values:
-                    self._token_values[tag] = {}
-                for p in self._token_values[key]:
-                    for t in self._token_values[key][p]:
-                        self._add_to_port(t, self._token_values[tag], p)
+        if propagate:
+            for key in list(self._token_values.keys()):
+                if tag == key:
+                    continue
+                elif _is_parent_tag(key, tag):
+                    self._add_to_port(token, self._token_values[key], port_name)
+                elif _is_parent_tag(tag, key):
+                    if tag not in self._token_values:
+                        self._token_values[tag] = {}
+                    for p in self._token_values[key]:
+                        for t in self._token_values[key][p]:
+                            self._add_to_port(t, self._token_values[tag], p)
         if tag not in self._token_values:
             self._token_values[tag] = {}
         self._add_to_port(token, self._token_values[tag], port_name)
@@ -1041,6 +1047,10 @@ class GatherStep(BaseStep):
                         )
                 else:
                     if task_name == "__size__":
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Step {self.name} received size token with {token.tag} tag"
+                            )
                         self.size_map[token.tag] = token
                         port = size_port
                         if len(self.token_map.setdefault(token.tag, [])) == token.value:
@@ -1206,30 +1216,29 @@ class LoopCombinatorStep(CombinatorStep):
                 token = min(
                     tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
                 )
-                parent_tags = {
-                    t.tag
-                    for t in await load_dependee_tokens(
-                        persistent_id=token.persistent_id,
-                        context=self.workflow.context,
-                        loading_context=loading_context,
-                    )
-                }
+                parents = await load_dependee_tokens(
+                    persistent_id=token.persistent_id,
+                    context=self.workflow.context,
+                    loading_context=loading_context,
+                )
+                parent_tags = {t.tag for t in parents}
                 if len(parent_tags) == 0:
                     raise FailureHandlingException(
                         f"Failed to load parents for token tag {token.tag} in step {self.name}."
                     )
-                parent_tag = next(iter(parent_tags))
-                if any(
-                    len(parent_tag.split(".")) != len(t.split(".")) for t in parent_tags
-                ):
+                elif len(parent_tags) > 1:
                     raise FailureHandlingException(
-                        f"LoopCombinatorStep {self.name} must have inputs with the same tag depth level. Got: {parent_tags}"
+                        f"LoopCombinatorStep {self.name} must have inputs with "
+                        f"the same tags. Got: {parent_tags}"
                     )
-                # If tags are different, it means that it is necessary to restart from the first iteration
+                parent_tag = next(iter(parent_tags))
+                # If tag depth levels are different, it means that it is necessary to restart from the first iteration
                 if len(parent_tag.split(".")) != len(token.tag.split(".")):
+                    tags.add(parent_tag)
                     tags.add(token.tag)
                 else:
-                    tags |= parent_tags
+                    tags.add(parent_tag)
+                    tags.add(".".join(parent_tag.split(".")[:-1]))
                 from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
         await self.combinator.restore(from_tags)
 
@@ -1256,11 +1265,11 @@ class LoopCombinatorStep(CombinatorStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
-                        status = _reduce_statuses([status, token.value])
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received termination token for port {task_name}"
+                                f"Step {self.name} received termination token with Status {token.value} for port {task_name}"
                             )
+                        status = _reduce_statuses([status, token.value])
                         if token.value != Status.COMPLETED:
                             self.iteration_termination_checklist.get(task_name).clear()
                         terminated.append(task_name)
@@ -1289,7 +1298,6 @@ class LoopCombinatorStep(CombinatorStep):
                             self.iteration_termination_checklist[task_name].add(
                                 token.tag
                             )
-
                         async for schema in self.combinator.combine(task_name, token):
                             ins = [
                                 in_id
