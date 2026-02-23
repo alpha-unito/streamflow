@@ -534,8 +534,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
             # Resolve glob
+            location_globpaths: MutableMapping[str, list[MutableMapping[str, Any]]] = {}
             for location in locations:
-                globpaths = dict(
+                expanded_globs = dict(
                     flatten_list(
                         await asyncio.gather(
                             *(
@@ -568,10 +569,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     )
                 )
                 # Get token class from paths
-                globpaths = [
+                location_globpaths[location.name] = [
                     {"path": p, "class": c}
                     for p, c in zip(
-                        globpaths.keys(),
+                        expanded_globs.keys(),
                         await asyncio.gather(
                             *(
                                 asyncio.create_task(
@@ -579,7 +580,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                                         p, job, self.workflow.context
                                     )
                                 )
-                                for p in globpaths.values()
+                                for p in expanded_globs.values()
                             )
                         ),
                         strict=True,
@@ -596,7 +597,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     secondary_files=self.secondary_files,
                     connector=connector,
                     locations=locations,
-                    token_value=globpaths,
+                    token_value=flatten_list(location_globpaths.values()),
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
                 )
@@ -616,7 +617,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     secondary_files=self.secondary_files,
                     connector=connector,
                     locations=locations,
-                    token_value=globpaths,
+                    token_value=flatten_list(location_globpaths.values()),
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
                 )
@@ -793,7 +794,11 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         token = await self._build_token(
             job, connector, context, token_value, recoverable
         )
-        if self.single or isinstance(token, ListToken):
+        if (
+            self.single
+            or isinstance(token, ListToken)
+            or (self.optional and token.value is None)
+        ):
             return token
         else:
             return ListToken(

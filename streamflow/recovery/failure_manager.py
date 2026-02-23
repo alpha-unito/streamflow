@@ -124,14 +124,15 @@ class DefaultFailureManager(FailureManager):
         output_token: Token,
         job_token: JobToken | None = None,
     ) -> None:
-        if job_token is not None:
-            job_name = job_token.value.name
-            if job_name in self._retry_requests.keys():
-                async with self._retry_requests[job_name].lock:
-                    self._retry_requests[job_name].job_token = job_token
-                    self._retry_requests[job_name].output_tokens.setdefault(
-                        output_port, output_token
-                    )
+        # if job_token is not None:
+        #     job_name = job_token.value.name
+        #     if job_name in self._retry_requests.keys():
+        #         async with self._retry_requests[job_name].lock:
+        #             self._retry_requests[job_name].job_token = job_token
+        #             self._retry_requests[job_name].output_tokens.setdefault(
+        #                 output_port, output_token
+        #             )
+        pass
 
     async def update_request(self, job_name: str) -> None:
         retry_request = self._retry_requests[job_name]

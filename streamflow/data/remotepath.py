@@ -625,18 +625,19 @@ class RemoteStreamFlowPath(
             if not pattern:
                 raise ValueError(f"Unacceptable pattern: {pattern!r}")
             command = [
+                "set",
+                "--",
+                f"{shlex.quote(str(self))}/{pattern}",
+                ";",
+                "test",
+                "-e",
+                '"$1"',
+                "&&",
                 "printf",
-                '"%s\\0"',
-                str(self / pattern),
-                "|",
-                "xargs",
-                "-0",
-                "-I{}",
-                "sh",
-                "-c",
-                '"if [ -e \\"{}\\" ]; then echo \\"{}\\"; fi"',
-                "|",
-                "sort",
+                "'%s\\n'",
+                '"$@"',
+                ";",
+                ":",
             ]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
@@ -726,7 +727,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.rmtree()
         else:
-            command = ["rm", "-rf ", self.__str__()]
+            command = ["rm", "-rf", self.__str__()]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
             )

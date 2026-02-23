@@ -113,6 +113,7 @@ class CartesianProductCombinator(Combinator):
 class DotProductCombinator(Combinator):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
+        self._propagate: bool = True
 
     async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
         # Check if some complete input sets are available
@@ -151,12 +152,12 @@ class DotProductCombinator(Combinator):
                 AsyncIterable,
                 c.combine(port_name, token),
             ):
-                self._add_to_list(schema, c.name)
+                self._add_to_list(schema, c.name, propagate=self._propagate)
                 async for product in self._product():
                     yield product
         # If port is associated directly with the current combinator, put the token in the list
         elif port_name in self.items:
-            self._add_to_list(token, port_name)
+            self._add_to_list(token, port_name, propagate=self._propagate)
             async for product in self._product():
                 yield product
         # Otherwise throw Exception
@@ -169,6 +170,7 @@ class DotProductCombinator(Combinator):
 class LoopCombinator(DotProductCombinator):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
+        self._propagate: bool = False
         self.iteration_map: MutableMapping[str, int] = {}
 
     async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
@@ -192,18 +194,14 @@ class LoopCombinator(DotProductCombinator):
         For each port, the input is a pair of tags where the first tag is the prefix,
         and the second tag contains the iteration from which the execution must be resumed.
         """
-        for tags_list in from_tags.values():
-            for tag in tags_list:
-                parts = tag.split(".")
-                if len(parts) >= 2:
-                    prefix = ".".join(parts[:-1])
-                    iteration_num = int(parts[-1])
-                    if prefix not in self.iteration_map:
-                        self.iteration_map[prefix] = iteration_num
-                    else:
-                        self.iteration_map[prefix] = max(
-                            self.iteration_map[prefix], iteration_num
-                        )
+        for prefix, iteration in from_tags.values():
+            iteration_num = int(iteration.split(".")[-1])
+            if prefix not in self.iteration_map:
+                self.iteration_map[prefix] = iteration_num
+            else:
+                self.iteration_map[prefix] = max(
+                    self.iteration_map[prefix], iteration_num
+                )
 
 
 class LoopTerminationCombinator(DotProductCombinator):

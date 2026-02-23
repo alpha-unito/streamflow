@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, overload
@@ -156,7 +157,13 @@ class StreamFlowExecutor(Executor):
                 )
             # Print output tokens
             return output_tokens
-        except Exception:
+        except BaseException:
+            if logger.isEnabledFor(logging.DEBUG):
+                for step in self.workflow.steps.values():
+                    if step.status in [Status.FAILED, Status.CANCELLED]:
+                        logger.debug(
+                            f"Step {step.name} exits with status {step.status.name}"
+                        )
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
                     self.workflow.persistent_id,

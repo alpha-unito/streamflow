@@ -6,7 +6,7 @@ from enum import Flag, auto
 from typing import NamedTuple
 
 from streamflow.core.deployment import Connector
-from streamflow.core.workflow import Job, Port, Token, Workflow
+from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
@@ -74,9 +74,9 @@ class InterWorkflowPort(Port):
                 boundary.port.put(token)
         if TerminationType.TERMINATE in boundary.termination_type:
             if boundary.port is self:
-                super().put(TerminationToken())
+                super().put(TerminationToken(Status.RECOVERED))
             else:
-                boundary.port.put(TerminationToken())
+                boundary.port.put(TerminationToken(Status.RECOVERED))
 
     def add_inter_port(
         self,
