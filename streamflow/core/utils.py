@@ -14,11 +14,12 @@ from typing import TYPE_CHECKING, Any
 
 from streamflow.core.exception import ProcessorTypeError, WorkflowExecutionException
 from streamflow.core.persistence import PersistableEntity
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import TypeVar
 
-    from streamflow.core.deployment import Connector, ExecutionLocation
+    from streamflow.core.deployment import Connector, ExecutionLocation, Shell
     from streamflow.core.workflow import Token
 
     T = TypeVar("T")
@@ -309,6 +310,32 @@ def make_future(obj: T) -> asyncio.Future[T]:
 
 def random_name() -> str:
     return str(uuid.uuid4())
+
+
+async def run_in_shell(
+    shell: Shell,
+    location: ExecutionLocation,
+    command: MutableSequence[str],
+    environment: MutableMapping[str, str] | None = None,
+    workdir: str | None = None,
+    capture_output: bool = False,
+    timeout: int | None = None,
+) -> tuple[str, int] | None:
+    try:
+        return await shell.execute(
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
+    except WorkflowExecutionException as e:
+        logger.warning(
+            f"Persistent shell failed for location {location.name} "
+            f"of deployment {location.deployment}: "
+            f"falling back to direct exec: {e}"
+        )
+        raise e
 
 
 async def run_in_subprocess(

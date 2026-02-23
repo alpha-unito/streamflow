@@ -40,24 +40,24 @@ jobs:
           - commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.2"
-          - commit: "2063e9095f421f2a2ce12abaf196b2ba06ca5aae"
+          - commit: "e61e6e2c37032ac6675b3ef8664f60c93bbc810a"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
           - docker: "singularity"
-            commit: "2063e9095f421f2a2ce12abaf196b2ba06ca5aae"
+            commit: "e61e6e2c37032ac6675b3ef8664f60c93bbc810a"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
             on: "ubuntu-24.04"
             python: "3.14"
             version: "v1.3"
           - docker: "kubernetes"
-            commit: "2063e9095f421f2a2ce12abaf196b2ba06ca5aae"
+            commit: "e61e6e2c37032ac6675b3ef8664f60c93bbc810a"
             exclude: "docker_entrypoint,modify_file_content"
             on: "ubuntu-24.04"
             python: "3.14"
             version: "v1.3"
           - on: "macos-15-intel"
             python: "3.14"
-            commit: "2063e9095f421f2a2ce12abaf196b2ba06ca5aae"
+            commit: "e61e6e2c37032ac6675b3ef8664f60c93bbc810a"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
     runs-on: ${{ matrix.on }}
@@ -73,9 +73,9 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOS X)"
-        uses: douglascamata/setup-docker-macos-action@v1
-        with:
-          colima-additional-options: '--mount /private/var/folders:w'
+        uses: docker/setup-docker-action@v4
+        env:
+          LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
@@ -85,11 +85,11 @@ jobs:
           apptainer-version: 1.4.2
         if: ${{ matrix.docker == 'singularity' }}
       - name: "Install KinD"
-        uses: helm/kind-action@v1.13.0
+        uses: helm/kind-action@v1.14.0
         with:
           config: .github/kind/config.yaml
-          kubectl_version: v1.34.1
-          version: v0.30.0
+          kubectl_version: v1.35.0
+          version: v0.31.0
         if: ${{ matrix.docker == 'kubernetes' }}
       - name: "Configure Calico on KinD"
         run: |
@@ -159,7 +159,7 @@ jobs:
         run: uv sync --locked --no-dev --group docs
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "be2933a30a986a448b8b7dfbab602e8301744520f96abde1f8ae35539061c411"
+          CHECKSUM: "e3715d10625d439a159b0a3bbf527403692cb93f0555b454eda7d5201c008d8a"
         run: |
           cd docs
           HASH="$(uv run --no-sync make checksum | tail -n1)"
@@ -246,9 +246,12 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOs X)"
-        uses: douglascamata/setup-docker-macos-action@v1
-        with:
-          colima-additional-options: '--mount /private/var/folders:w'
+        uses: docker/setup-docker-action@v4
+        env:
+          LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
+        if: ${{ startsWith(matrix.on, 'macos-') }}
+      - name: "Install Docker Compose (MacOS X)"
+        uses: docker/setup-compose-action@v1
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
@@ -258,11 +261,11 @@ jobs:
           apptainer-version: 1.4.2
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install KinD"
-        uses: helm/kind-action@v1.13.0
+        uses: helm/kind-action@v1.14.0
         with:
           config: .github/kind/config.yaml
-          kubectl_version: v1.34.1
-          version: v0.30.0
+          kubectl_version: v1.35.0
+          version: v0.31.0
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Configure Calico on KinD"
         run: |
