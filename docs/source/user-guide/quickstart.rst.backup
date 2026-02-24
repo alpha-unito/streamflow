@@ -1,0 +1,337 @@
+==========
+Quickstart
+==========
+
+.. meta::
+   :keywords: StreamFlow, quickstart, tutorial, getting started, first workflow
+   :description: Run your first StreamFlow workflow in 10 minutes - complete step-by-step tutorial
+
+Overview
+========
+
+This quickstart guide will walk you through creating and executing a simple StreamFlow workflow. You'll learn the basics by running a complete working example.
+
+Prerequisites
+=============
+
+This guide assumes you have:
+
+* **StreamFlow installed** (see previous section)
+* **Python 3.10 or later**
+* **Text editor** for creating files
+* **Terminal/command line** access
+
+Verify your installation:
+
+.. code-block:: bash
+
+   $ streamflow version
+
+   StreamFlow version 0.2.0
+
+What We'll Build
+================
+
+A simple workflow that:
+
+1. Takes a message as input
+2. Runs the ``echo`` command to print the message
+3. Saves the output to a file
+4. Runs locally (no external infrastructure needed)
+
+This minimal example demonstrates the complete StreamFlow workflow: CWL description + deployment configuration + execution.
+
+Step 1: Create Project Directory
+=================================
+
+Create a directory for your first StreamFlow project:
+
+.. code-block:: bash
+   :caption: Command: Create project directory
+
+   mkdir streamflow-quickstart
+   cd streamflow-quickstart
+
+Step 2: Create the CWL Workflow
+================================
+
+Create a file named ``hello-workflow.cwl`` with the following content:
+
+.. literalinclude:: ../../examples/quickstart/hello-workflow.cwl
+   :language: yaml
+   :caption: hello-workflow.cwl - CWL Workflow Definition
+   :linenos:
+
+**What this does:**
+
+* **Line 1-2:** Specifies CWL version (v1.2) and defines this as a CommandLineTool
+* **Line 3:** The command to execute is ``echo``
+* **Line 5-9:** Defines an input parameter called ``message`` of type string
+* **Line 10-12:** Defines output that captures stdout to a file
+* **Line 13:** Redirects stdout to ``output.txt``
+
+This is a minimal CWL workflow that echoes a message to a file.
+
+Step 3: Create the Workflow Inputs
+===================================
+
+Create a file named ``inputs.yml`` with the workflow inputs:
+
+.. literalinclude:: ../../examples/quickstart/inputs.yml
+   :language: yaml
+   :caption: inputs.yml - Workflow Inputs
+   :linenos:
+
+This file provides the input parameters for our CWL workflow.
+
+Step 4: Create the StreamFlow Configuration
+============================================
+
+Create a file named ``streamflow.yml`` with the following content:
+
+.. literalinclude:: ../../examples/quickstart/streamflow.yml
+   :language: yaml
+   :caption: streamflow.yml - StreamFlow Configuration
+   :linenos:
+
+**What this does:**
+
+* **Line 1:** Specifies StreamFlow configuration version
+* **Line 3-8:** Defines a workflow named ``hello-workflow``
+  
+  * Uses CWL type
+  * Points to our ``hello-workflow.cwl`` file
+  * Points to ``inputs.yml`` for input parameters
+
+No ``deployments`` or ``bindings`` section means StreamFlow will use the default local execution environment.
+
+Step 5: Run the Workflow
+=========================
+
+Execute the workflow with a single command:
+
+.. code-block:: bash
+
+   $ streamflow run streamflow.yml
+
+   2026-02-24 10:52:43.304 INFO     Processing workflow fde2a338-33f7-42c3-80be-8a59cccabf53
+   2026-02-24 10:52:43.304 INFO     Building workflow execution plan
+   2026-02-24 10:52:43.322 INFO     COMPLETED building of workflow execution plan
+   2026-02-24 10:52:43.322 INFO     EXECUTING workflow fde2a338-33f7-42c3-80be-8a59cccabf53
+   2026-02-24 10:52:43.382 INFO     EXECUTING step / (job /0) locally
+   2026-02-24 10:52:43.770 INFO     COMPLETED Step /
+   2026-02-24 10:52:43.773 INFO     COMPLETED workflow execution
+
+The workflow executes locally and creates an output file.
+
+Step 6: Check the Results
+==========================
+
+Verify the workflow output:
+
+.. code-block:: bash
+
+   $ cat output.txt
+
+   Hello from StreamFlow!
+
+.. code-block:: text
+   :caption: Expected Output
+
+   Hello from StreamFlow!
+
+Success! Your first workflow has executed and produced the expected output.
+
+Understanding What Happened
+============================
+
+Let's break down what StreamFlow did:
+
+1. **Parsed Configuration:** Read ``streamflow.yml`` and understood the workflow structure
+2. **Loaded CWL Workflow:** Parsed ``hello-workflow.cwl`` and created an execution plan
+3. **Prepared Environment:** Since no deployment was specified, used the local environment
+4. **Executed Command:** Ran ``echo "Hello from StreamFlow!"`` on your local system
+5. **Captured Output:** Saved stdout to ``output.txt`` as specified in the CWL
+6. **Completed:** Marked the workflow as successfully completed
+
+Project Structure
+=================
+
+Your project directory now contains:
+
+.. code-block:: text
+
+   streamflow-quickstart/
+   ├── hello-workflow.cwl       # CWL workflow definition
+   ├── inputs.yml               # Workflow inputs
+   ├── streamflow.yml           # StreamFlow configuration
+   ├── output.txt               # Workflow output
+   └── .streamflow/             # StreamFlow metadata (hidden)
+
+The ``.streamflow/`` directory contains execution metadata, logs, and provenance information.
+
+Next Steps: Add a Deployment
+=============================
+
+Let's enhance the workflow by adding a Docker deployment (optional - requires Docker installed):
+
+Create an updated ``streamflow.yml``:
+
+.. code-block:: yaml
+   :caption: streamflow.yml - With Docker Deployment
+   :linenos:
+   :emphasize-lines: 10-14,16-19
+
+   version: v1.0
+
+   workflows:
+     hello-workflow:
+       type: cwl
+       config:
+         file: hello-workflow.cwl
+         settings: inputs.yml
+
+   deployments:
+     docker-env:
+       type: docker
+       config:
+         image: alpine:latest
+
+   bindings:
+     - step: /
+       target:
+         deployment: docker-env
+
+Now run again:
+
+.. code-block:: bash
+
+   $ streamflow run streamflow.yml
+
+This time, the workflow executes inside an Alpine Docker container instead of locally.
+
+Inspecting Workflow Execution
+==============================
+
+StreamFlow provides commands to inspect workflow executions:
+
+**List all workflows:**
+
+.. code-block:: bash
+
+   $ streamflow list
+
+   Workflow Name      Status      Start Time           Duration
+   ───────────────────────────────────────────────────────────
+   hello-workflow     COMPLETED   2024-02-24 10:30:00  2.3s
+
+**Generate detailed report:**
+
+.. code-block:: bash
+
+   $ streamflow report hello-workflow
+
+This produces a detailed execution report with timing, resource usage, and provenance information.
+
+Common Operations
+=================
+
+**View logs:**
+
+.. code-block:: bash
+
+   # Logs are in .streamflow directory
+   ls -la .streamflow/
+
+**Clean up:**
+
+.. code-block:: bash
+
+   # Remove StreamFlow metadata
+   rm -rf .streamflow/
+   
+   # Remove outputs
+   rm output.txt
+
+**Debug mode:**
+
+.. code-block:: bash
+
+   # Run with detailed logging
+   streamflow run --debug streamflow.yml
+
+Troubleshooting
+===============
+
+**Workflow fails to run:**
+   * Verify StreamFlow is installed: ``streamflow version``
+   * Check CWL syntax is correct
+   * Ensure file paths in ``streamflow.yml`` are correct
+
+**Output file not created:**
+   * Check for error messages in the output
+   * Verify the CWL stdout specification
+   * Look in ``.streamflow/`` for execution logs
+
+**Docker deployment fails:**
+   * Ensure Docker is installed and running
+   * Verify you have permission to run Docker
+   * Check image name is correct
+
+See :doc:`troubleshooting` for more solutions.
+
+What You Learned
+================
+
+In this quickstart, you:
+
+✓ Created a simple CWL workflow  
+✓ Configured StreamFlow with ``streamflow.yml``  
+✓ Executed a workflow locally  
+✓ Verified workflow outputs  
+✓ (Optional) Ran the same workflow in Docker  
+✓ Inspected workflow execution history  
+
+Key Concepts
+============
+
+**CWL Workflow (hello-workflow.cwl):**
+   Describes *what* to execute - the computational task and its inputs/outputs
+
+**StreamFlow Configuration (streamflow.yml):**
+   Describes *how* to execute - which workflows to run and where to run them
+
+**Deployment:**
+   The execution environment (local, Docker, Kubernetes, HPC, etc.)
+
+**Binding:**
+   The association between workflow steps and deployments
+
+Related Documentation
+=====================
+
+**User Guide:**
+   - :doc:`writing-workflows` - Learn CWL in detail
+   - :doc:`configuring-deployments` - Configure execution environments
+   - :doc:`binding-workflows` - Advanced binding patterns
+   - :doc:`running-workflows` - All execution options
+
+**Reference:**
+   - :doc:`/reference/cli/streamflow-run` - Complete CLI reference
+   - :doc:`/reference/configuration/streamflow-yml` - Configuration schema
+
+**Examples:**
+   - Working examples in ``docs/examples/workflows/``
+   - Advanced patterns in ``docs/examples/advanced/``
+
+Next Steps
+==========
+
+Now that you've run your first workflow, explore:
+
+1. **Write More Complex Workflows:** :doc:`writing-workflows`
+2. **Use Real Deployments:** :doc:`configuring-deployments`
+3. **Bind Steps to Specific Environments:** :doc:`binding-workflows`
+4. **Explore Advanced Features:** :doc:`advanced-patterns/index`
+
+Start building real workflows with StreamFlow!
