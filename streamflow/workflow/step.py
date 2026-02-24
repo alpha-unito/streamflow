@@ -290,6 +290,7 @@ class Combinator(ABC):
         token: Token | MutableMapping[str, Token],
         port_name: str,
         depth: int = 0,
+        propagate: bool = True,
     ) -> None:
         tag = (
             utils.get_tag([t["token"] for t in token.values()])
@@ -298,20 +299,19 @@ class Combinator(ABC):
         )
         if depth:
             tag = ".".join(tag.split(".")[:-depth])
-        for key in list(self._token_values.keys()):
-            if tag == key:
-                continue
-            elif _is_parent_tag(key, tag):
-                self._add_to_port(token, self._token_values[key], port_name)
-            elif _is_parent_tag(tag, key):
-                if tag not in self._token_values:
-                    self._token_values[tag] = {}
-                for p in self._token_values[key]:
-                    for t in self._token_values[key][p]:
-                        self._add_to_port(t, self._token_values[tag], p)
-        if tag not in self._token_values:
-            self._token_values[tag] = {}
-        self._add_to_port(token, self._token_values[tag], port_name)
+        if propagate:
+            for key in list(self._token_values.keys()):
+                if tag == key:
+                    continue
+                elif _is_parent_tag(key, tag):
+                    self._add_to_port(token, self._token_values[key], port_name)
+                elif _is_parent_tag(tag, key):
+                    for p in self._token_values[key]:
+                        for t in self._token_values[key][p]:
+                            self._add_to_port(
+                                t, self._token_values.setdefault(tag, {}), p
+                            )
+        self._add_to_port(token, self._token_values.setdefault(tag, {}), port_name)
 
     def _add_to_port(
         self,
@@ -1218,18 +1218,17 @@ class LoopCombinatorStep(CombinatorStep):
                     raise FailureHandlingException(
                         f"Failed to load parents for token tag {token.tag} in step {self.name}."
                     )
-                parent_tag = next(iter(parent_tags))
-                if any(
-                    len(parent_tag.split(".")) != len(t.split(".")) for t in parent_tags
-                ):
+                elif len(parent_tags) > 1:
                     raise FailureHandlingException(
-                        f"LoopCombinatorStep {self.name} must have inputs with the same tag depth level. Got: {parent_tags}"
+                        f"Step {self.name} must have inputs with "
+                        f"the same tags. Got: {parent_tags}"
                     )
-                # If tags are different, it means that it is necessary to restart from the first iteration
+                parent_tag = next(iter(parent_tags))
+                # If tag depth levels are different, it means that it is necessary to restart from the first iteration
                 if len(parent_tag.split(".")) != len(token.tag.split(".")):
-                    tags.add(token.tag)
+                    tags |= {parent_tag, token.tag}
                 else:
-                    tags |= parent_tags
+                    tags |= {parent_tag, ".".join(parent_tag.split(".")[:-1])}
                 from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
         await self.combinator.restore(from_tags)
 
