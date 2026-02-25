@@ -75,7 +75,7 @@ dev = [
     {include-group = "typing"}
 ]
 bandit = [
-    "bandit==1.9.3"
+    "bandit==1.9.4"
 ]
 docs = [
     "sphinx==8.1.3",
