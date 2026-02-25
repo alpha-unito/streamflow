@@ -6,6 +6,8 @@ from enum import Flag, auto
 from typing import NamedTuple
 
 from streamflow.core.deployment import Connector
+
+# from streamflow.core.exception import FailureHandlingException
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
@@ -85,6 +87,8 @@ class InterWorkflowPort(Port):
         termination_type: TerminationType,
     ) -> None:
         boundary = BoundaryRule(port, termination_type)
+        if id(port) in (id(b.port) for b in self.boundaries.get(boundary_tag, ())):
+            pass
         self.boundaries.setdefault(boundary_tag, []).append(boundary)
 
         # Create a copy of `token_list` because the list can be modified within `_handle_self_boundary` method
@@ -99,8 +103,12 @@ class InterWorkflowPort(Port):
         ):
             super().put(token)
         else:
+            self_rule = False
             for boundary in self.boundaries[token.tag]:
+                self_rule = self_rule or boundary.port is self
                 self._handle_boundary(boundary, token)
+            if not self_rule:
+                super().put(token)
 
 
 class InterWorkflowJobPort(InterWorkflowPort, JobPort):

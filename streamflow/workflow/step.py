@@ -123,8 +123,9 @@ class BaseStep(Step, ABC):
         }
         if logger.isEnabledFor(logging.DEBUG):
             if check_termination(inputs.values()):
+                s = _reduce_statuses([t.value for t in inputs.values()])
                 logger.debug(
-                    f"Step {self.name} received termination token with Status {_reduce_statuses([t.value for t in inputs.values()]).name}"
+                    f"Step {self.name} received termination token with Status {s.name}"
                 )
             else:
                 logger.debug(
@@ -1008,6 +1009,18 @@ class GatherStep(BaseStep):
             self._get_input_port_name() if name is None else name
         )
 
+    # async def restore(
+    #     self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    # ) -> None:
+    #     port = self.get_input_port()
+    #     self.workflow.ports[port.name] = FilterTokenPort(
+    #         filter_function=lambda t: not isinstance(t, TerminationToken) or t.value != Status.RECOVERED,
+    #         name=port.name,
+    #         workflow=self.workflow,
+    #     )
+    #     for token in port.token_list:
+    #         self.workflow.ports[port.name].put(token)
+
     async def run(self) -> None:
         if len(self.input_ports) != 2:
             raise WorkflowDefinitionException(
@@ -1638,27 +1651,23 @@ class ScheduleStep(BaseStep):
     async def run(self) -> None:
         try:
             # Retrieve connector
-            connector_ports = cast(
-                MutableMapping[str, ConnectorPort],
-                {
-                    name: self.get_input_port(name)
-                    for name in self.input_ports
-                    if name.startswith("__connector__")
-                },
-            )
-            # If there are input ports
-            input_ports = {
-                k: v
-                for k, v in self.get_input_ports().items()
-                if k not in connector_ports
+            connector_ports = {
+                name: self.get_input_port(name)
+                for name in self.input_ports
+                if name.startswith("__connector__")
             }
+            # If there are input ports
             await asyncio.gather(
                 *(
                     asyncio.create_task(port.get(posixpath.join(self.name, name)))
                     for name, port in connector_ports.items()
                 )
             )
-            if input_ports:
+            if input_ports := {
+                k: v
+                for k, v in self.get_input_ports().items()
+                if k not in connector_ports.keys()
+            }:
                 inputs_map: dict[str, dict[str, Token]] = {}
                 while True:
                     # Retrieve input tokens

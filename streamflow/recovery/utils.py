@@ -14,7 +14,7 @@ from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.workflow.step import ExecuteStep, TransferStep
+from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.token import JobToken
 
 T = TypeVar("T")
@@ -264,7 +264,7 @@ class GraphMapper:
                     execute_step_out_token_ids.add(token_id)
         return execute_step_out_token_ids
 
-    async def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
+    def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
         port_names = set()
         if job_node := next(
             (
@@ -275,20 +275,7 @@ class GraphMapper:
             None,
         ):
             for port_name in self.dcg_port.successors(job_node):
-                # Get newest port
-                port_id = max(self.port_name_ids[port_name])
-                step_rows = await self.context.database.get_input_steps(port_id)
-                for step_row in await asyncio.gather(
-                    *(
-                        asyncio.create_task(self.context.database.get_step(row["step"]))
-                        for row in step_rows
-                    )
-                ):
-                    if issubclass(
-                        get_class_from_name(step_row["type"]),
-                        (ExecuteStep, TransferStep),
-                    ):
-                        port_names.add(port_name)
+                port_names.add(port_name)
         return list(port_names)
 
     async def get_port_and_step_ids(

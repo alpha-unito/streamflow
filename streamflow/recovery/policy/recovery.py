@@ -75,7 +75,7 @@ async def _inject_tokens(
 
     # Step output ports are in the mapper if a loop exists. Otherwise, they are
     # missing and must be added manually to set the boundary rule
-    for port_name in mapper.port_tokens.keys() | workflow_output_ports.keys():
+    for port_name in set(mapper.port_tokens.keys() | workflow_output_ports.keys()):
         token_list = (
             sorted(
                 [
@@ -102,13 +102,13 @@ async def _inject_tokens(
             if port.name in workflow_output_ports.keys():
                 # Propagate recovered tokens to original workflow ports
                 cast(InterWorkflowPort, workflow.ports[port.name]).add_inter_port(
-                    failed_step.get_output_port(workflow_output_ports[port.name]),
+                    port=failed_step.get_output_port(workflow_output_ports[port.name]),
                     boundary_tag=get_tag(failed_job.inputs.values()),
                     termination_type=TerminationType.PROPAGATE,
                 )
                 # Terminate execution in the recovery workflow
                 cast(InterWorkflowPort, workflow.ports[port.name]).add_inter_port(
-                    workflow.ports[port.name],
+                    port=workflow.ports[port.name],
                     boundary_tag=get_tag(failed_job.inputs.values()),
                     termination_type=TerminationType.TERMINATE,
                 )
@@ -130,7 +130,7 @@ async def _inject_tokens(
                 for s in port.get_output_steps()
             ):
                 port.add_inter_port(
-                    port,
+                    port=port,
                     boundary_tag=max(
                         [
                             mapper.token_instances[token_id].tag
@@ -207,31 +207,35 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     if logger.isEnabledFor(logging.DEBUG):
                         if not (is_wf_ready := retry_request.workflow_ready.is_set()):
                             logger.debug(
-                                f"Synchronizing rollbacks: Job {job_name} is waiting for the rollback workflow to be ready."
+                                f"Aligning rollbacks: Job {job_name} is waiting for the rollback workflow to be ready."
                             )
                         else:
                             logger.debug(
-                                f"Synchronizing rollbacks: Job {job_name} is currently executing."
+                                f"Aligning rollbacks: Job {job_name} is currently executing."
                             )
                     else:
                         is_wf_ready = True
                     await retry_request.workflow_ready.wait()
                     if logger.isEnabledFor(logging.DEBUG) and not is_wf_ready:
                         logger.debug(
-                            f"Synchronizing rollbacks: Job {job_name} has resumed after the rollback workflow is ready."
+                            f"Aligning rollbacks: Job {job_name} has resumed after the rollback workflow is ready."
                         )
-                    port_name = await mapper.get_schedule_port_name(job_token)
-                    cast(
-                        InterWorkflowJobPort, retry_request.workflow.ports[port_name]
-                    ).add_inter_port(
-                        workflow.create_port(cls=InterWorkflowJobPort, name=port_name),
-                        boundary_tag=get_job_tag(job_token.value.name),
-                        termination_type=(
-                            TerminationType.PROPAGATE | TerminationType.TERMINATE
-                        ),
-                    )
-                    # Synchronized schedule step
-                    mapper.move_token_to_root(job_token.persistent_id)
+                    for port_name in mapper.get_output_ports(job_token):
+                        if port_name in retry_request.workflow.ports.keys():
+                            cast(
+                                InterWorkflowJobPort,
+                                retry_request.workflow.ports[port_name],
+                            ).add_inter_port(
+                                workflow.create_port(
+                                    cls=InterWorkflowJobPort, name=port_name
+                                ),
+                                boundary_tag=get_job_tag(job_token.value.name),
+                                termination_type=TerminationType.PROPAGATE,
+                            )
+                        # port_name can be deleted from the previous iteration of move_token_to_root
+                        # Adding a topological sorting, can resolve the problem?
+                        for token_id in list(mapper.port_tokens.get(port_name, [])):
+                            mapper.move_token_to_root(token_id)
                 elif is_available == TokenAvailability.Available:
                     job_token = get_job_token(job_name, job_tokens)
                     if logger.isEnabledFor(logging.DEBUG):
@@ -240,7 +244,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         )
                     # Search execute token after job token, replace this token with job_req token.
                     # Then remove all the prev tokens
-                    for port_name in await mapper.get_output_ports(job_token):
+                    for port_name in mapper.get_output_ports(job_token):
                         if port_name in retry_request.output_tokens.keys():
                             new_token = retry_request.output_tokens[port_name]
                             mapper.replace_token(
@@ -290,6 +294,11 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             mapper=mapper,
             workflow=new_workflow,
         )
+        if failed_job.name not in job_names:
+            # raise FailureHandlingException(
+            #     "DEBUG. It is possible that the failed job is not the list. Raised exception just to check the status"
+            # )
+            logger.info("Failed step not in the recovery workflow")
         # Populate new workflow
         steps = await mapper.get_port_and_step_ids(failed_step.output_ports.values())
         await _populate_workflow(
