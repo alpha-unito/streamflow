@@ -278,9 +278,9 @@ class GraphMapper:
                 port_names.add(port_name)
         return list(port_names)
 
-    async def get_port_and_step_ids(
+    async def get_step_ids(
         self, output_port_names: Iterable[str]
-    ) -> MutableSet[int]:
+    ) -> MutableSequence[int]:
         port_ids = {
             min(self.port_name_ids[port_name])
             for port_name in self.port_tokens.keys()

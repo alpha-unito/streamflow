@@ -6,16 +6,19 @@ from enum import Flag, auto
 from typing import NamedTuple
 
 from streamflow.core.deployment import Connector
-
-# from streamflow.core.exception import FailureHandlingException
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
 
 
+class BoundaryAction(Flag):
+    PROPAGATE = auto()
+    TERMINATE = auto()
+
+
 class BoundaryRule(NamedTuple):
     port: Port
-    termination_type: TerminationType
+    action: BoundaryAction
 
 
 class ConnectorPort(Port):
@@ -58,23 +61,18 @@ class FilterTokenPort(Port):
             logger.debug(f"Port {self.name} skips {token.tag}")
 
 
-class TerminationType(Flag):
-    PROPAGATE = auto()
-    TERMINATE = auto()
-
-
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
         self.boundaries: MutableMapping[str, MutableSequence[BoundaryRule]] = {}
 
     def _handle_boundary(self, boundary: BoundaryRule, token: Token) -> None:
-        if TerminationType.PROPAGATE in boundary.termination_type:
+        if BoundaryAction.PROPAGATE in boundary.action:
             if boundary.port is self:
                 super().put(token)
             else:
                 boundary.port.put(token)
-        if TerminationType.TERMINATE in boundary.termination_type:
+        if BoundaryAction.TERMINATE in boundary.action:
             if boundary.port is self:
                 super().put(TerminationToken(Status.RECOVERED))
             else:
@@ -84,11 +82,9 @@ class InterWorkflowPort(Port):
         self,
         port: Port,
         boundary_tag: str,
-        termination_type: TerminationType,
+        boundary_action: BoundaryAction,
     ) -> None:
-        boundary = BoundaryRule(port, termination_type)
-        if id(port) in (id(b.port) for b in self.boundaries.get(boundary_tag, ())):
-            pass
+        boundary = BoundaryRule(port, boundary_action)
         self.boundaries.setdefault(boundary_tag, []).append(boundary)
 
         # Create a copy of `token_list` because the list can be modified within `_handle_self_boundary` method
@@ -97,10 +93,7 @@ class InterWorkflowPort(Port):
                 self._handle_boundary(boundary, token)
 
     def put(self, token: Token) -> None:
-        if (
-            isinstance(token, TerminationToken)
-            or token.tag not in self.boundaries.keys()
-        ):
+        if isinstance(token, TerminationToken):
             super().put(token)
         else:
             self_rule = False
