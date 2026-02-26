@@ -75,6 +75,7 @@ from streamflow.cwl.step import (
 )
 from streamflow.cwl.transformer import (
     AllNonNullTransformer,
+    BroadcastTransformer,
     CartesianProductSizeTransformer,
     CloneTransformer,
     CWLTokenTransformer,
@@ -1833,10 +1834,27 @@ class CWLTranslator:
                         value=self.cwl_inputs[port_name],
                     )
         # Search empty unbound input ports
+        empty_ports = []
         for input_port in workflow.ports.values():
             if input_port.empty() and not input_port.get_input_steps():
-                input_port.put(Token(value=None, recoverable=True))
-                input_port.put(TerminationToken())
+                empty_ports.append(input_port)
+        if empty_ports:
+            step = workflow.create_step(
+                cls=BroadcastTransformer,
+                name="/__empty_unbound_inputs-bcast__",
+            )
+            upstream_port = workflow.create_port()
+            step.add_input_port("__empty_unbound__", upstream_port)
+            for downstream_port in empty_ports:
+                step.add_output_port(downstream_port.name, downstream_port)
+            self._inject_input(
+                workflow=workflow,
+                global_name="/__empty_unbound_inputs__",
+                port_name="__empty_unbound_inputs__",
+                port=upstream_port,
+                output_directory=output_directory,
+                value=None,
+            )
 
     def _recursive_translate(
         self,

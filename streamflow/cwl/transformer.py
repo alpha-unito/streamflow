@@ -19,7 +19,11 @@ from streamflow.cwl import utils
 from streamflow.cwl.step import build_token
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.token import ListToken, TerminationToken
-from streamflow.workflow.transformer import ManyToOneTransformer, OneToOneTransformer
+from streamflow.workflow.transformer import (
+    ManyToOneTransformer,
+    OneToManyTransformer,
+    OneToOneTransformer,
+)
 from streamflow.workflow.utils import get_token_value
 
 
@@ -36,6 +40,14 @@ class AllNonNullTransformer(OneToOneTransformer):
         self, inputs: MutableMapping[str, Token]
     ) -> MutableMapping[str, Token | MutableSequence[Token]]:
         return {self.get_output_name(): self._transform(*next(iter(inputs.items())))}
+
+
+class BroadcastTransformer(OneToManyTransformer):
+    async def transform(
+        self, inputs: MutableMapping[str, Token]
+    ) -> MutableMapping[str, Token | MutableSequence[Token]]:
+        token = list(inputs.values()).pop()
+        return {name: token.update(token.value) for name in self.output_ports.keys()}
 
 
 class CartesianProductSizeTransformer(ManyToOneTransformer):
