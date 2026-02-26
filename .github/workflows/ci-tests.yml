@@ -103,21 +103,11 @@ jobs:
           EXCLUDE: ${{ matrix.exclude }}
           DOCKER: ${{ matrix.docker }}
         run: ./cwl-conformance-test.sh
-      - name: "Upload test results"
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+      - name: "Create Codecov artifacts"
+        uses: ./.github/actions/codecov
         with:
-          flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
-          report_type: test_results
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: "Upload coverage report for conformance tests"
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ format('{0}-py{1}-cwl{2}-{3}-conformance-tests', matrix.on, matrix.python, matrix.version, matrix.docker) }}
-          path: |
-            ./coverage.xml
-          retention-days: 1
-          if-no-files-found: error
+          arch: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
+          artifact: ${{ format('{0}-py{1}-cwl{2}-{3}-conformance-tests', matrix.on, matrix.python, matrix.version, matrix.docker) }}
   docker-image:
     name: "StreamFlow Docker image tests"
     runs-on: ubuntu-24.04
@@ -236,61 +226,29 @@ jobs:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
+      - name: "Setup environment (MacOS X)"
+        uses: ./.github/actions/setup/macos
         with:
-          version: "0.9.16"
-      - uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python }}
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-      - name: "Install Docker (MacOs X)"
-        uses: docker/setup-docker-action@v4
-        env:
-          LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
+          node: 24
+          python: ${{ matrix.python }}
+          uv: 0.9.16
         if: ${{ startsWith(matrix.on, 'macos-') }}
-      - name: "Install Docker Compose (MacOS X)"
-        uses: docker/setup-compose-action@v1
-        if: ${{ startsWith(matrix.on, 'macos-') }}
-      - uses: docker/setup-qemu-action@v3
-        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
-      - name: "Install Apptainer"
-        uses: eWaterCycle/setup-apptainer@v2
+      - name: "Setup environment (Ubuntu)"
+        uses: ./.github/actions/setup/ubuntu
         with:
-          apptainer-version: 1.4.2
-        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
-      - name: "Install KinD"
-        uses: helm/kind-action@v1.14.0
-        with:
-          config: .github/kind/config.yaml
-          kubectl_version: v1.35.0
-          version: v0.31.0
-        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
-      - name: "Configure Calico on KinD"
-        run: |
-          kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
-          kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
+          node: 24
+          python: ${{ matrix.python }}
+          uv: 0.9.16
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Tox"
         run: uv tool install tox --with tox-uv
       - name: "Run StreamFlow tests via Tox"
         run: tox
-      - name: "Upload test results"
-        if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+      - name: "Create Codecov artifacts"
+        uses: ./.github/actions/codecov
         with:
-          flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
-          report_type: test_results
-          token: ${{ secrets.CODECOV_TOKEN }}
-      - name: "Upload coverage report for unit tests"
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ format('{0}-py{1}-unit-tests', matrix.on, matrix.python) }}
-          path: |
-            ./coverage.xml
-          retention-days: 1
-          if-no-files-found: error
+          arch: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
+          artifact: ${{ format('{0}-py{1}-unit-tests', matrix.on, matrix.python) }}
   upload-to-codecov:
     name: "Codecov report upload"
     needs: ["cwl-conformance", "unit-tests"]
