@@ -72,8 +72,12 @@ async def _inject_tokens(
     failed_step: Step,
     mapper: GraphMapper,
     workflow: Workflow,
+        align_ports
 ) -> None:
     workflow_output_ports = {v: k for k, v in failed_step.output_ports.items()}
+
+    if align_ports:
+        pass
 
     # Step output ports are in the mapper if a loop exists. Otherwise, they are
     # missing and must be added manually to set the boundary rule
@@ -144,24 +148,27 @@ async def _inject_tokens(
             #   all the input tokens, not just the token with the largest tags.
             #   Otherwise, if the largest tag is already available as
             #   an input token, the inter port triggers immediate termination.
-            # elif not isinstance(port, InterWorkflowJobPort) and not any(
-            #     isinstance(s, GatherStep) and s.input_ports["__size__"] != port.name
-            #     for s in port.get_output_steps()
-            # ):
             elif not isinstance(port, InterWorkflowJobPort):
-                port.add_inter_port(
-                    port=port,
-                    boundary_tag=max(
-                        [
-                            mapper.token_instances[token_id].tag
-                            for token_id in mapper.port_tokens[port_name]
-                        ],
-                        key=cmp_to_key(compare_tags),
-                    ),
-                    boundary_action=(
-                        BoundaryAction.PROPAGATE | BoundaryAction.TERMINATE
-                    ),
-                )
+
+                if any(
+                    isinstance(s, GatherStep) and s.input_ports["__size__"] != port.name
+                    for s in port.get_output_steps()
+                ):
+
+                else:
+                    port.add_inter_port(
+                        port=port,
+                        boundary_tag=max(
+                            [
+                                mapper.token_instances[token_id].tag
+                                for token_id in mapper.port_tokens[port_name]
+                            ],
+                            key=cmp_to_key(compare_tags),
+                        ),
+                        boundary_action=(
+                            BoundaryAction.PROPAGATE | BoundaryAction.TERMINATE
+                        ),
+                    )
         # Inject tokens
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
@@ -208,8 +215,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         job_tokens: MutableSequence[Token],
         mapper: GraphMapper,
         workflow: Workflow,
-    ) -> MutableSequence[str]:
+    ) -> tuple[ MutableSequence[str], MutableSequence[str]]:
         new_job_names = []
+        align_ports= []
         async with await self.context.failure_manager.acquire_requests(
             job_names
         ) as requests:
@@ -248,17 +256,18 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         logger.debug(
                             f"Aligning rollbacks: Job {job_name} has resumed after the rollback workflow is ready."
                         )
-                    sync_ports = []
+                    inter_wf_ports = []
                     for port_name in mapper.get_output_ports(job_token):
                         if port_name in retry_request.workflow.ports.keys():
-                            sync_ports.append(port_name)
+                            inter_wf_ports.append(port_name)
                             # port_name can be deleted from the previous iteration of move_token_to_root
                             # Adding a topological sorting, can resolve the problem?
                             for token_id in list(mapper.port_tokens.get(port_name, [])):
                                 mapper.move_token_to_root(token_id)
                     for port_name in (
-                        p for p in sync_ports if p in mapper.port_tokens.keys()
+                        p for p in inter_wf_ports if p in mapper.port_tokens.keys()
                     ):
+                        align_ports.append(port_name)
                         cast(
                             InterWorkflowJobPort,
                             retry_request.workflow.ports[port_name],
@@ -268,7 +277,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                             ),
                             boundary_tag=get_job_tag(job_token.value.name),
                             boundary_action=(
-                                BoundaryAction.PROPAGATE  | BoundaryAction.TERMINATE
+                                BoundaryAction.PROPAGATE # | BoundaryAction.TERMINATE
                             ),
                         )
                 elif is_available == TokenAvailability.Available:
@@ -293,7 +302,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     retry_request.workflow = workflow
                     retry_request.workflow_ready.clear()
                     new_job_names.append(job_name)
-        return new_job_names
+        return new_job_names, align_ports
 
     async def _recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
         workflow = failed_step.workflow
@@ -323,7 +332,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         job_tokens = list(
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
-        job_names = await self._align_workflow_ports(
+        job_names, align_ports = await self._align_workflow_ports(
             job_names={*(t.value.name for t in job_tokens), failed_job.name},
             job_tokens=job_tokens,
             mapper=mapper,
@@ -349,6 +358,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             failed_step=failed_step,
             mapper=mapper,
             workflow=new_workflow,
+            align_ports=align_ports
         )
         # Resume steps
         for step in new_workflow.steps.values():

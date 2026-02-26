@@ -1053,23 +1053,11 @@ class GatherStep(BaseStep):
                 task_name = task.get_name()
                 token = task.result()
                 if check_termination(token):
-                    if status == Status.RECOVERED:
-                        if task_name != "__size__":
-                            port = input_port
-                        else:
-                            raise FailureHandlingException("Termination token with status RECOVERED received in port __size__")
-                        unfinished.add(
-                            asyncio.create_task(
-                                port.get(posixpath.join(self.name, task_name)),
-                                name=task_name,
-                            )
+                    if logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            f"Step {self.name} received termination token with Status {token.value.name} on port {task_name}"
                         )
-                    else:
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Step {self.name} received termination token with Status {token.value.name} on port {task_name}"
-                            )
-                        status = _reduce_statuses([status, token.value])
+                    status = _reduce_statuses([status, token.value])
                 else:
                     if task_name == "__size__":
                         if logger.isEnabledFor(logging.DEBUG):

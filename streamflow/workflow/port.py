@@ -81,7 +81,7 @@ class InterWorkflowPort(Port):
     def add_inter_port(
         self,
         port: Port,
-        boundary_tag: str,
+        boundary_condition: Callable,
         boundary_action: BoundaryAction,
     ) -> None:
         boundary = BoundaryRule(port, boundary_action)
