@@ -1,0 +1,8 @@
+version: v1.0
+
+workflows:
+  hello-workflow:
+    type: cwl
+    config:
+      file: hello-workflow.cwl
+      settings: inputs.yml
