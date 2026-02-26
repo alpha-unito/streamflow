@@ -1838,15 +1838,24 @@ class CWLTranslator:
         for input_port in workflow.ports.values():
             if input_port.empty() and not input_port.get_input_steps():
                 empty_ports.append(input_port)
-        if empty_ports:
+        if len(empty_ports) == 1:
+            self._inject_input(
+                workflow=workflow,
+                global_name="/__empty_unbound_inputs__",
+                port_name="__empty_unbound_inputs__",
+                port=empty_ports[0],
+                output_directory=output_directory,
+                value=None,
+            )
+        elif len(empty_ports) > 1:
             step = workflow.create_step(
                 cls=BroadcastTransformer,
-                name="/__empty_unbound_inputs-bcast__",
+                name="/__empty_unbound_inputs__-bcast",
             )
             upstream_port = workflow.create_port()
-            step.add_input_port("__empty_unbound__", upstream_port)
-            for downstream_port in empty_ports:
-                step.add_output_port(downstream_port.name, downstream_port)
+            step.add_input_port("__upstream__", upstream_port)
+            for i, downstream_port in enumerate(empty_ports):
+                step.add_output_port(f"__downstream_{i}__", downstream_port)
             self._inject_input(
                 workflow=workflow,
                 global_name="/__empty_unbound_inputs__",
