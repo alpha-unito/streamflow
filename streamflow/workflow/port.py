@@ -93,7 +93,9 @@ class InterWorkflowPort(Port):
                 self._handle_boundary(boundary, token)
 
     def put(self, token: Token) -> None:
-        if isinstance(token, TerminationToken):
+        if token.tag not in self.boundaries.keys() or isinstance(
+            token, TerminationToken
+        ):
             super().put(token)
         else:
             self_rule = False

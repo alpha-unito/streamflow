@@ -1053,11 +1053,23 @@ class GatherStep(BaseStep):
                 task_name = task.get_name()
                 token = task.result()
                 if check_termination(token):
-                    if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            f"Step {self.name} received termination token with Status {token.value.name} on port {task_name}"
+                    if status == Status.RECOVERED:
+                        if task_name != "__size__":
+                            port = input_port
+                        else:
+                            raise FailureHandlingException("Termination token with status RECOVERED received in port __size__")
+                        unfinished.add(
+                            asyncio.create_task(
+                                port.get(posixpath.join(self.name, task_name)),
+                                name=task_name,
+                            )
                         )
-                    status = _reduce_statuses([status, token.value])
+                    else:
+                        if logger.isEnabledFor(logging.DEBUG):
+                            logger.debug(
+                                f"Step {self.name} received termination token with Status {token.value.name} on port {task_name}"
+                            )
+                        status = _reduce_statuses([status, token.value])
                 else:
                     if task_name == "__size__":
                         if logger.isEnabledFor(logging.DEBUG):
@@ -1286,7 +1298,7 @@ class LoopCombinatorStep(CombinatorStep):
                     if check_termination(token):
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received termination token with Status {token.value} for port {task_name}"
+                                f"Step {self.name} received termination token with Status {token.value.name} for port {task_name}"
                             )
                         status = _reduce_statuses([status, token.value])
                         if token.value != Status.COMPLETED:
@@ -1394,7 +1406,9 @@ class LoopOutputStep(BaseStep, ABC):
             if check_termination(token):
                 status = _reduce_statuses([status, token.value])
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received termination token")
+                    logger.debug(
+                        f"Step {self.name} received termination token with Status {status.name}"
+                    )
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
                     break
