@@ -151,9 +151,7 @@ class _RemotePathMapper:
     def put(
         self, path: str, data_location: DataLocation, recursive: bool = False
     ) -> DataLocation:
-        path_processor = get_path_processor(
-            self.context.deployment_manager.get_connector(data_location.deployment)
-        )
+        path_processor = get_path_processor(data_location.location)
         node = self._filesystem
         nodes = {}
         # Create or navigate hierarchy

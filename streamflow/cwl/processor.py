@@ -235,14 +235,14 @@ class CWLTokenProcessor(TokenProcessor):
                     logger.debug(
                         f"Processing {filepath} on location {data_location.location}."
                     )
-                connector = self.workflow.context.deployment_manager.get_connector(
-                    data_location.deployment
-                )
-                path_processor = get_path_processor(connector)
+                path_processor = get_path_processor(data_location.location)
                 base_path = path_processor.normpath(
                     data_location.path[: -len(data_location.relpath)]
                 )
                 cwl_workflow = cast(CWLWorkflow, self.workflow)
+                connector = self.workflow.context.deployment_manager.get_connector(
+                    data_location.deployment
+                )
                 # Process file contents
                 token_value = await utils.update_file_token(
                     context=self.workflow.context,
@@ -542,7 +542,6 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                             *(
                                 asyncio.create_task(
                                     utils.expand_glob(
-                                        connector=connector,
                                         workflow=self.workflow,
                                         location=location,
                                         input_directory=(

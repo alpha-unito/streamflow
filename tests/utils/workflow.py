@@ -116,7 +116,7 @@ async def _register_path(
                     )
                 elif data_locations := await search_in_parent_locations(
                     context=context,
-                    connector=connector,
+                    path_processor=get_path_processor(location),
                     path=str(real_path),
                     relpath=real_path.name,
                 ):
@@ -809,8 +809,8 @@ class InjectorFailureTransferStep(TransferStep):
 
     async def _transfer_path(self, job: Job, path: str) -> str:
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
-        dst_path_processor = get_path_processor(dst_connector)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
+        dst_path_processor = get_path_processor(dst_locations[0])
         if source_location := await self.workflow.context.data_manager.get_source_location(
             path=path, dst_deployment=dst_connector.deployment_name
         ):

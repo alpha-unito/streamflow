@@ -37,7 +37,6 @@ from streamflow.workflow.utils import get_token_value
 
 
 async def _check_glob_path(
-    connector: Connector,
     workflow: Workflow,
     location: ExecutionLocation | None,
     input_directory: str,
@@ -64,7 +63,7 @@ async def _check_glob_path(
         )
         if not await search_in_parent_locations(
             context=workflow.context,
-            connector=connector,
+            path_processor=get_path_processor(location),
             path=str(real_path),
             relpath=str(relative_path),
             base_path=str(base_path),
@@ -218,7 +217,7 @@ async def _process_secondary_file(
         # If value is a string
         case str():
             # If value doesn't come from an expression, apply it to the primary path
-            path_processor = get_path_processor(connector)
+            path_processor = get_path_processor(locations[0])
             filepath = (
                 secondary_file
                 if from_expression
@@ -304,7 +303,7 @@ async def _register_path(
                     )
                 elif data_locations := await search_in_parent_locations(
                     context=context,
-                    connector=connector,
+                    path_processor=get_path_processor(location),
                     path=str(real_path),
                     relpath=real_path.name,
                 ):
@@ -387,7 +386,7 @@ async def _process_file_token(
     is_literal = is_literal_file(get_token_class(token_value), token_value, job.name)
     connector = streamflow_context.scheduler.get_connector(job.name)
     locations = streamflow_context.scheduler.get_locations(job.name)
-    path_processor = get_path_processor(connector)
+    path_processor = get_path_processor(locations[0])
     new_token_value = token_value
     if filepath := get_path_from_token(token_value):
         if not path_processor.isabs(filepath):
@@ -558,7 +557,7 @@ async def build_token_value(
     elif isinstance(token_value, MutableMapping) and (
         token_class := get_token_class(token_value)
     ) in ["File", "Directory"]:
-        path_processor = get_path_processor(connector)
+        path_processor = get_path_processor(locations[0])
         # Process secondary files in token value
         sf_map = {}
         if "secondaryFiles" in token_value:
@@ -736,7 +735,6 @@ def eval_expression(
 
 
 async def expand_glob(
-    connector: Connector,
     workflow: Workflow,
     location: ExecutionLocation | None,
     input_directory: str,
@@ -755,7 +753,6 @@ async def expand_glob(
         *(
             asyncio.create_task(
                 _check_glob_path(
-                    connector=connector,
                     workflow=workflow,
                     location=location,
                     input_directory=input_directory,
@@ -802,7 +799,7 @@ async def get_file_token(
     load_contents: bool = False,
     load_listing: LoadListing | None = None,
 ) -> MutableMapping[str, Any]:
-    path_processor = get_path_processor(connector)
+    path_processor = get_path_processor(locations[0])
     basename = basename or path_processor.basename(filepath)
     file_location = "".join(["file://", urllib.parse.quote(filepath)])
     token = {
@@ -1129,7 +1126,7 @@ async def register_data(
         )
     # Otherwise, if token value is a dictionary and it refers to a File or a Directory, register the path
     elif get_token_class(token_value) in ["File", "Directory"]:
-        path_processor = get_path_processor(connector)
+        path_processor = get_path_processor(locations[0])
         # Extract paths from token
         paths = []
         if (main_path := get_path_from_token(token_value)) is not None:
@@ -1284,12 +1281,11 @@ def resolve_dependencies(
 
 async def search_in_parent_locations(
     context: StreamFlowContext,
-    connector: Connector,
+    path_processor: ModuleType,
     path: str,
     relpath: str,
     base_path: str | None = None,
 ) -> MutableSequence[DataLocation]:
-    path_processor = get_path_processor(connector)
     current_path = path
     while current_path != (base_path or path_processor.sep):
         # Retrieve all data locations

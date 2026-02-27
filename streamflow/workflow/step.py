@@ -1556,7 +1556,7 @@ class ScheduleStep(BaseStep):
         job: Job,
     ) -> None:
         allocation = self.workflow.context.scheduler.get_allocation(job.name)
-        path_processor = get_path_processor(connector)
+        path_processor = get_path_processor(allocation.locations[0])
         job.input_directory = _get_directory(
             path_processor, job.input_directory, allocation.target
         )
