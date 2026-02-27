@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import MutableMapping, MutableSequence, MutableSet
 from importlib.resources import files
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from streamflow.core.data import DataLocation, DataManager, DataType
@@ -54,13 +54,14 @@ async def _copy(
 
 
 class _RemotePathNode:
-    __slots__ = ("children", "locations")
+    __slots__ = ("children", "locations", "valid_paths")
 
     def __init__(self) -> None:
         self.children: MutableMapping[str, _RemotePathNode] = {}
         self.locations: MutableMapping[
             str, MutableMapping[str, MutableSequence[DataLocation]]
         ] = {}
+        self.valid_paths: MutableMapping[str, MutableMapping[str, MutableSet[str]]] = {}
 
     def __repr__(self) -> str:
         return " - ".join(
@@ -100,6 +101,7 @@ class _RemotePathMapper:
     def _remove_node(self, location: DataLocation, node: _RemotePathNode) -> None:
         if location.deployment in node.locations:
             del node.locations[location.deployment][location.name]
+            del node.valid_paths[location.deployment][location.name]
         for n in node.children.values():
             self._remove_node(location, n)
 
@@ -111,66 +113,66 @@ class _RemotePathMapper:
         name: str | None = None,
     ) -> MutableSequence[DataLocation]:
         node = self._filesystem
-        for token in PurePosixPath(Path(path).as_posix()).parts:
+        for token in Path(path).parts:
             if token in node.children:
                 node = node.children[token]
             else:
                 return []
         result = []
         for dep in [deployment] if deployment is not None else node.locations:
-            for n in [name] if name is not None else node.locations.setdefault(dep, {}):
-                locations = node.locations.setdefault(dep, {}).setdefault(n, [])
+            for n in [name] if name is not None else node.locations.get(dep, {}):
                 result.extend(
                     [
                         loc
-                        for loc in locations
+                        for loc in node.locations.get(dep, {}).get(n, [])
                         if not (data_type is not None and loc.data_type != data_type)
                     ]
                 )
         return result
 
     def invalidate_location(self, location: ExecutionLocation, path: str) -> None:
-        path = PurePosixPath(Path(path).as_posix())
         node = self._filesystem
-        for token in path.parts:
+        for token in Path(path).parts:
             node = node.children[token]
         # Invalidate node
-        for data_loc in node.locations.setdefault(location.deployment, {}).get(
-            location.name, []
+        for data_loc in node.locations.get(location.deployment, {}).get(
+            location.name, set()
         ):
             data_loc.data_type = DataType.INVALID
+            node.valid_paths[location.deployment][location.name].discard(data_loc.path)
         # Propagate
         for node_child in node.children.values():
-            for data_loc in node_child.locations.setdefault(
-                location.deployment, {}
-            ).get(location.name, []):
+            for data_loc in node_child.locations.get(location.deployment, {}).get(
+                location.name, set()
+            ):
                 if data_loc.data_type != DataType.INVALID:
                     self.invalidate_location(data_loc.location, data_loc.path)
 
     def put(
         self, path: str, data_location: DataLocation, recursive: bool = False
     ) -> DataLocation:
-        path = PurePosixPath(Path(path).as_posix())
         path_processor = get_path_processor(
             self.context.deployment_manager.get_connector(data_location.deployment)
         )
         node = self._filesystem
         nodes = {}
         # Create or navigate hierarchy
-        for i, token in enumerate(path.parts):
-            node = node.children.setdefault(token, _RemotePathNode())
+        for i, token in enumerate(parts := Path(path).parts):
+            if token not in node.children:
+                node.children[token] = _RemotePathNode()
+            node = node.children[token]
             if recursive:
-                nodes[path_processor.join(*path.parts[: i + 1])] = node
+                nodes[path_processor.join(*parts[: i + 1])] = node
         if not recursive:
-            nodes[str(path)] = node
+            nodes[path] = node
         # Process hierarchy bottom-up to add parent locations
         relpath = data_location.relpath
         for node_path in reversed(nodes):
             node = nodes[node_path]
-            if node_path == str(path):
-                location = data_location
-            else:
-                location = DataLocation(
+            location = (
+                data_location
+                if node_path == path
+                else DataLocation(
                     location=data_location.location,
                     path=node_path,
                     relpath=(
@@ -181,26 +183,28 @@ class _RemotePathMapper:
                     data_type=DataType.PRIMARY,
                     available=True,
                 )
-            node_location = node.locations.setdefault(
-                location.deployment, {}
-            ).setdefault(location.name, [])
-            paths = [
-                loc.path for loc in node_location if loc.data_type != DataType.INVALID
-            ]
-            if location.path in paths:
+            )
+            if location.path in node.valid_paths.get(location.deployment, {}).get(
+                location.name, set()
+            ):
                 break
             else:
-                node.locations[location.deployment][location.name].append(location)
+                node.locations.setdefault(location.deployment, {}).setdefault(
+                    location.name, []
+                ).append(location)
+                node.valid_paths.setdefault(location.deployment, {}).setdefault(
+                    location.name, set()
+                ).add(location.path)
                 relpath = path_processor.dirname(relpath)
         # Return location
         return data_location
 
     def remove_location(self, location: DataLocation) -> None:
-        data_locations = self._filesystem.locations.setdefault(
-            location.deployment, {}
-        ).get(location.name)
-        for data_location in data_locations:
-            self._remove_node(data_location, self._filesystem)
+        if location.deployment in self._filesystem.locations:
+            for data_location in self._filesystem.locations[location.deployment].get(
+                location.name, []
+            ):
+                self._remove_node(data_location, self._filesystem)
 
 
 class DefaultDataManager(DataManager):
@@ -221,10 +225,7 @@ class DefaultDataManager(DataManager):
         data_locations = self.path_mapper.get(
             path=path, data_type=data_type, deployment=deployment, name=location_name
         )
-        data_locations = [
-            loc for loc in data_locations if loc.data_type != DataType.INVALID
-        ]
-        return data_locations
+        return [loc for loc in data_locations if loc.data_type != DataType.INVALID]
 
     @classmethod
     def get_schema(cls) -> str:
