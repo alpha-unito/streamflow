@@ -92,6 +92,8 @@ def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
                 return Status.CANCELLED
             case Status.SKIPPED:
                 num_skipped += 1
+            case Status.RECOVERED:
+                return Status.RECOVERED
     if num_skipped == len(statuses):
         return Status.SKIPPED
     else:
@@ -133,6 +135,8 @@ class BaseStep(Step, ABC):
     def _get_status(self, status: Status) -> Status:
         if status == Status.FAILED:
             return status
+        elif status == Status.RECOVERED:
+            return Status.COMPLETED
         elif any(p.empty() for p in self.get_output_ports().values()):
             return Status.SKIPPED
         else:
