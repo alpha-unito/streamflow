@@ -143,10 +143,15 @@ class BaseStep(Step, ABC):
     ) -> Token:
         if token.persistent_id:
             raise WorkflowDefinitionException(
-                f"Token already has an id: {token.persistent_id}"
+                f"Step {self.name} failed to save token: Token already has a persistent id: {token.persistent_id}"
             )
         await token.save(self.workflow.context, port_id=port.persistent_id)
         if input_token_ids:
+            if any(id_ is None for id_ in input_token_ids):
+                raise WorkflowExecutionException(
+                    f"Step {self.name} cannot establish provenance: "
+                    f"One or more input tokens have not been persisted: {input_token_ids}"
+                )
             await self.workflow.context.database.add_provenance(
                 inputs=input_token_ids, token=token.persistent_id
             )
