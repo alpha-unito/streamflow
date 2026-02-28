@@ -12,7 +12,7 @@ from collections.abc import MutableMapping, MutableSequence
 from contextlib import suppress
 from importlib.resources import files
 from shutil import which
-from typing import Any, AsyncContextManager, cast
+from typing import Any, AsyncContextManager
 
 import psutil
 
@@ -91,21 +91,22 @@ async def _get_storage_from_binds(
         )
 
 
-def _parse_mount(mount: str) -> tuple[str, str]:
-    source = next(
-        part[4:]
-        for part in mount.split(",")
-        if part.startswith("src=") or part.startswith("source=")
-    )
-    destination = next(
-        part[4:]
-        for part in mount.split(",")
-        if part.startswith("dst=")
-        or part.startswith("dest=")
-        or part.startswith("destination=")
-        or part.startswith("target=")
-    )
-    return source, destination
+def _parse_mount(mount: str) -> tuple[str, str, str]:
+    type_, source, destination = None, None, None
+    for part in mount.split(","):
+        for src_prefix in ("src=", "source="):
+            if part.startswith(src_prefix):
+                source = part[len(src_prefix) :]
+                break
+        for dst_prefix in ("dst=", "dest=", "destination=", "target="):
+            if part.startswith(dst_prefix):
+                destination = part[len(dst_prefix) :]
+                break
+        if part.startswith("type="):
+            type_ = part[5:]
+    if type_ is None or source is None or destination is None:
+        raise WorkflowExecutionException(f"Mount definition is incomplete: {mount}")
+    return type_, source, destination
 
 
 class ContainerInstance:
@@ -535,17 +536,9 @@ class ContainerConnector(ConnectorWrapper, ABC):
     ) -> None:
         sources = [b.split(":", 2)[0] for b in binds] if binds is not None else []
         for m in mounts if mounts is not None else []:
-            mount_type = next(
-                part[5:] for part in m.split(",") if part.startswith("type=")
-            )
+            mount_type, mount_source, _ = _parse_mount(m)
             if mount_type == "bind":
-                sources.append(
-                    next(
-                        part[4:]
-                        for part in m.split(",")
-                        if part.startswith("src=") or part.startswith("source=")
-                    )
-                )
+                sources.append(mount_source)
         if self._wraps_local():
             for src in sources:
                 os.makedirs(src, exist_ok=True)
@@ -1833,6 +1826,13 @@ class SingularityConnector(ContainerConnector):
         )
         if returncode == 0:
             binds = {}
+            for b in self.bind or ():
+                source, dest = b.split(":", 2)
+                binds[dest] = source
+            for m in self.mount or ():
+                type_, source, dest = _parse_mount(m)
+                if type_ == "bind":
+                    binds[dest] = source
             for line in stdout.splitlines():
                 if (dst := line.split()[4]) != posixpath.sep and (
                     fs_type := line.split(" - ")[1].split()[0]
@@ -1854,7 +1854,7 @@ class SingularityConnector(ContainerConnector):
                             if mount_source in fs_mounts
                             else None
                         )
-                    if host_mount is not None:
+                    if dst not in binds.keys() and host_mount is not None:
                         binds[dst] = host_mount
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
@@ -1869,7 +1869,7 @@ class SingularityConnector(ContainerConnector):
             location=location,
             name=name,
             entity="Singularity instance",
-            binds=cast(MutableMapping[str, str], binds),
+            binds=binds,
         )
         # Create instance
         self._instances[name] = ContainerInstance(
