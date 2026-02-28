@@ -175,7 +175,6 @@ class DefaultScheduler(Scheduler):
                     for execution_loc in locations:
                         job_hardware = await utils.bind_mount_point(
                             self.context,
-                            conn,
                             next(
                                 available_loc
                                 for available_loc in (
@@ -472,7 +471,7 @@ class DefaultScheduler(Scheduler):
             if location := location.wraps if location.stacked else None:
                 connector = cast(ConnectorWrapper, connector).connector
                 hardware_requirement = await utils.bind_mount_point(
-                    self.context, connector, location, current_hw
+                    self.context, location, current_hw
                 )
         return hardware
 

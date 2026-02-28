@@ -128,7 +128,6 @@ async def test_bind_volumes(
     mount_point = await utils.get_mount_point(context, docker_location, path)
     container_hardware = await utils.bind_mount_point(
         context,
-        local_connector,
         local_location,
         Hardware(
             cores=float(1),
