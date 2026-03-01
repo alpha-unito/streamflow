@@ -37,10 +37,10 @@ CREATE TABLE IF NOT EXISTS dependency
     port INTEGER,
     type INTEGER,
     name TEXT,
-    PRIMARY KEY (step, port, type, name),
+    PRIMARY KEY (step, port),
     FOREIGN KEY (step) REFERENCES step (id),
     FOREIGN KEY (port) REFERENCES port (id)
-);
+) WITHOUT ROWID;
 
 
 CREATE TABLE IF NOT EXISTS execution
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS provenance
     PRIMARY KEY (dependee, depender),
     FOREIGN KEY (dependee) REFERENCES token (id),
     FOREIGN KEY (depender) REFERENCES token (id)
-);
+) WITHOUT ROWID;
 
 
 CREATE TABLE IF NOT EXISTS deployment
