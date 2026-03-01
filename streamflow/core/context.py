@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping
-from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING, Any
 
 from streamflow.log_handler import logger
@@ -49,7 +48,6 @@ class StreamFlowContext:
         self.failure_manager: FailureManager = failure_manager_class(
             context=self, **config.get("failureManager", {}).get("config", {})
         )
-        self.process_executor: ProcessPoolExecutor = ProcessPoolExecutor()
         self.scheduler: Scheduler = scheduler_class(
             context=self,
             **config.get("scheduling", {}).get("scheduler", {}).get("config", {}),
