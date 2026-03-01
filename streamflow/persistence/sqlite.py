@@ -92,6 +92,13 @@ class SqliteDatabase(CachedDatabase):
         super().__init__(context)
         # Open connection to database
         if connection != IN_MEMORY_SQLITE_CONNECTION:
+            connection = (
+                connection
+                if os.path.isabs(connection)
+                else os.path.join(
+                    os.path.dirname(self.context.config["path"]), connection
+                )
+            )
             os.makedirs(os.path.dirname(connection), exist_ok=True)
         self.connection: SqliteConnection = SqliteConnection(
             connection=connection,

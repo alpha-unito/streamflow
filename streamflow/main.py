@@ -7,6 +7,7 @@ import os
 import sys
 import uuid
 from collections.abc import MutableMapping, Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from streamflow import report
@@ -174,7 +175,7 @@ async def _async_run(args: argparse.Namespace) -> None:
     args.name = args.name or str(uuid.uuid4())
     load_extensions()
     streamflow_config = SfValidator().validate_file(args.streamflow_file)
-    streamflow_config["path"] = args.streamflow_file
+    streamflow_config["path"] = str(Path(args.streamflow_file).resolve())
     context = build_context(streamflow_config)
     try:
         workflow_tasks = []
