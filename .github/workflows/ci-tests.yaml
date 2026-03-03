@@ -251,7 +251,7 @@ jobs:
           LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - name: "Install Docker Compose (MacOS X)"
-        uses: docker/setup-compose-action@v1
+        uses: docker/setup-compose-action@v2
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - uses: docker/setup-qemu-action@v3
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
