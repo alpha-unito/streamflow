@@ -73,7 +73,7 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOS X)"
-        uses: docker/setup-docker-action@v4
+        uses: docker/setup-docker-action@v5
         env:
           LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
@@ -246,7 +246,7 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOs X)"
-        uses: docker/setup-docker-action@v4
+        uses: docker/setup-docker-action@v5
         env:
           LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
