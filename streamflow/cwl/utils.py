@@ -1387,10 +1387,11 @@ async def update_file_token(
             elif not load_contents and "contents" in new_token_value:
                 del new_token_value["contents"]
         # Process listings
-        if get_token_class(new_token_value) == "Directory" and load_listing is not None:
+        if get_token_class(new_token_value) == "Directory":
             # If load listing is set to `no_listing`, remove the listing entries in present
-            if load_listing == LoadListing.no_listing and "listing" in new_token_value:
-                del new_token_value["listing"]
+            if load_listing is None or load_listing == LoadListing.no_listing:
+                if "listing" in new_token_value:
+                    del new_token_value["listing"]
             # If listing is not present or if the token needs a deep listing, process directory contents
             elif (
                 "listing" not in new_token_value
