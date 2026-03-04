@@ -138,7 +138,7 @@ async def _get_listing(
         loc_path = StreamFlowPath(dirpath, context=context, location=location)
         async for dirpath, dirnames, filenames in loc_path.walk(follow_symlinks=True):
             for dirname in dirnames:
-                directory = dirpath / dirname
+                directory = loc_path / dirname
                 if str(directory) not in listing_tokens:
                     load_listing = (
                         LoadListing.deep_listing
@@ -158,7 +158,7 @@ async def _get_listing(
                         )
                     )
             for filename in filenames:
-                file = dirpath / filename
+                file = loc_path / filename
                 if str(file) not in listing_tokens:
                     listing_tokens[str(file)] = asyncio.create_task(
                         get_file_token(  # nosec
@@ -1218,6 +1218,8 @@ def remap_token_value(
                             old_dir=old_dir,
                             new_dir=new_dir,
                         )
+                    if "dirname" in value:
+                        value["dirname"] = new_dir
                     if "secondaryFiles" in value:
                         value["secondaryFiles"] = [
                             remap_token_value(path_processor, old_dir, new_dir, sf)
