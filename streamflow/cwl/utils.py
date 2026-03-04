@@ -198,8 +198,8 @@ async def _process_secondary_file(
         case MutableMapping():
             filepath = get_path_from_token(secondary_file)
             for location in locations:
-                if await (
-                    path := StreamFlowPath(filepath, context=context, location=location)
+                if await StreamFlowPath(
+                    filepath, context=context, location=location
                 ).exists():
                     return await get_file_token(
                         context=context,
