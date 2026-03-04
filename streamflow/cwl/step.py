@@ -541,7 +541,7 @@ class CWLTransferStep(TransferStep):
                 deployment=src_location.deployment,
                 location_name=src_location.name,
             ):
-                # adjust the path
+                # Adjust the path
                 existing.append(
                     utils.remap_token_value(
                         path_processor=get_path_processor(
@@ -570,7 +570,10 @@ class CWLTransferStep(TransferStep):
         token_value: MutableMapping[str, Any],
         dst_path: StreamFlowPath | None = None,
     ) -> MutableMapping[str, Any]:
-        token_class = utils.get_token_class(token_value)
+        if (token_class := utils.get_token_class(token_value)) is None:
+            raise WorkflowExecutionException(
+                f"Step {self.name} (job {job.name}) is processing an invalid token."
+            )
         # Get destination coordinates
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
@@ -626,7 +629,7 @@ class CWLTransferStep(TransferStep):
             except FileExistsError:
                 pass
             # Transform token value
-            new_token_value = {
+            new_token_value: MutableMapping[str, Any] = {
                 "class": token_class,
                 "path": str(filepath),
                 "location": "file://" + str(filepath),
