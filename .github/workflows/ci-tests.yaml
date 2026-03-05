@@ -77,7 +77,7 @@ jobs:
         env:
           LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v2
@@ -123,7 +123,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v3
       - name: "Build Docker image"
         uses: docker/build-push-action@v6
@@ -253,7 +253,7 @@ jobs:
       - name: "Install Docker Compose (MacOS X)"
         uses: docker/setup-compose-action@v2
         if: ${{ startsWith(matrix.on, 'macos-') }}
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v2
