@@ -85,7 +85,7 @@ docs = [
 ]
 lint = [
     "black==26.1.0",
-    "codespell==2.4.1",
+    "codespell==2.4.2",
     "flake8-bugbear==25.11.29",
     "isort==8.0.1",
     "pyupgrade==3.21.2"
