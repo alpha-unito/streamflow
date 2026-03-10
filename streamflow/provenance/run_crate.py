@@ -549,7 +549,9 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                     part["alternateName"]
                     not in self.graph[part["@id"]]["alternateName"]
                 ):
-                    self.graph[part["@id"]]["alternateName"].add(part["alternateName"])
+                    self.graph[part["@id"]]["alternateName"].append(
+                        part["alternateName"]
+                    )
             if part["@type"] == "Dataset" and "hasPart" in part:
                 part["hasPart"] = self._rename_parts(
                     part["hasPart"],
