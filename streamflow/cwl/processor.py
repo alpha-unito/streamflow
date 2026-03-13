@@ -788,17 +788,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     optional=self.optional,
                     check_file=True,
                 )
-        token = await self._build_token(
+        return await self._build_token(
             job, connector, context, token_value, recoverable
         )
-        if (
-            self.single
-            or isinstance(token, ListToken)
-            or (self.optional and token.value is None)
-        ):
-            return token
-        else:
-            return ListToken(value=token, tag=token.tag)
 
 
 class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
