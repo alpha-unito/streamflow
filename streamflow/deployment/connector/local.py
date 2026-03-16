@@ -28,8 +28,15 @@ def _local_copy(src: str, dst: str, read_only: bool) -> None:
         try:
             os.symlink(src, dst, target_is_directory=os.path.isdir(src))
         except OSError as e:
-            if not e.errno == errno.EEXIST:
-                raise
+            if e.errno != errno.EEXIST:
+                if sys.platform == "win32" and e.errno == errno.EINVAL:
+                    if logger.isEnabledFor(logging.WARNING):
+                        logger.warning(
+                            f"Unable to create a symbolic link from {src} to {dst}: {e.strerror}"
+                        )
+                    shutil.copy(src, dst)
+                else:
+                    raise
     else:
         if os.path.isdir(src):
             os.makedirs(dst, exist_ok=True)
@@ -164,6 +171,7 @@ class LocalConnector(BaseConnector):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
+        # Create command
         command = utils.create_command(
             self.__class__.__name__,
             command,
