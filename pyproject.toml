@@ -45,6 +45,7 @@ dependencies = [
     "referencing==0.37.0",
     "rdflib==7.5.0",
     "typing-extensions==4.15.0",
+    "uvloop==0.22.1",
     "yattag==1.16.1"
 ]
 version = "0.2.0.dev14"
