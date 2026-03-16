@@ -249,6 +249,11 @@ run_parser.add_argument(
     help="Output directory in which to store final results of the workflow (default: current directory)",
 )
 run_parser.add_argument(
+    "--hierarchical",
+    action="store_true",
+    help="Preserve the output port structure (default: collapse all files into outdir)",
+)
+run_parser.add_argument(
     "--quiet", action="store_true", help="Only prints results, warnings and errors"
 )
 
