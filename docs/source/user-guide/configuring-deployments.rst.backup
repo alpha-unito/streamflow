@@ -1,0 +1,850 @@
+=======================
+Configuring Deployments
+=======================
+
+.. meta::
+   :keywords: StreamFlow, deployment, connector, docker, kubernetes, slurm, ssh, configuration
+   :description: Learn how to configure execution environments and deployments in StreamFlow
+
+Overview
+========
+
+Deployments define where and how workflow steps execute. StreamFlow supports diverse execution environments including containers, cloud platforms, and HPC systems through a unified connector interface.
+
+Deployment Concepts
+===================
+
+Understanding the deployment hierarchy:
+
+========================  ========================================
+Concept                   Description
+========================  ========================================
+**Deployment**            An entire infrastructure (unit of deployment)
+**Service**               A type of compute resource within a deployment
+**Location**              A single instance of a service (unit of scheduling)
+**Connector**             Implementation that manages deployment lifecycle
+========================  ========================================
+
+**Example:**
+
+* Deployment: ``my-k8s-cluster``
+* Service: ``gpu-workers`` (Kubernetes deployment with GPU nodes)
+* Locations: Individual pods created by Kubernetes
+
+Deployment Configuration Structure
+===================================
+
+Deployments are defined in the StreamFlow configuration file (``streamflow.yml``):
+
+.. code-block:: yaml
+   :caption: streamflow.yml structure
+
+   version: v1.0
+   
+   workflows:
+     my-workflow:
+       type: cwl
+       config:
+         file: workflow.cwl
+         settings: inputs.yml
+   
+   deployments:
+     deployment-name:
+       type: connector-type
+       config:
+         # Connector-specific configuration
+       services:
+         service-name:
+           # Service-specific configuration
+
+Available Connectors
+====================
+
+StreamFlow provides connectors for various environments:
+
+========================  ========================================
+Connector Type            Use Case
+========================  ========================================
+``local``                 Local machine execution
+``docker``                Docker containers
+``docker-compose``        Docker Compose multi-container
+``singularity``           Singularity/Apptainer containers
+``kubernetes``            Kubernetes clusters
+``helm``                  Helm charts on Kubernetes
+``ssh``                   SSH to remote machines
+``slurm``                 Slurm HPC scheduler
+``pbs``                   PBS/Torque HPC scheduler
+``flux``                  Flux Framework scheduler
+``occam``                 OCCAM connector
+========================  ========================================
+
+For complete connector reference, see :doc:`/reference/connectors/index`.
+
+Local Connector
+===============
+
+Execute on the local machine without containers:
+
+.. code-block:: yaml
+   :caption: Local deployment
+
+   deployments:
+     local:
+       type: local
+
+**Use Cases:**
+
+* Testing workflows locally
+* Running lightweight tools
+* Development and debugging
+
+**Notes:**
+
+* No isolation between tasks
+* Shares filesystem with StreamFlow process
+* Fastest option for small-scale testing
+
+Docker Connector
+================
+
+Execute in Docker containers:
+
+Basic Configuration
+-------------------
+
+.. code-block:: yaml
+   :caption: Docker deployment
+
+   deployments:
+     docker-python:
+       type: docker
+       config:
+         image: python:3.10
+         
+**With Volume Mounts:**
+
+.. code-block:: yaml
+   :caption: Docker with volume mounts
+
+   deployments:
+     docker-data:
+       type: docker
+       config:
+         image: ubuntu:22.04
+         volumes:
+           - /host/data:/container/data:ro
+           - /host/output:/container/output:rw
+
+**With Environment Variables:**
+
+.. code-block:: yaml
+   :caption: Docker with environment variables
+
+   deployments:
+     docker-configured:
+       type: docker
+       config:
+         image: myapp:latest
+         environment:
+           DATABASE_URL: postgresql://localhost/mydb
+           DEBUG: "true"
+
+**Advanced Configuration:**
+
+.. code-block:: yaml
+   :caption: Docker with all options
+
+   deployments:
+     docker-advanced:
+       type: docker
+       config:
+         image: nvidia/cuda:11.8.0-runtime-ubuntu22.04
+         pull_policy: always  # always, never, missing
+         network: host
+         privileged: false
+         gpus: all            # GPU access
+         shm_size: 2gb        # Shared memory
+         cpus: 4.0            # CPU limit
+         memory: 8g           # Memory limit
+         user: "1000:1000"    # User:group
+         workdir: /workspace
+         entrypoint: /bin/bash
+
+**Use Cases:**
+
+* Containerized applications
+* Reproducible environments
+* Dependency isolation
+
+**Prerequisites:**
+
+* Docker installed and running
+* Appropriate images available or pullable
+* User has Docker permissions
+
+Docker Compose Connector
+========================
+
+Manage multi-container deployments:
+
+.. code-block:: yaml
+   :caption: Docker Compose deployment
+
+   deployments:
+     app-stack:
+       type: docker-compose
+       config:
+         file: docker-compose.yml
+       services:
+         web:
+           # Target the 'web' service from docker-compose.yml
+         worker:
+           # Target the 'worker' service
+
+.. code-block:: yaml
+   :caption: docker-compose.yml
+
+   version: '3.8'
+   services:
+     web:
+       image: nginx:latest
+       ports:
+         - "8080:80"
+     worker:
+       image: python:3.10
+       volumes:
+         - ./app:/app
+
+**Use Cases:**
+
+* Multi-container applications
+* Service dependencies (database + application)
+* Complex network configurations
+
+Kubernetes Connector
+====================
+
+Deploy on Kubernetes clusters:
+
+Basic Configuration
+-------------------
+
+.. code-block:: yaml
+   :caption: Kubernetes deployment
+
+   deployments:
+     k8s-cluster:
+       type: kubernetes
+       config:
+         kubeconfig: ~/.kube/config
+         namespace: streamflow
+       services:
+         compute:
+           replicas: 5
+           template:
+             spec:
+               containers:
+                 - name: worker
+                   image: python:3.10
+                   resources:
+                     requests:
+                       memory: "4Gi"
+                       cpu: "2"
+                     limits:
+                       memory: "8Gi"
+                       cpu: "4"
+
+**With Node Affinity:**
+
+.. code-block:: yaml
+   :caption: Kubernetes with node affinity
+
+   deployments:
+     k8s-gpu:
+       type: kubernetes
+       config:
+         kubeconfig: ~/.kube/config
+         namespace: gpu-workloads
+       services:
+         gpu-workers:
+           replicas: 2
+           template:
+             spec:
+               containers:
+                 - name: gpu-worker
+                   image: tensorflow/tensorflow:latest-gpu
+                   resources:
+                     limits:
+                       nvidia.com/gpu: 1
+               affinity:
+                 nodeAffinity:
+                   requiredDuringSchedulingIgnoredDuringExecution:
+                     nodeSelectorTerms:
+                       - matchExpressions:
+                           - key: gpu-type
+                             operator: In
+                             values:
+                               - nvidia-v100
+
+**Use Cases:**
+
+* Cloud-native applications
+* Auto-scaling workloads
+* Production deployments
+* Multi-tenant environments
+
+Helm Connector
+==============
+
+Deploy using Helm charts:
+
+.. code-block:: yaml
+   :caption: Helm deployment
+
+   deployments:
+     spark-cluster:
+       type: helm
+       config:
+         chart: bitnami/spark
+         release: streamflow-spark
+         namespace: analytics
+         values:
+           worker:
+             replicaCount: 3
+             resources:
+               limits:
+                 cpu: 2
+                 memory: 4Gi
+
+**Use Cases:**
+
+* Deploying complex applications with Helm charts
+* Managing application lifecycle
+* Using community charts (Spark, Airflow, etc.)
+
+SSH Connector
+=============
+
+Execute on remote machines via SSH:
+
+Basic Configuration
+-------------------
+
+.. code-block:: yaml
+   :caption: SSH deployment
+
+   deployments:
+     remote-server:
+       type: ssh
+       config:
+         hostname: compute.example.com
+         username: myuser
+         sshKey: ~/.ssh/id_rsa
+         sshKeyPassphrase: passphrase  # Optional
+
+**With Password Authentication:**
+
+.. code-block:: yaml
+   :caption: SSH with password
+
+   deployments:
+     remote-password:
+       type: ssh
+       config:
+         hostname: 192.168.1.100
+         username: user
+         password: secret  # Not recommended for production
+
+**Multiple Hosts:**
+
+.. code-block:: yaml
+   :caption: SSH to multiple hosts
+
+   deployments:
+     ssh-cluster:
+       type: ssh
+       config:
+         nodes:
+           - hostname: node1.example.com
+             username: user
+             sshKey: ~/.ssh/id_rsa
+           - hostname: node2.example.com
+             username: user
+             sshKey: ~/.ssh/id_rsa
+           - hostname: node3.example.com
+             username: user
+             sshKey: ~/.ssh/id_rsa
+
+**With Custom SSH Config:**
+
+.. code-block:: yaml
+   :caption: SSH with custom options
+
+   deployments:
+     ssh-advanced:
+       type: ssh
+       config:
+         hostname: bastion.example.com
+         username: admin
+         sshKey: ~/.ssh/id_ed25519
+         sshKeyPassphrase: passphrase
+         port: 2222
+         connectionTimeout: 30
+         maxConnections: 10
+
+**Use Cases:**
+
+* Legacy systems without container support
+* Direct remote execution
+* Bridging to on-premise infrastructure
+
+Slurm Connector
+===============
+
+Submit jobs to Slurm HPC schedulers:
+
+Basic Configuration
+-------------------
+
+.. code-block:: yaml
+   :caption: Slurm deployment
+
+   deployments:
+     hpc-slurm:
+       type: slurm
+       config:
+         hostname: login.hpc.example.edu
+         username: researcher
+         sshKey: ~/.ssh/hpc_key
+         workdir: /scratch/researcher/streamflow
+       services:
+         compute:
+           partition: standard
+           nodes: 1
+           ntasks: 16
+           mem: 64G
+           time: 02:00:00
+
+**With GPU:**
+
+.. code-block:: yaml
+   :caption: Slurm with GPU allocation
+
+   deployments:
+     slurm-gpu:
+       type: slurm
+       config:
+         hostname: gpu-login.hpc.edu
+         username: user
+         sshKey: ~/.ssh/id_rsa
+         workdir: /gpfs/scratch/user/jobs
+       services:
+         gpu-jobs:
+           partition: gpu
+           nodes: 1
+           ntasks: 8
+           gres: gpu:v100:2  # 2 V100 GPUs
+           mem: 128G
+           time: 08:00:00
+
+**With QoS and Account:**
+
+.. code-block:: yaml
+   :caption: Slurm with QoS
+
+   deployments:
+     slurm-priority:
+       type: slurm
+       config:
+         hostname: hpc.example.com
+         username: user
+         sshKey: ~/.ssh/id_rsa
+       services:
+         high-priority:
+           partition: priority
+           account: research-grant-123
+           qos: high
+           nodes: 4
+           ntasks-per-node: 32
+           time: 24:00:00
+
+**Use Cases:**
+
+* HPC cluster job submission
+* Batch processing on supercomputers
+* Resource-intensive computations
+
+PBS Connector
+=============
+
+Submit jobs to PBS/Torque schedulers:
+
+.. code-block:: yaml
+   :caption: PBS deployment
+
+   deployments:
+     hpc-pbs:
+       type: pbs
+       config:
+         hostname: pbs-login.hpc.edu
+         username: researcher
+         sshKey: ~/.ssh/id_rsa
+         workdir: /home/researcher/jobs
+       services:
+         compute:
+           queue: batch
+           nodes: 2
+           cpus: 32
+           mem: 128gb
+           walltime: "04:00:00"
+           
+
+**With Resource Selection:**
+
+.. code-block:: yaml
+   :caption: PBS with resource selection
+
+   deployments:
+     pbs-custom:
+       type: pbs
+       config:
+         hostname: hpc.example.edu
+         username: user
+         sshKey: ~/.ssh/id_rsa
+       services:
+         custom-resources:
+           queue: longrun
+           select: "2:ncpus=16:mem=64gb:ngpus=1"
+           walltime: "48:00:00"
+
+**Use Cases:**
+
+* PBS-managed HPC systems
+* Traditional batch processing
+* Legacy HPC infrastructure
+
+Singularity Connector
+=====================
+
+Execute in Singularity/Apptainer containers:
+
+.. code-block:: yaml
+   :caption: Singularity deployment
+
+   deployments:
+     singularity-hpc:
+       type: singularity
+       config:
+         image: library://library/default/ubuntu:20.04
+         # or
+         # image: docker://python:3.10
+         # or
+         # image: /path/to/image.sif
+
+**On HPC with Slurm:**
+
+.. code-block:: yaml
+   :caption: Singularity on Slurm
+
+   deployments:
+     slurm-singularity:
+       type: slurm
+       config:
+         hostname: hpc.example.edu
+         username: user
+         sshKey: ~/.ssh/id_rsa
+         container:
+           type: singularity
+           image: docker://tensorflow/tensorflow:latest
+       services:
+         gpu-container:
+           partition: gpu
+           gres: gpu:1
+           time: 04:00:00
+
+**Use Cases:**
+
+* HPC systems without Docker
+* Reproducible environments on shared systems
+* Security-constrained environments
+
+Service Configuration
+=====================
+
+Services define resource subsets within deployments:
+
+.. code-block:: yaml
+   :caption: Multiple services in one deployment
+
+   deployments:
+     mixed-resources:
+       type: kubernetes
+       config:
+         kubeconfig: ~/.kube/config
+       services:
+         cpu-workers:
+           replicas: 10
+           template:
+             spec:
+               containers:
+                 - name: worker
+                   image: python:3.10
+                   resources:
+                     requests:
+                       cpu: "2"
+                       memory: "4Gi"
+         
+         gpu-workers:
+           replicas: 2
+           template:
+             spec:
+               containers:
+                 - name: gpu-worker
+                   image: tensorflow/tensorflow:latest-gpu
+                   resources:
+                     limits:
+                       nvidia.com/gpu: 1
+         
+         memory-intensive:
+           replicas: 3
+           template:
+             spec:
+               containers:
+                 - name: bigmem
+                   image: r-base:latest
+                   resources:
+                     requests:
+                       memory: "64Gi"
+
+Then bind different workflow steps to different services based on resource needs.
+
+Multi-Deployment Workflows
+===========================
+
+Use multiple deployments in one workflow:
+
+.. code-block:: yaml
+   :caption: Hybrid cloud-HPC workflow
+
+   deployments:
+     cloud-preprocessing:
+       type: kubernetes
+       config:
+         kubeconfig: ~/.kube/config
+       services:
+         workers:
+           replicas: 20
+     
+     hpc-computation:
+       type: slurm
+       config:
+         hostname: supercomputer.edu
+         username: researcher
+         sshKey: ~/.ssh/id_rsa
+       services:
+         compute-nodes:
+           partition: standard
+           nodes: 10
+           ntasks-per-node: 128
+     
+     cloud-postprocessing:
+       type: docker
+       config:
+         image: python:3.10
+   
+   bindings:
+     - step: preprocess
+       target:
+         deployment: cloud-preprocessing
+     - step: heavy_computation
+       target:
+         deployment: hpc-computation
+     - step: visualize
+       target:
+         deployment: cloud-postprocessing
+
+**Use Cases:**
+
+* Hybrid workflows across cloud and HPC
+* Cost optimization (cheap preprocessing, expensive computation)
+* Data locality (process data where it resides)
+
+Configuration Best Practices
+=============================
+
+1. **Use Environment Variables**
+   
+   Avoid hardcoding credentials:
+   
+   .. code-block:: yaml
+   
+      deployments:
+        secure:
+          type: ssh
+          config:
+            hostname: ${SSH_HOST}
+            username: ${SSH_USER}
+            sshKey: ${SSH_KEY_PATH}
+
+2. **Separate Configurations**
+   
+   Keep deployment configs in separate files:
+   
+   .. code-block:: yaml
+   
+      # streamflow.yml
+      deployments: !include deployments/production.yml
+
+3. **Test Incrementally**
+   
+   Start with local, then docker, then remote deployments.
+
+4. **Resource Limits**
+   
+   Always specify resource requirements to avoid oversubscription.
+
+5. **Timeout Settings**
+   
+   Set appropriate timeouts for long-running jobs:
+   
+   .. code-block:: yaml
+   
+      deployments:
+        long-running:
+          config:
+            connectionTimeout: 300
+            jobTimeout: 86400  # 24 hours
+
+6. **Connection Pooling**
+   
+   Limit concurrent connections to avoid overwhelming remote systems:
+   
+   .. code-block:: yaml
+   
+      deployments:
+        ssh-limited:
+          type: ssh
+          config:
+            maxConnections: 5
+
+Troubleshooting
+===============
+
+Connection Issues
+-----------------
+
+**Problem:** ``Connection refused`` or ``Connection timeout``
+
+**Solution:**
+
+* Verify hostname/IP is correct
+* Check network connectivity (``ping``, ``telnet``)
+* Verify SSH key permissions (``chmod 600 ~/.ssh/id_rsa``)
+* Check firewall rules
+* Verify service is running (Docker daemon, Kubernetes API, etc.)
+
+Authentication Issues
+---------------------
+
+**Problem:** ``Permission denied (publickey)``
+
+**Solution:**
+
+* Verify SSH key is correct
+* Add public key to ``~/.ssh/authorized_keys`` on remote host
+* Check SSH key passphrase is correct
+* Try password authentication temporarily for testing
+
+**Problem:** ``Unauthorized`` (Kubernetes)
+
+**Solution:**
+
+* Verify kubeconfig file path
+* Check cluster credentials: ``kubectl cluster-info``
+* Ensure namespace exists: ``kubectl get namespaces``
+* Verify RBAC permissions
+
+Resource Issues
+---------------
+
+**Problem:** ``Insufficient resources`` or pods stuck ``Pending``
+
+**Solution:**
+
+* Check cluster capacity: ``kubectl describe nodes``
+* Reduce resource requests
+* Check resource quotas: ``kubectl get resourcequota``
+* Scale cluster if needed
+
+**Problem:** Slurm/PBS job stays in queue
+
+**Solution:**
+
+* Check queue status: ``squeue`` or ``qstat``
+* Verify partition/queue exists and is active
+* Reduce resource requests (nodes, time, memory)
+* Check account limits and QoS
+
+Image Issues
+------------
+
+**Problem:** ``Failed to pull image`` or ``ImagePullBackOff``
+
+**Solution:**
+
+* Verify image name and tag are correct
+* Check image exists: ``docker pull <image>``
+* Verify registry credentials if private registry
+* Check network connectivity to registry
+
+Validation
+==========
+
+After configuring deployments, verify they work by running a simple test workflow. For example, test a Docker deployment:
+
+.. code-block:: yaml
+   :caption: test-deployment.yml - Test configuration
+
+   version: v1.0
+   
+   workflows:
+     test:
+       type: cwl
+       config:
+         file: test.cwl
+   
+   deployments:
+     docker-test:
+       type: docker
+       config: {}
+   
+   bindings:
+     - step: /
+       target:
+         deployment: docker-test
+
+.. code-block:: bash
+   :caption: Run test workflow
+
+   $ streamflow run test-deployment.yml --debug
+
+If the workflow completes successfully, your deployment is configured correctly.
+
+Next Steps
+==========
+
+After configuring deployments:
+
+* :doc:`binding-workflows` - Bind workflow steps to deployments
+* :doc:`running-workflows` - Execute workflows
+* :doc:`/reference/connectors/index` - Complete connector reference
+* :doc:`/user-guide/advanced-patterns/index` - Advanced binding patterns
+
+Related Topics
+==============
+
+* :doc:`/reference/configuration/deployment-config` - Deployment configuration schema
+* :doc:`/reference/connectors/container/index` - Container connectors
+* :doc:`/reference/connectors/cloud/index` - Cloud connectors
+* :doc:`/reference/connectors/hpc/index` - HPC connectors
+* :doc:`/developer-guide/extension-points/connector` - Creating custom connectors
