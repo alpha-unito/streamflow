@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, MutableMapping, MutableSequence
+from collections.abc import Callable, MutableSequence
 from enum import Flag, auto
 from typing import NamedTuple
 
@@ -19,6 +19,7 @@ class BoundaryAction(Flag):
 class BoundaryRule(NamedTuple):
     port: Port
     action: BoundaryAction
+    tags: MutableSequence[str]
 
 
 class ConnectorPort(Port):
@@ -64,44 +65,52 @@ class FilterTokenPort(Port):
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
-        self.boundaries: MutableMapping[str, MutableSequence[BoundaryRule]] = {}
+        self.boundaries: MutableSequence[BoundaryRule] = []
 
-    def _handle_boundary(self, boundary: BoundaryRule, token: Token) -> None:
-        if BoundaryAction.PROPAGATE in boundary.action:
-            if boundary.port is self:
-                super().put(token)
+    def _handle_boundary(self, boundary: BoundaryRule, token: Token) -> bool:
+        if token.tag in boundary.tags:
+            boundary.tags.remove(token.tag)
+            if len(boundary.tags) == 0:
+                if BoundaryAction.PROPAGATE in boundary.action:
+                    if boundary.port is self:
+                        super().put(token)
+                    else:
+                        boundary.port.put(token)
+                if BoundaryAction.TERMINATE in boundary.action:
+                    if boundary.port is self:
+                        super().put(TerminationToken(Status.RECOVERED))
+                    else:
+                        boundary.port.put(TerminationToken(Status.RECOVERED))
+                return True
             else:
-                boundary.port.put(token)
-        if BoundaryAction.TERMINATE in boundary.action:
-            if boundary.port is self:
-                super().put(TerminationToken(Status.RECOVERED))
-            else:
-                boundary.port.put(TerminationToken(Status.RECOVERED))
+                return False
+        else:
+            # Duplicated tokens. e.g. size port of a gather step.
+            # first token is injected by the recovery system,
+            # second token is injected by the scatter size output
+            return False
 
     def add_inter_port(
         self,
         port: Port,
-        boundary_condition: Callable,
+        boundary_tags: MutableSequence[str],
         boundary_action: BoundaryAction,
     ) -> None:
-        boundary = BoundaryRule(port, boundary_action)
-        self.boundaries.setdefault(boundary_tag, []).append(boundary)
+        boundary = BoundaryRule(port=port, action=boundary_action, tags=boundary_tags)
+        self.boundaries.append(boundary)
 
         # Create a copy of `token_list` because the list can be modified within `_handle_self_boundary` method
         for token in list(self.token_list):
-            if token.tag == boundary_tag:
-                self._handle_boundary(boundary, token)
+            self._handle_boundary(boundary, token)
 
     def put(self, token: Token) -> None:
-        if token.tag not in self.boundaries.keys() or isinstance(
-            token, TerminationToken
-        ):
+        if isinstance(token, TerminationToken):
             super().put(token)
         else:
             self_rule = False
-            for boundary in self.boundaries[token.tag]:
-                self_rule = self_rule or boundary.port is self
-                self._handle_boundary(boundary, token)
+            for boundary in self.boundaries:
+                if self._handle_boundary(boundary, token) and boundary.port is self:
+                    self_rule = True
             if not self_rule:
                 super().put(token)
 

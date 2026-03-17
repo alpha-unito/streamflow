@@ -36,7 +36,7 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import compare_tags, get_entity_ids
+from streamflow.core.utils import compare_tags, get_entity_ids, get_job_tag
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -1573,7 +1573,7 @@ class ScheduleStep(BaseStep):
                         token_inputs.append(t)
         self.get_output_port().put(
             await self._persist_token(
-                token=JobToken(value=job),
+                token=JobToken(value=job, tag=get_job_tag(job.name)),
                 port=self.get_output_port(),
                 input_token_ids=get_entity_ids(token_inputs),
             )
