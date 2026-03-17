@@ -2749,15 +2749,15 @@ wheels = [
 
 [[package]]
 name = "rdflib"
-version = "7.5.0"
+version = "7.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "isodate", marker = "python_full_version < '3.11'" },
     { name = "pyparsing" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ec/1b/4cd9a29841951371304828d13282e27a5f25993702c7c87dcb7e0604bd25/rdflib-7.5.0.tar.gz", hash = "sha256:663083443908b1830e567350d72e74d9948b310f827966358d76eebdc92bf592", size = 4903859, upload-time = "2025-11-28T05:51:54.562Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/f5/18bb77b7af9526add0c727a3b2048959847dc5fb030913e2918bf384fec3/rdflib-7.6.0.tar.gz", hash = "sha256:6c831288d5e4a5a7ece85d0ccde9877d512a3d0f02d7c06455d00d6d0ea379df", size = 4943826, upload-time = "2026-02-13T07:15:55.938Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/20/35d2baebacf357b562bd081936b66cd845775442973cb033a377fd639a84/rdflib-7.5.0-py3-none-any.whl", hash = "sha256:b011dfc40d0fc8a44252e906dcd8fc806a7859bc231be190c37e9568a31ac572", size = 587215, upload-time = "2025-11-28T05:51:38.178Z" },
+    { url = "https://files.pythonhosted.org/packages/10/c2/6604a71269e0c1bd75656d5a001432d16f2cc5b8c057140ec797155c295e/rdflib-7.6.0-py3-none-any.whl", hash = "sha256:30c0a3ebf4c0e09215f066be7246794b6492e054e782d7ac2a34c9f70a15e0dd", size = 615416, upload-time = "2026-02-13T07:15:46.487Z" },
 ]
 
 [[package]]
@@ -3410,7 +3410,7 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'report'", specifier = "==2.3.3" },
     { name = "plotly", marker = "extra == 'report'", specifier = "==6.6.0" },
     { name = "psutil", specifier = "==7.2.2" },
-    { name = "rdflib", specifier = "==7.5.0" },
+    { name = "rdflib", specifier = "==7.6.0" },
     { name = "referencing", specifier = "==0.37.0" },
     { name = "typing-extensions", specifier = "==4.15.0" },
     { name = "yattag", specifier = "==1.16.1" },
