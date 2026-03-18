@@ -251,6 +251,9 @@ run_parser.add_argument(
 run_parser.add_argument(
     "--quiet", action="store_true", help="Only prints results, warnings and errors"
 )
+run_parser.add_argument(
+    "--validate", action="store_true", help="Validate workflow without executing it"
+)
 
 
 # streamflow schema
