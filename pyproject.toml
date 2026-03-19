@@ -36,7 +36,7 @@ dependencies = [
     "bcrypt==5.0.0",
     "cachebox==5.2.2",
     "cwl-utils==0.40",
-    "importlib-metadata==8.7.1",
+    "importlib-metadata==8.8.0",
     "Jinja2==3.1.6",
     "jsonschema==4.26.0",
     "kubernetes_asyncio==35.0.1",
