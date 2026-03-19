@@ -30,6 +30,13 @@ from streamflow.deployment import DefaultDeploymentManager
 from tests.utils.data import get_data_path
 
 
+def _create_template_file(content: str = "") -> str:
+    content = content or "#!/bin/sh\n\n{{streamflow_command}}"
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f_service:
+        f_service.write(content)
+    return f_service.name
+
+
 def _get_free_tcp_port() -> int:
     """
     Return a free TCP port to be used for publishing services.
@@ -56,7 +63,7 @@ def get_aiotar_deployment_config(tar_format: str) -> DeploymentConfig:
     )
 
 
-def get_deployment(_context: StreamFlowContext, deployment_t: str) -> str:
+def get_deployment(deployment_t: str) -> str:
     match deployment_t:
         case "aiotar":
             return "aiotar"
@@ -217,7 +224,7 @@ def get_local_deployment_config(
 async def get_location(
     _context: StreamFlowContext, deployment_t: str
 ) -> ExecutionLocation:
-    deployment = get_deployment(_context, deployment_t)
+    deployment = get_deployment(deployment_t)
     service = get_service(_context, deployment_t)
     connector = _context.deployment_manager.get_connector(deployment)
     locations = await connector.get_available_locations(service=service)
@@ -290,7 +297,12 @@ async def get_slurm_deployment_config(
         type="slurm",
         config={
             "services": {
-                "test": {"partition": "docker", "nodes": 2, "ntasksPerNode": 1}
+                "test": {"partition": "docker", "nodes": 2, "ntasksPerNode": 1},
+                "test_template": {
+                    "file": _create_template_file(
+                        "#!/bin/sh\n\necho 'I am a slurm service'\n{{streamflow_command}}"
+                    )
+                },
             }
         },
         external=False,
@@ -312,8 +324,8 @@ async def get_ssh_deployment_config(
         key_size=4096,
     )
     public_key = skey.export_public_key().decode("utf-8")
-    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-        skey.write_private_key(f.name)
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f_key:
+        skey.write_private_key(f_key.name)
     ssh_port = _get_free_tcp_port()
     docker_config = DeploymentConfig(
         name="linuxserver-ssh-docker",
@@ -333,17 +345,22 @@ async def get_ssh_deployment_config(
         name="linuxserver-ssh",
         type="ssh",
         config={
+            "maxConcurrentSessions": 10,
             "nodes": [
                 {
                     "checkHostKey": False,
                     "hostname": f"127.0.0.1:{ssh_port}",
-                    "sshKey": f.name,
+                    "sshKey": f_key.name,
                     "username": "linuxserver.io",
                     "retries": 2,
                     "retryDelay": 5,
                 }
             ],
-            "maxConcurrentSessions": 10,
+            "services": {
+                "test_template": _create_template_file(
+                    "#!/bin/sh\n\necho 'I am a ssh service'\n{{streamflow_command}}"
+                )
+            },
         },
         workdir="/tmp",
         external=False,
