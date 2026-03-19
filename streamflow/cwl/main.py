@@ -13,6 +13,7 @@ from streamflow.core.context import StreamFlowContext
 from streamflow.cwl.requirement.docker.translator import CWLDockerTranslatorConfig
 from streamflow.cwl.translator import CWLTranslator
 from streamflow.log_handler import logger
+from streamflow.token_printer import dag_workflow
 from streamflow.workflow.executor import StreamFlowExecutor
 
 
@@ -87,6 +88,17 @@ async def main(
     await workflow.save(context)
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED building of workflow execution plan")
+    import datetime
+    import shutil
+
+    plot_path = "/home/alberto/Work/Repositories/streamflow/dev/plots/"
+    if os.path.exists(plot_path):
+        shutil.rmtree(plot_path)
+    os.makedirs(plot_path, exist_ok=True)
+    dag_workflow(
+        workflow,
+        os.path.join(plot_path, f"{datetime.datetime.now().timestamp()}")
+    )
     executor = StreamFlowExecutor(workflow)
     if logger.isEnabledFor(logging.INFO):
         logger.info(f"EXECUTING workflow {args.name}")

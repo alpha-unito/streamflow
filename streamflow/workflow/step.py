@@ -1518,19 +1518,14 @@ class ScheduleStep(BaseStep):
         return params
 
     @recoverable
-    async def _schedule(
-        self,
-        job: Job,
-    ) -> None:
+    async def _schedule(self, job: Job) -> None:
         await self.workflow.context.scheduler.schedule(
             job,
             self.binding_config,
             self.hardware_requirement,
         )
-
         connector = self.workflow.context.scheduler.get_connector(job.name)
         locations = self.workflow.context.scheduler.get_locations(job.name)
-
         await self._set_job_directories(connector, locations, job)
 
         # Register paths

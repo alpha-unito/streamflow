@@ -67,6 +67,9 @@ class InterWorkflowPort(Port):
         super().__init__(workflow, name)
         self.boundaries: MutableSequence[BoundaryRule] = []
 
+    def pending_rules(self) -> MutableSequence[BoundaryRule]:
+        return [b for b in self.boundaries if len(b.tags) != 0 and b.port is not self]
+
     def _handle_boundary(self, boundary: BoundaryRule, token: Token) -> bool:
         if token.tag in boundary.tags:
             boundary.tags.remove(token.tag)

@@ -12,7 +12,6 @@ from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import (
     FailureManager,
     RetryRequest,
-    TokenAvailability,
     recoverable,
 )
 from streamflow.core.workflow import Job, Status, Step, Token
@@ -57,15 +56,13 @@ class DefaultFailureManager(FailureManager):
         self.max_retries: int | None = max_retries
         self.retry_delay: int | None = retry_delay
         self._retry_requests: MutableMapping[str, RetryRequest] = {}
-        self.counter = 0
 
     @recoverable
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
-        await RollbackRecoveryPolicy(self.context).recover(job, step, self.counter)
-        self.counter += 1
+        await RollbackRecoveryPolicy(self.context).recover(job, step)
         if logger.isEnabledFor(logging.INFO):
             logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
 
@@ -100,26 +97,6 @@ class DefaultFailureManager(FailureManager):
         await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)
 
-    async def is_recovered(self, job_name: str) -> TokenAvailability:
-        if request := self._retry_requests.get(job_name):
-            async with request.lock:
-                if self.context.scheduler.get_allocation(job_name).status in (
-                    Status.ROLLBACK,
-                    Status.RUNNING,
-                    Status.FIREABLE,
-                ):
-                    return TokenAvailability.FutureAvailable
-                elif len(request.output_tokens) > 0 and all(
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(t.is_available(self.context))
-                            for t in request.output_tokens.values()
-                        )
-                    )
-                ):
-                    return TokenAvailability.Available
-        return TokenAvailability.Unavailable
-
     async def notify(
         self,
         output_port: str,
@@ -138,11 +115,8 @@ class DefaultFailureManager(FailureManager):
 
     async def update_request(self, job_name: str) -> None:
         retry_request = self._retry_requests[job_name]
-        async with retry_request.lock:
-            retry_request.job_token = None
-            retry_request.output_tokens = {}
         if self.max_retries is None or retry_request.version < self.max_retries:
-            retry_request.version += 1
+            retry_request.new_version()
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
                     f"Updated Job {job_name} after {retry_request.version} retries (max retries {self.max_retries})"
@@ -179,9 +153,6 @@ class DummyFailureManager(FailureManager):
                 f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
             )
         raise exception
-
-    async def is_recovered(self, job_name: str) -> TokenAvailability:
-        return TokenAvailability.Unavailable
 
     async def notify(
         self,

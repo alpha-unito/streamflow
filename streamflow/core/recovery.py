@@ -3,8 +3,6 @@ from __future__ import annotations
 import asyncio
 import functools
 from abc import ABC, abstractmethod
-from collections.abc import MutableMapping
-from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
@@ -89,9 +87,6 @@ class FailureManager(SchemaEntity):
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None: ...
 
     @abstractmethod
-    async def is_recovered(self, job_name: str) -> TokenAvailability: ...
-
-    @abstractmethod
     async def notify(
         self,
         output_port: str,
@@ -111,60 +106,23 @@ class RecoveryPolicy(ABC):
     async def recover(self, failed_job: Job, failed_step: Step) -> None: ...
 
 
-class AsyncRLock:
-    def __init__(self) -> None:
-        self._owner: asyncio.Task | None = None
-        self._count: int = 0
-        self._lock: asyncio.Lock = asyncio.Lock()
-
-    async def acquire(self) -> bool:
-        if self._owner == (current_task := asyncio.current_task()):
-            self._count += 1
-            return True
-        await self._lock.acquire()
-        self._owner = current_task
-        self._count = 1
-        return True
-
-    def release(self) -> None:
-        if self._owner != asyncio.current_task():
-            raise RuntimeError("Cannot release a lock you don't own")
-
-        self._count -= 1
-        if self._count == 0:
-            self._owner = None
-            self._lock.release()
-
-    async def __aenter__(self) -> AsyncRLock:
-        await self.acquire()
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        self.release()
-
-
 class RetryRequest:
     __slots__ = (
         "job_token",
         "lock",
         "name",
-        "output_tokens",
         "version",
         "workflow",
-        "workflow_ready",
     )
 
     def __init__(self, name: str) -> None:
         self.job_token: JobToken | None = None
-        self.lock: AsyncRLock = AsyncRLock()
+        self.lock: asyncio.Lock = asyncio.Lock()
         self.name: str = name
-        self.output_tokens: MutableMapping[str, Token] = {}
         self.version: int = 1
         self.workflow: Workflow | None = None
-        self.workflow_ready: asyncio.Event = asyncio.Event()
 
-
-class TokenAvailability(IntEnum):
-    Unavailable = 0
-    Available = 1
-    FutureAvailable = 2
+    def new_version(self) -> None:
+        self.version += 1
+        self.job_token = None
+        # FIXME. move workflow assignment here

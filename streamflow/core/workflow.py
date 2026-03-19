@@ -11,7 +11,10 @@ from typing import TYPE_CHECKING, TypeVar, cast, overload
 from typing_extensions import Self
 
 from streamflow.core import utils
-from streamflow.core.exception import WorkflowExecutionException
+from streamflow.core.exception import (
+    WorkflowDefinitionException,
+    WorkflowExecutionException,
+)
 from streamflow.core.persistence import (
     DatabaseLoadingContext,
     DependencyType,
@@ -639,6 +642,8 @@ class Workflow(PersistableEntity):
         if name is None:
             name = str(uuid.uuid4())
         port = cls(workflow=self, name=name, **kwargs)
+        if name in self.ports.keys() and type(self.ports[name]) is cls:
+            raise WorkflowDefinitionException(f"Duplicated port name: {name}")
         self.ports[name] = port
         return port
 
