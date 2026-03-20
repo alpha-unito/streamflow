@@ -78,15 +78,19 @@ jobs:
             commit: "e71ddcc925d64c2efa68c2a56dd0edcc960a2170"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
+          - on: "ubuntu-24.04-riscv"
+            python: "3.14"
+            commit: "6eddbfb03b8861885832b26e322fbd0fcb9a884d"
+            exclude: "docker_entrypoint,modify_file_content"
+            version: "v1.3"
     runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
-          version: "0.9.16"
-      - uses: actions/setup-python@v7
-        with:
+          enable-cache: true
           python-version: ${{ matrix.python }}
+          version: "0.9.16"
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -114,6 +118,11 @@ jobs:
           kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ matrix.docker == 'kubernetes' }}
+      - name: "Install dependencies on RISC-V"
+        run: |
+          sudo apt update
+          sudo apt install -yq libffi-dev
+        if: ${{ endsWith(matrix.on, '-riscv') }}
       - name: "Test CWL ${{ matrix.version }} conformance"
         env:
           VERSION: ${{ matrix.version }}
@@ -170,10 +179,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
-          version: "0.9.16"
-      - uses: actions/setup-python@v7
-        with:
+          enable-cache: true
           python-version: ${{ matrix.python }}
+          version: "0.9.16"
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -270,10 +278,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
-          version: "0.9.16"
-      - uses: actions/setup-python@v7
-        with:
+          enable-cache: true
           python-version: "3.14"
+          version: "0.9.16"
       - name: "Install Tox"
         run: uv tool install tox --with tox-uv
       - name: "Run StreamFlow static analysis via Tox"
@@ -294,10 +301,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
-          version: "0.9.16"
-      - uses: actions/setup-python@v7
-        with:
+          enable-cache: true
           python-version: ${{ matrix.python }}
+          version: "0.9.16"
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
