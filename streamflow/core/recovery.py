@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import MutableMapping
 from enum import IntEnum
 from typing import TYPE_CHECKING
@@ -103,7 +103,7 @@ class FailureManager(SchemaEntity):
     async def update_request(self, job_name: str) -> None: ...
 
 
-class RecoveryPolicy:
+class RecoveryPolicy(ABC):
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
 
