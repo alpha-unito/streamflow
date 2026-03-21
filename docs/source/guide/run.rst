@@ -17,6 +17,8 @@ The ``--name`` option allows to specify a workflow name for the current executio
 
 The ``--color`` option allows to print log preamble with colors related to the logging level, which can be useful for live demos and faster log inspections.
 
+The ``--validate`` option allows to check if the workflow is correctly defined, without actually executing it.
+
 Run on Docker
 =============
 

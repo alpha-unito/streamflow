@@ -28,7 +28,6 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.provenance import ProvenanceManager
-from streamflow.core.utils import get_job_tag
 from streamflow.core.workflow import Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.version import VERSION
@@ -488,7 +487,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         return property_values
 
     async def _list_dir(
-        self, path: str, jsonld_map: MutableMapping[str, Any]
+        self, path: str, jsonld_map: MutableMapping[str, MutableMapping[str, Any]]
     ) -> MutableSequence[MutableMapping[str, Any]]:
         has_part = []
         if os.path.exists(path):
@@ -515,7 +514,9 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                         "alternateName": os.path.basename(element_path),
                         "sha1": checksum,
                     }
-                jsonld_map[jsonld_object["@id"]] = element_path
+                jsonld_map.setdefault(jsonld_object["@id"], {})[
+                    jsonld_object.get("alternateName", jsonld_object["@id"])
+                ] = element_path
                 has_part.append(jsonld_object)
         return has_part
 
@@ -527,7 +528,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
         alternatePrefix: str,
     ) -> MutableSequence[MutableMapping[str, Any]]:
         for part in parts:
-            path = jsonld_map.pop(part["@id"])
+            path = jsonld_map[part["@id"]][part.get("alternateName", part["@id"])]
             part["@id"] = os.path.join(prefix, part["@id"])
             if "alternateName" in part:
                 part["alternateName"] = os.path.join(
@@ -536,6 +537,20 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
             self.files_map[path] = part["@id"]
             if part["@id"] not in self.graph:
                 self.graph[part["@id"]] = part
+            else:
+                if not isinstance(
+                    self.graph[part["@id"]]["alternateName"], MutableSequence
+                ):
+                    self.graph[part["@id"]]["alternateName"] = [
+                        self.graph[part["@id"]]["alternateName"]
+                    ]
+                if (
+                    part["alternateName"]
+                    not in self.graph[part["@id"]]["alternateName"]
+                ):
+                    self.graph[part["@id"]]["alternateName"].append(
+                        part["alternateName"]
+                    )
             if part["@type"] == "Dataset" and "hasPart" in part:
                 part["hasPart"] = self._rename_parts(
                     part["hasPart"],
@@ -543,7 +558,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                     part["@id"],
                     part.get("alternateName", part["@id"]),
                 )
-        return [{"@id": part["@id"]} for part in parts]
+        return [{"@id": id_} for id_ in {part["@id"] for part in parts}]
 
     def _update_actions(
         self,
@@ -820,13 +835,11 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                             ),
                         }
                         self.graph[create_action["@id"]] = create_action
-                        tag = get_job_tag(
-                            (
-                                await self.context.database.get_token(
-                                    execution["job_token"]
-                                )
-                            )["value"]["job"]["params"]["name"]
-                        )
+                        tag = (
+                            await self.context.database.get_token(
+                                execution["job_token"]
+                            )
+                        )["tag"]
                         self.create_action_map.setdefault(wf_id, {}).setdefault(
                             jsonld_step["workExample"]["@id"], {}
                         ).setdefault(step_name, {}).setdefault(tag, []).append(

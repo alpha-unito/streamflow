@@ -234,9 +234,12 @@ def _escape_value(value: Any) -> Any:
 
 
 async def _get_source_location(
-    src_path: str, input_directory: str, connector: Connector, workflow: Workflow
+    src_path: str,
+    input_directory: str,
+    connector: Connector,
+    path_processor: ModuleType,
+    workflow: Workflow,
 ) -> DataLocation | None:
-    path_processor = get_path_processor(connector)
     src_path = path_processor.normpath(src_path)
     input_directory = path_processor.normpath(input_directory)
     relpath = path_processor.basename(src_path)
@@ -252,7 +255,7 @@ async def _get_source_location(
     # Register parent locations
     await utils.search_in_parent_locations(
         context=workflow.context,
-        connector=connector,
+        path_processor=path_processor,
         path=src_path,
         relpath=relpath,
         base_path=base_path,
@@ -336,7 +339,7 @@ async def _prepare_work_dir(
     context = options.step.workflow.context
     connector = context.scheduler.get_connector(options.job.name)
     locations = context.scheduler.get_locations(options.job.name)
-    path_processor = get_path_processor(connector)
+    path_processor = get_path_processor(locations[0])
     # Initialize base path to job output directory if present
     base_path = base_path or options.job.output_directory
     # If current element is a string, it must be an expression
@@ -375,10 +378,11 @@ async def _prepare_work_dir(
                 # If a compatible source location exists, simply transfer data
                 if (src_path := utils.get_path_from_token(listing)) is not None and (
                     selected_location := await _get_source_location(
-                        src_path,
-                        options.job.input_directory,
-                        connector,
-                        options.step.workflow,
+                        src_path=src_path,
+                        input_directory=options.job.input_directory,
+                        connector=connector,
+                        path_processor=path_processor,
+                        workflow=options.step.workflow,
                     )
                 ):
                     dst_path = dst_path or path_processor.join(
@@ -932,7 +936,6 @@ class CWLCommand(TokenizedCommand):
             },
         )
         # Check if file `cwl.output.json` exists on any location
-        path_processor = get_path_processor(connector)
         for location in locations:
             cwl_output_path = StreamFlowPath(
                 job.output_directory,
@@ -953,7 +956,7 @@ class CWLCommand(TokenizedCommand):
                                 location=location,
                             ),
                             job_name=job.name,
-                            path_processor=path_processor,
+                            path_processor=get_path_processor(location),
                             value=v,
                         )
                         for k, v in result.items()

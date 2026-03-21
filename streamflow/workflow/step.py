@@ -36,7 +36,7 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import compare_tags, get_entity_ids
+from streamflow.core.utils import compare_tags, get_entity_ids, get_job_tag
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -310,14 +310,12 @@ class Combinator(ABC):
                 elif _is_parent_tag(key, tag):
                     self._add_to_port(token, self._token_values[key], port_name)
                 elif _is_parent_tag(tag, key):
-                    if tag not in self._token_values:
-                        self._token_values[tag] = {}
                     for p in self._token_values[key]:
                         for t in self._token_values[key][p]:
-                            self._add_to_port(t, self._token_values[tag], p)
-        if tag not in self._token_values:
-            self._token_values[tag] = {}
-        self._add_to_port(token, self._token_values[tag], port_name)
+                            self._add_to_port(
+                                t, self._token_values.setdefault(tag, {}), p
+                            )
+        self._add_to_port(token, self._token_values.setdefault(tag, {}), port_name)
 
     def _add_to_port(
         self,
@@ -382,7 +380,8 @@ class CombinatorStep(BaseStep):
                         status = _reduce_statuses([status, token.value])
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received termination token for port {task_name}"
+                                f"Step {self.name} received termination token "
+                                f"with Status {token.value.name} for port {task_name}"
                             )
                         terminated.append(task_name)
                     # Otherwise, build combination and set default status to COMPLETED
@@ -1047,10 +1046,6 @@ class GatherStep(BaseStep):
                         )
                 else:
                     if task_name == "__size__":
-                        if logger.isEnabledFor(logging.DEBUG):
-                            logger.debug(
-                                f"Step {self.name} received size token with {token.tag} tag"
-                            )
                         self.size_map[token.tag] = token
                         port = size_port
                         if len(self.token_map.setdefault(token.tag, [])) == token.value:
@@ -1216,35 +1211,29 @@ class LoopCombinatorStep(CombinatorStep):
                 token = min(
                     tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
                 )
-                if (
-                    len(
-                        parent_tags := {
-                            t.tag
-                            for t in await load_dependee_tokens(
-                                persistent_id=token.persistent_id,
-                                context=self.workflow.context,
-                                loading_context=loading_context,
-                            )
-                        }
+                parent_tags = {
+                    t.tag
+                    for t in await load_dependee_tokens(
+                        persistent_id=token.persistent_id,
+                        context=self.workflow.context,
+                        loading_context=loading_context,
                     )
-                    == 0
-                ):
+                }
+                if len(parent_tags) == 0:
                     raise FailureHandlingException(
                         f"Failed to load parents for token tag {token.tag} in step {self.name}."
                     )
                 elif len(parent_tags) > 1:
                     raise FailureHandlingException(
-                        f"LoopCombinatorStep {self.name} must have inputs with "
+                        f"Step {self.name} must have inputs with "
                         f"the same tags. Got: {parent_tags}"
                     )
                 parent_tag = next(iter(parent_tags))
                 # If tag depth levels are different, it means that it is necessary to restart from the first iteration
                 if len(parent_tag.split(".")) != len(token.tag.split(".")):
-                    tags.add(parent_tag)
-                    tags.add(token.tag)
+                    tags |= {parent_tag, token.tag}
                 else:
-                    tags.add(parent_tag)
-                    tags.add(".".join(parent_tag.split(".")[:-1]))
+                    tags |= {parent_tag, ".".join(parent_tag.split(".")[:-1])}
                 from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
         await self.combinator.restore(from_tags)
 
@@ -1271,11 +1260,11 @@ class LoopCombinatorStep(CombinatorStep):
                     token = task.result()
                     # If a TerminationToken is received, the corresponding port terminated its outputs
                     if check_termination(token):
+                        status = _reduce_statuses([status, token.value])
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received termination token with Status {token.value} for port {task_name}"
+                                f"Step {self.name} received termination token for port {task_name}"
                             )
-                        status = _reduce_statuses([status, token.value])
                         if token.value != Status.COMPLETED:
                             self.iteration_termination_checklist.get(task_name).clear()
                         terminated.append(task_name)
@@ -1304,6 +1293,7 @@ class LoopCombinatorStep(CombinatorStep):
                             self.iteration_termination_checklist[task_name].add(
                                 token.tag
                             )
+
                         async for schema in self.combinator.combine(task_name, token):
                             ins = [
                                 in_id
@@ -1381,7 +1371,9 @@ class LoopOutputStep(BaseStep, ABC):
             if check_termination(token):
                 status = _reduce_statuses([status, token.value])
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received termination token")
+                    logger.debug(
+                        f"Step {self.name} received termination token with Status {status.name}"
+                    )
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
                     break
@@ -1503,10 +1495,7 @@ class ScheduleStep(BaseStep):
         return params
 
     @recoverable
-    async def _schedule(
-        self,
-        job: Job,
-    ) -> None:
+    async def _schedule(self, job: Job) -> None:
         await self.workflow.context.scheduler.schedule(
             job,
             self.binding_config,
@@ -1558,7 +1547,7 @@ class ScheduleStep(BaseStep):
                         token_inputs.append(t)
         self.get_output_port().put(
             await self._persist_token(
-                token=JobToken(value=job),
+                token=JobToken(value=job, tag=get_job_tag(job.name)),
                 port=self.get_output_port(),
                 input_token_ids=get_entity_ids(token_inputs),
             )
@@ -1571,7 +1560,7 @@ class ScheduleStep(BaseStep):
         job: Job,
     ) -> None:
         allocation = self.workflow.context.scheduler.get_allocation(job.name)
-        path_processor = get_path_processor(connector)
+        path_processor = get_path_processor(allocation.locations[0])
         job.input_directory = _get_directory(
             path_processor, job.input_directory, allocation.target
         )
@@ -1646,19 +1635,17 @@ class ScheduleStep(BaseStep):
                     if name.startswith("__connector__")
                 },
             )
-            # If there are input ports
-            input_ports = {
-                k: v
-                for k, v in self.get_input_ports().items()
-                if k not in connector_ports
-            }
             await asyncio.gather(
                 *(
                     asyncio.create_task(port.get(posixpath.join(self.name, name)))
                     for name, port in connector_ports.items()
                 )
             )
-            if input_ports:
+            if input_ports := {
+                k: v
+                for k, v in self.get_input_ports().items()
+                if k not in connector_ports.keys()
+            }:
                 inputs_map: dict[str, dict[str, Token]] = {}
                 while True:
                     # Retrieve input tokens

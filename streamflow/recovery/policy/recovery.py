@@ -3,14 +3,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import posixpath
-from collections.abc import MutableSequence, MutableSet
-from functools import cmp_to_key
+from collections.abc import Iterable, MutableSequence, MutableSet
 from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
-from streamflow.core.utils import compare_tags, get_job_tag, get_tag
-from streamflow.core.workflow import Job, Status, Step, Token, Workflow
+from streamflow.core.utils import get_tag
+from streamflow.core.workflow import Job, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.utils import (
@@ -27,7 +26,11 @@ from streamflow.workflow.port import (
     InterWorkflowPort,
     JobPort,
 )
-from streamflow.workflow.token import JobToken, TerminationToken
+from streamflow.workflow.token import (
+    IterationTerminationToken,
+    JobToken,
+    TerminationToken,
+)
 from streamflow.workflow.utils import get_job_token
 
 
@@ -39,9 +42,7 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
                 f"Waiting output ports {list(failed_step.output_ports.values())}"
             )
         if set(new_workflow.ports.keys()) != set(failed_step.output_ports.values()):
-            raise FailureHandlingException(
-                f"Recovery workflow for {failed_step.name} step has no all the output ports"
-            )
+            raise FailureHandlingException("Recovered workflow construction invalid")
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -53,122 +54,73 @@ async def _execute_recover_workflow(new_workflow: Workflow, failed_step: Step) -
             )
         )
     else:
-        try:
-            await new_workflow.save(new_workflow.context)
-            executor = StreamFlowExecutor(new_workflow)
-            await executor.run()
-        except BaseException as e:
-            logger.info(f"Error {e}: {type(e)}")
-            for step in new_workflow.steps.values():
-                logger.debug(f"Step {step.name} exits with status {step.status.name}")
-            raise
+        await new_workflow.save(new_workflow.context)
+        executor = StreamFlowExecutor(new_workflow)
+        await executor.run()
 
 
-async def _inject_tokens(
-    failed_job: Job,
-    failed_step: Step,
-    mapper: GraphMapper,
-    workflow: Workflow,
-) -> None:
-    workflow_output_ports = {v: k for k, v in failed_step.output_ports.items()}
-
-    # Step output ports are in the mapper if a loop exists. Otherwise, they are
-    # missing and must be added manually to set the boundary rule
-    for port_name in mapper.port_tokens.keys() | workflow_output_ports.keys():
-        token_list = (
-            sorted(
-                [
-                    mapper.token_instances[token_id]
-                    for token_id in mapper.port_tokens[port_name]
-                    if mapper.token_available[token_id]
-                ],
-                key=lambda x: x.tag,
-            )
-            if port_name in mapper.port_tokens.keys()
-            else ()
+async def _inject_tokens(mapper: GraphMapper, new_workflow: Workflow) -> None:
+    for port_name in [
+        p for p, degree in mapper.dcg_port.in_degree().items() if degree == 0
+    ]:
+        token_list = sorted(
+            [
+                mapper.token_instances[token_id]
+                for token_id in mapper.port_tokens[port_name]
+                if mapper.token_available[token_id]
+            ],
+            key=lambda x: x.tag,
         )
-        if len(tags := {token.tag for token in token_list}) != len(token_list):
+        if len(
+            tags := {(token.persistent_id, token.tag) for token in token_list}
+        ) != len(token_list):
             raise FailureHandlingException(
-                f"Port {port_name} has multiple tokens with same tag: {tags}"
+                f"Port {port_name} has multiple tokens with same tag (id, tag): {tags}"
             )
-        port = workflow.ports[port_name]
-
-        # Set token tag boundary rules
-        # All ports in a recovery workflow are InterWorkflowPorts (except DeployStep ports)
-        # because future recovery workflows may attach to them.
-        if isinstance(port, InterWorkflowPort):
-            # Handle output ports of failed step
-            if port.name in workflow_output_ports.keys():
-                # Propagate recovered tokens to original workflow ports
-                cast(InterWorkflowPort, workflow.ports[port.name]).add_inter_port(
-                    port=failed_step.get_output_port(workflow_output_ports[port.name]),
-                    boundary_tag=get_tag(failed_job.inputs.values()),
-                    boundary_action=BoundaryAction.PROPAGATE,
-                )
-                # Terminate execution in the recovery workflow
-                cast(InterWorkflowPort, workflow.ports[port.name]).add_inter_port(
-                    port=workflow.ports[port.name],
-                    boundary_tag=get_tag(failed_job.inputs.values()),
-                    boundary_action=BoundaryAction.TERMINATE,
-                )
-
-            # Other InterWorkflowPorts have one default rule: when a token of
-            # the boundary rule arrives, the activating token and a grateful
-            # termination token are propagated in the recovery workflow.
-            # The boundary tag is the largest tag within the mapper.
-
-            # Exceptions:
-            # - ScheduleStep output ports have no default rule because JobTokens
-            #   lack tags (all use tag 0).
-            # elif not isinstance(port, InterWorkflowJobPort):
-            #     port.add_inter_port(
-            #         port=port,
-            #         boundary_tag=max(
-            #             [
-            #                 mapper.token_instances[token_id].tag
-            #                 for token_id in mapper.port_tokens[port_name]
-            #             ],
-            #             key=cmp_to_key(compare_tags),
-            #         ),
-            #         boundary_action=(
-            #             BoundaryAction.PROPAGATE | BoundaryAction.TERMINATE
-            #         ),
-            #     )
-        # Inject tokens
+        if any(
+            isinstance(token, (TerminationToken, IterationTerminationToken))
+            for token in token_list
+        ):
+            raise FailureHandlingException("Impossible to load a TerminationToken")
+        port = new_workflow.ports[port_name]
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Injecting token {token.persistent_id} {token.tag} of port {port.name} ({type(port)})"
-                )
+                logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
         if len(port.token_list) > 0 and len(port.token_list) == len(
             mapper.port_tokens[port_name]
         ):
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Injecting termination token on port {port.name}")
-            port.put(TerminationToken(Status.RECOVERED))
+            port.put(TerminationToken())
 
 
 async def _populate_workflow(
+    step_ids: Iterable[int],
     failed_step: Step,
-    step_ids: MutableSequence[int],
-    workflow: Workflow,
+    new_workflow: Workflow,
     workflow_builder: WorkflowBuilder,
+    failed_job: Job,
 ) -> None:
     await asyncio.gather(
         *(
-            asyncio.create_task(workflow_builder.load_step(workflow.context, step_id))
+            asyncio.create_task(
+                workflow_builder.load_step(new_workflow.context, step_id)
+            )
             for step_id in step_ids
         )
     )
     # Add the failed step to the new workflow
-    await workflow_builder.load_step(workflow.context, failed_step.persistent_id)
+    await workflow_builder.load_step(
+        new_workflow.context,
+        failed_step.persistent_id,
+    )
     # Instantiate ports that can transfer tokens between workflows
-    for port in workflow.ports.values():
+    for port in new_workflow.ports.values():
         if not isinstance(
             port, (ConnectorPort, InterWorkflowJobPort, InterWorkflowPort)
         ):
-            workflow.create_port(
+            new_workflow.create_port(
                 (
                     InterWorkflowJobPort
                     if isinstance(port, JobPort)
@@ -176,6 +128,17 @@ async def _populate_workflow(
                 ),
                 port.name,
             )
+    for port in failed_step.get_output_ports().values():
+        cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
+            port,
+            boundary_tags=[get_tag(failed_job.inputs.values())],
+            boundary_action=BoundaryAction.PROPAGATE,
+        )
+        cast(InterWorkflowPort, new_workflow.ports[port.name]).add_inter_port(
+            new_workflow.ports[port.name],
+            boundary_tags=[get_tag(failed_job.inputs.values())],
+            boundary_action=BoundaryAction.TERMINATE,
+        )
 
 
 class RollbackRecoveryPolicy(RecoveryPolicy):
@@ -208,26 +171,17 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
         await self._sync_workflows(
-            job_names={*(t.value.name for t in job_tokens), failed_job.name},
-            job_tokens=job_tokens,
-            mapper=mapper,
-            workflow=new_workflow,
+            {*(t.value.name for t in job_tokens), failed_job.name},
+            job_tokens,
+            mapper,
+            new_workflow,
         )
         # Populate new workflow
-        step_ids = await mapper.get_step_ids(failed_step.output_ports.values())
+        steps = await mapper.get_port_and_step_ids(failed_step.output_ports.values())
         await _populate_workflow(
-            failed_step=failed_step,
-            step_ids=step_ids,
-            workflow=new_workflow,
-            workflow_builder=workflow_builder,
+            steps, failed_step, new_workflow, workflow_builder, failed_job
         )
-        await _inject_tokens(
-            failed_job=failed_job,
-            failed_step=failed_step,
-            mapper=mapper,
-            workflow=new_workflow,
-        )
-
+        await _inject_tokens(mapper, new_workflow)
         # Resume steps
         for step in new_workflow.steps.values():
             await step.restore(
@@ -273,7 +227,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                             workflow.create_port(
                                 cls=InterWorkflowJobPort, name=port_name
                             ),
-                            boundary_tag=get_job_tag(job_token.value.name),
+                            boundary_tags=[job_token.tag],
                             boundary_action=(
                                 BoundaryAction.PROPAGATE | BoundaryAction.TERMINATE
                             ),

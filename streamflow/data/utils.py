@@ -9,13 +9,11 @@ from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 
 if TYPE_CHECKING:
-    from streamflow.core.deployment import Connector
     from streamflow.core.scheduling import AvailableLocation
 
 
 async def bind_mount_point(
     context: StreamFlowContext,
-    connector: Connector,
     location: AvailableLocation,
     hardware: Hardware,
 ) -> Hardware:
@@ -26,12 +24,11 @@ async def bind_mount_point(
     resolved with the paths of the below `location`.
 
     :param context: the `StreamFlowContext` object with global application status.
-    :param connector: the `Connector` object to communicate with the location
     :param location: the `AvailableLocation` object of the location information
     :param hardware: the `Hardware` object with eventual binds to resolve
     :return: a new `Hardware` object with the eventual bind in the storages resolved
     """
-    path_processor = get_path_processor(connector)
+    path_processor = get_path_processor(location.location)
     storage: dict[str, Storage] = {}
     for disk in hardware.storage.values():
         if disk.bind is not None:

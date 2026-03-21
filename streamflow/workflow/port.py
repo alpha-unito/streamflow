@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, MutableMapping, MutableSequence
+from collections.abc import Callable, MutableSequence
 from enum import Flag, auto
-from typing import NamedTuple
 
 from streamflow.core.deployment import Connector
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
@@ -16,9 +15,20 @@ class BoundaryAction(Flag):
     TERMINATE = auto()
 
 
-class BoundaryRule(NamedTuple):
-    port: Port
-    action: BoundaryAction
+class BoundaryRule:
+    def __init__(
+        self, port: Port, action: BoundaryAction, tags: MutableSequence[str]
+    ) -> None:
+        self.port: Port = port
+        self.action: BoundaryAction = action
+        self.tags: MutableSequence[str] = tags
+
+    def is_satisfied(self) -> bool:
+        return len(self.tags) == 0
+
+    def update_tags(self, token: Token) -> None:
+        if token.tag in self.tags:
+            self.tags.remove(token.tag)
 
 
 class ConnectorPort(Port):
@@ -64,44 +74,48 @@ class FilterTokenPort(Port):
 class InterWorkflowPort(Port):
     def __init__(self, workflow: Workflow, name: str):
         super().__init__(workflow, name)
-        self.boundaries: MutableMapping[str, MutableSequence[BoundaryRule]] = {}
-
-    def _handle_boundary(self, boundary: BoundaryRule, token: Token) -> None:
-        if BoundaryAction.PROPAGATE in boundary.action:
-            if boundary.port is self:
-                super().put(token)
-            else:
-                boundary.port.put(token)
-        if BoundaryAction.TERMINATE in boundary.action:
-            if boundary.port is self:
-                super().put(TerminationToken(Status.RECOVERED))
-            else:
-                boundary.port.put(TerminationToken(Status.RECOVERED))
+        self.boundaries: MutableSequence[BoundaryRule] = []
 
     def add_inter_port(
         self,
         port: Port,
-        boundary_tag: str,
+        boundary_tags: MutableSequence[str],
         boundary_action: BoundaryAction,
     ) -> None:
-        boundary = BoundaryRule(port, boundary_action)
-        self.boundaries.setdefault(boundary_tag, []).append(boundary)
+        # Deep copy of `boundary_tags` because it will be manipulated
+        boundary = BoundaryRule(port=port, action=boundary_action, tags=list(boundary_tags))
+        self.boundaries.append(boundary)
 
-        # Create a copy of `token_list` because the list can be modified within `_handle_self_boundary` method
-        for token in list(self.token_list):
-            if token.tag == boundary_tag:
-                self._handle_boundary(boundary, token)
+        # Create a copy of `token_list` because the list can be modified
+        # within `_execute_boundary_action` method, e.g. adding a termination token
+        for token in [
+            t for t in self.token_list if not isinstance(t, TerminationToken)
+        ]:
+            boundary.update_tags(token)
+            if boundary.is_satisfied():
+                self._execute_boundary_action(boundary, token)
 
     def put(self, token: Token) -> None:
         if isinstance(token, TerminationToken):
             super().put(token)
         else:
-            self_rule = False
-            for boundary in self.boundaries[token.tag]:
-                self_rule = self_rule or boundary.port is self
-                self._handle_boundary(boundary, token)
-            if not self_rule:
+            matched_self = False
+            for boundary in self.boundaries:
+                boundary.update_tags(token)
+                if boundary.is_satisfied():
+                    self._execute_boundary_action(boundary, token)
+                    if boundary.port is self:
+                        matched_self = True
+            if not matched_self:
                 super().put(token)
+
+    def _execute_boundary_action(self, boundary: BoundaryRule, token: Token) -> None:
+        target = boundary.port if boundary.port is not self else super()
+
+        if BoundaryAction.PROPAGATE in boundary.action:
+            target.put(token)
+        if BoundaryAction.TERMINATE in boundary.action:
+            target.put(TerminationToken(Status.RECOVERED))
 
 
 class InterWorkflowJobPort(InterWorkflowPort, JobPort):

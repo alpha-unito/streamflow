@@ -170,8 +170,8 @@ class DotProductCombinator(Combinator):
 class LoopCombinator(DotProductCombinator):
     def __init__(self, name: str, workflow: Workflow):
         super().__init__(name, workflow)
-        self._propagate: bool = False
         self.iteration_map: MutableMapping[str, int] = {}
+        self._propagate: bool = False
 
     async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
         async for schema in super()._product():
@@ -196,12 +196,9 @@ class LoopCombinator(DotProductCombinator):
         """
         for prefix, iteration in from_tags.values():
             iteration_num = int(iteration.split(".")[-1])
-            if prefix not in self.iteration_map:
-                self.iteration_map[prefix] = iteration_num
-            else:
-                self.iteration_map[prefix] = max(
-                    self.iteration_map[prefix], iteration_num
-                )
+            self.iteration_map[prefix] = max(
+                self.iteration_map.get(prefix, iteration_num), iteration_num
+            )
 
 
 class LoopTerminationCombinator(DotProductCombinator):

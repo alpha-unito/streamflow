@@ -82,7 +82,7 @@ async def main(
     if logger.isEnabledFor(logging.INFO):
         logger.info("Building workflow execution plan")
     workflow = translator.translate()
-    if getattr(args, "validate", False):
+    if args.validate:
         return
     await workflow.save(context)
     if logger.isEnabledFor(logging.INFO):

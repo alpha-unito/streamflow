@@ -40,24 +40,24 @@ jobs:
           - commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.2"
-          - commit: "e61e6e2c37032ac6675b3ef8664f60c93bbc810a"
+          - commit: "6eddbfb03b8861885832b26e322fbd0fcb9a884d"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
           - docker: "singularity"
-            commit: "e61e6e2c37032ac6675b3ef8664f60c93bbc810a"
+            commit: "6eddbfb03b8861885832b26e322fbd0fcb9a884d"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
             on: "ubuntu-24.04"
             python: "3.14"
             version: "v1.3"
           - docker: "kubernetes"
-            commit: "e61e6e2c37032ac6675b3ef8664f60c93bbc810a"
+            commit: "6eddbfb03b8861885832b26e322fbd0fcb9a884d"
             exclude: "docker_entrypoint,modify_file_content"
             on: "ubuntu-24.04"
             python: "3.14"
             version: "v1.3"
           - on: "macos-15-intel"
             python: "3.14"
-            commit: "e61e6e2c37032ac6675b3ef8664f60c93bbc810a"
+            commit: "6eddbfb03b8861885832b26e322fbd0fcb9a884d"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
     runs-on: ${{ matrix.on }}
@@ -73,11 +73,11 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOS X)"
-        uses: docker/setup-docker-action@v4
+        uses: docker/setup-docker-action@v5
         env:
           LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v2
@@ -111,7 +111,7 @@ jobs:
           report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: "Upload coverage report for conformance tests"
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ format('{0}-py{1}-cwl{2}-{3}-conformance-tests', matrix.on, matrix.python, matrix.version, matrix.docker) }}
           path: |
@@ -123,10 +123,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
       - name: "Build Docker image"
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           build-args: |
             HELM_VERSION=v3.19.0
@@ -159,7 +159,7 @@ jobs:
         run: uv sync --locked --no-dev --group docs
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "e3715d10625d439a159b0a3bbf527403692cb93f0555b454eda7d5201c008d8a"
+          CHECKSUM: "d965da2cb7153014dc7a8bff1c6883a78933097bdedeb5ba970d9fe86f22481a"
         run: |
           cd docs
           HASH="$(uv run --no-sync make checksum | tail -n1)"
@@ -246,14 +246,14 @@ jobs:
         with:
           node-version: "24"
       - name: "Install Docker (MacOs X)"
-        uses: docker/setup-docker-action@v4
+        uses: docker/setup-docker-action@v5
         env:
           LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
       - name: "Install Docker Compose (MacOS X)"
-        uses: docker/setup-compose-action@v1
+        uses: docker/setup-compose-action@v2
         if: ${{ startsWith(matrix.on, 'macos-') }}
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v2
@@ -284,7 +284,7 @@ jobs:
           report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: "Upload coverage report for unit tests"
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ format('{0}-py{1}-unit-tests', matrix.on, matrix.python) }}
           path: |
@@ -298,11 +298,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: "Download conformance tests artifacts"
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: "*-conformance-tests"
       - name: "Download unit tests artifacts"
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: "*-unit-tests"
       - name: "Upload coverage to Codecov"

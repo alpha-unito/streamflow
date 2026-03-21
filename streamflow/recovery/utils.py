@@ -60,9 +60,6 @@ class DirectedGraph:
             self._successors[u].add(v)
             self._predecessors[v].add(u)
 
-    def contains(self, u: T) -> bool:
-        return u in self._successors.keys()
-
     def get_nodes(self) -> MutableSet[T]:
         return set(self._successors.keys())
 
@@ -288,9 +285,9 @@ class GraphMapper:
                     port_names.add(port_name)
         return list(port_names)
 
-    async def get_step_ids(
+    async def get_port_and_step_ids(
         self, output_port_names: Iterable[str]
-    ) -> MutableSequence[int]:
+    ) -> MutableSet[int]:
         port_ids = {
             min(self.port_name_ids[port_name])
             for port_name in self.port_tokens.keys()
@@ -463,14 +460,8 @@ class ProvenanceGraph:
                 == TokenAvailability.FutureAvailable
             ):
                 is_available = False
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(
-                        f"Token with id {token.persistent_id} will be available"
-                    )
                 self.add(token)
             elif is_available := await token.is_available(context=self.context):
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Token with id {token.persistent_id} is available")
                 self.add(token)
             else:
                 # Token is not available, get previous tokens
@@ -496,6 +487,10 @@ class ProvenanceGraph:
                     raise FailureHandlingException(
                         f"Token with id {token.persistent_id} is not available and it does not have previous tokens"
                     )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Token id {token.persistent_id} is {'' if is_available else 'not '}available"
+                )
             self.info_tokens.setdefault(
                 token.persistent_id,
                 ProvenanceToken(
