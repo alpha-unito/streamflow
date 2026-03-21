@@ -61,6 +61,9 @@ class DirectedGraph:
     def contains(self, u: T) -> bool:
         return u in self._successors.keys()
 
+    def empty(self) -> bool:
+        return len(self._successors) == 0
+
     def get_nodes(self) -> MutableSet[T]:
         return set(self._successors.keys())
 
@@ -95,7 +98,7 @@ class DirectedGraph:
             for pred in self._predecessors[current]:
                 self._successors[pred].discard(current)
                 # If a parent now has no successors, it is a dead-end
-                if prune_dead_end and not (self._successors[pred].difference(stack)):
+                if prune_dead_end and not self._successors[pred].difference(stack):
                     stack.append(pred)
             del self._successors[current]
             del self._predecessors[current]
@@ -312,22 +315,12 @@ class GraphMapper:
             step_ids.remove(step_id)
         return list(step_ids)
 
-    def remove_port(self, port_name: str) -> MutableSequence[str]:
+    def remove_port(self, port_name: str) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Removing port {port_name}")
-        orphan_tokens = set()
-        removed_ports = self.dcg_ports.remove_node(port_name)
-        for next_port_name in removed_ports:
-            if logger.isEnabledFor(logging.DEBUG) and next_port_name != port_name:
-                logger.debug(
-                    f"Removed port {next_port_name} by deleting port {port_name}"
-                )
-            for token_id in self.port_tokens.pop(next_port_name, []):
-                orphan_tokens.add(token_id)
-            self.port_name_ids.pop(next_port_name, None)
-        for token_id in orphan_tokens:
-            self.remove_token(token_id)
-        return removed_ports
+        self.dcg_ports.remove_node(port_name, prune_dead_end=False)
+        self.port_name_ids.pop(port_name, None)
+        self.port_tokens.pop(port_name, None)
 
     def move_token_to_root(self, token_id: int) -> None:
         if logger.isEnabledFor(logging.DEBUG):
@@ -341,15 +334,22 @@ class GraphMapper:
             self.token_availability.pop(removed_token_id, None)
             self.token_instances.pop(removed_token_id, None)
             # Remove ports
+            to_delete = {}
             for port_name, token_list in self.port_tokens.items():
                 if removed_token_id in token_list:
-                    self.port_tokens[port_name].remove(removed_token_id)
+                    to_delete.setdefault(port_name, []).append(removed_token_id)
+            for port_name, token_list in to_delete.items():
+                for token_id in token_list:
+                    self.port_tokens[port_name].remove(token_id)
                 if len(self.port_tokens[port_name]) == 0:
                     empty_ports.add(port_name)
-        removed_ports: list[str] = []
+            # for port_name, token_list in self.port_tokens.items():
+            #     if removed_token_id in list(token_list):
+            #         self.port_tokens[port_name].remove(removed_token_id)
+            #     if len(self.port_tokens[port_name]) == 0:
+            #         empty_ports.add(port_name)
         for port_name in empty_ports:
-            if port_name not in removed_ports:
-                removed_ports.extend(self.remove_port(port_name))
+            self.remove_port(port_name)
 
     def remove_token(self, token_id: int) -> None:
         if logger.isEnabledFor(logging.DEBUG):

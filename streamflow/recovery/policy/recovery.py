@@ -7,7 +7,7 @@ from typing import NamedTuple, cast
 
 from streamflow.core.exception import FailureHandlingException
 from streamflow.core.recovery import RecoveryPolicy
-from streamflow.core.utils import get_job_tag, get_tag
+from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Job, Port, Status, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
@@ -167,22 +167,26 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 logger.debug(
                     f"Aligning rollbacks for failed job {failed_job}: Job {job_name} is currently executing."
                 )
-                inter_wf_ports = []
-                for port_name in mapper.get_output_ports(job_token):
-                    if port_name in retry_request.workflow.ports.keys():
-                        inter_wf_ports.append(port_name)
-                        # port_name can be deleted from the previous iteration of move_token_to_root
-                        # Adding a topological sorting, can resolve the problem?
-                        for token_id in list(mapper.port_tokens.get(port_name, [])):
-                            if mapper.token_instances[token_id].tag == job_token.tag:
-                                mapper.move_token_to_root(token_id)
-                for port_name in (
+                available_tokens = []
+                for token_id in (
+                    mapper.dag_tokens.successors(job_token.persistent_id)
+                    if mapper.dag_tokens.contains(job_token.persistent_id)
+                    else []
+                ):
+                    mapper.move_token_to_root(token_id)
+                    available_tokens.append(token_id)
+                for token_id in (
                     # Filter the port still necessary
                     # Some ports can be discarded given by the move token to root method
-                    pn
-                    for pn in inter_wf_ports
-                    if pn in mapper.port_tokens.keys()
+                    curr_token
+                    for curr_token in available_tokens
+                    if curr_token in mapper.token_instances.keys()
                 ):
+                    port_name = next(
+                        curr_port
+                        for curr_port, curr_tokens in mapper.port_tokens.items()
+                        if token_id in curr_tokens
+                    )
                     if port_name not in workflow.ports.keys() or not isinstance(
                         workflow.ports[port_name], InterWorkflowPort
                     ):
@@ -206,11 +210,53 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                         retry_request.workflow.ports[port_name],
                     ).add_inter_port(
                         port=new_port,
-                        boundary_tags=[get_job_tag(job_token.value.name)],
-                        boundary_action=(
-                            BoundaryAction.PROPAGATE  # | BoundaryAction.TERMINATE
-                        ),
+                        boundary_tags=[job_token.tag],
+                        boundary_action=BoundaryAction.PROPAGATE,
                     )
+                # inter_wf_ports = []
+                # for port_name in mapper.get_output_ports(job_token):
+                #     if port_name in retry_request.workflow.ports.keys():
+                #         inter_wf_ports.append(port_name)
+                #         # port_name can be deleted from the previous iteration of move_token_to_root
+                #         # Adding a topological sorting, can resolve the problem?
+                #         for token_id in list(mapper.port_tokens.get(port_name, [])):
+                #             if mapper.token_instances[token_id].tag == job_token.tag:
+                #                 mapper.move_token_to_root(token_id)
+                # for port_name in (
+                #     # Filter the port still necessary
+                #     # Some ports can be discarded given by the move token to root method
+                #     pn
+                #     for pn in inter_wf_ports
+                #     if pn in mapper.port_tokens.keys()
+                # ):
+                #     if port_name not in workflow.ports.keys() or not isinstance(
+                #         workflow.ports[port_name], InterWorkflowPort
+                #     ):
+                #         new_port = workflow.create_port(
+                #             cls=type(retry_request.workflow.ports[port_name]),
+                #             name=port_name,
+                #         )
+                #     else:
+                #         new_port = workflow.ports[port_name]
+                #
+                #     align_ports.append(
+                #         AlignInfo(
+                #             port_name=port_name,
+                #             workflow=workflow,
+                #             running_port=retry_request.workflow.ports[port_name],
+                #             new_port=new_port,
+                #         )
+                #     )
+                #     cast(
+                #         InterWorkflowPort,
+                #         retry_request.workflow.ports[port_name],
+                #     ).add_inter_port(
+                #         port=new_port,
+                #         boundary_tags=[job_token.tag],
+                #         boundary_action=(
+                #             BoundaryAction.PROPAGATE  # | BoundaryAction.TERMINATE
+                #         ),
+                #     )
             else:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
@@ -265,7 +311,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         import os
 
         figure_name = f"/home/alberto/Work/Repositories/streamflow/dev/plots/{datetime.datetime.now().timestamp()}_{failed_job.name[1:].replace(os.sep, '.')}"
-        graph_figure(mapper.dag_tokens,f"{figure_name}-pre-token")
+        graph_figure(mapper.dag_tokens._successors, f"{figure_name}-pre-token")
         #######################################
 
         logger.info(f"RECOVER {failed_job.name}: {mapper.dag_tokens}")
@@ -285,6 +331,14 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 failed_job=failed_job.name,
             )
             logger.info(f"Failed job {failed_job.name} alignment completed")
+            if mapper.dag_tokens.empty():
+                raise FailureHandlingException(
+                    f"Impossible to recover from {failed_job.name}: empty token graph"
+                )
+            if mapper.dcg_ports.empty():
+                raise FailureHandlingException(
+                    f"Impossible to recover from {failed_job.name}: empty port graph"
+                )
             if failed_job.name not in acquired_jobs:
                 raise FailureHandlingException(
                     "DEBUG. It is possible that the failed job is not the list. Raised exception just to check the status"
@@ -309,10 +363,10 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
 
         #######################################
         graph_figure(
-            mapper.dag_tokens,
+            mapper.dag_tokens._successors,
             f"{figure_name}-post-token",
         )
-        dag_workflow(new_workflow,figure_name)
+        dag_workflow(new_workflow, figure_name)
         #######################################
 
         await _inject_tokens(
@@ -323,6 +377,21 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             align_ports=align_ports,
         )
         logger.info(f"Failed job {failed_job.name} injected tokens")
+        for port in list(new_workflow.ports.values()):
+            if not port.get_output_steps() and not port.get_input_steps():
+                pass
+                # new_workflow.ports.pop(port.name)
+            elif not port.get_output_steps():
+                pass
+            elif isinstance(port, InterWorkflowPort):
+                if not any(
+                    boundary.port is port
+                    and BoundaryAction.TERMINATE in boundary.action
+                    for boundary in port.boundaries
+                ):
+                    raise FailureHandlingException(
+                        f"Failed job {failed_job.name}. The {port.name} InterWorkflowPort must handle the self termination"
+                    )
         # Resume steps
         for step in new_workflow.steps.values():
             await step.restore(

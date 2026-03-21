@@ -96,8 +96,7 @@ async def main(
         shutil.rmtree(plot_path)
     os.makedirs(plot_path, exist_ok=True)
     dag_workflow(
-        workflow,
-        os.path.join(plot_path, f"{datetime.datetime.now().timestamp()}")
+        workflow, os.path.join(plot_path, f"{datetime.datetime.now().timestamp()}")
     )
     executor = StreamFlowExecutor(workflow)
     if logger.isEnabledFor(logging.INFO):
