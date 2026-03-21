@@ -20,14 +20,15 @@ venv() {
   if ! test -d "$1" ; then
 	  if command -v uv > /dev/null; then
 	    uv venv "$1"
-	    uv sync --locked --no-dev || exit 1
+	    source "$1/bin/activate"
+	    uv sync --active --locked --no-dev || exit 1
 	  elif command -v virtualenv > /dev/null; then
       virtualenv -p python3 "$1"
 	  else
 	    python3 -m venv "$1"
 	  fi
   fi
-  source "$1"/bin/activate
+  source "$1/bin/activate"
 }
 
 # Version of the standard to test against
