@@ -11,17 +11,16 @@ from typing import TYPE_CHECKING, Any
 from streamflow.core.config import BindingConfig
 from streamflow.core.deployment import (
     DeploymentConfig,
+    ExecutionLocation,
     FilterConfig,
     LocalTarget,
     Target,
     WrapsConfig,
 )
-from streamflow.deployment.connector.local import LocalConnector
 from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from streamflow.config.config import WorkflowConfig
-    from streamflow.core.deployment import Connector
 
 
 def _get_workdir(
@@ -95,12 +94,8 @@ def get_binding_config(
         return BindingConfig(targets=[LocalTarget()])
 
 
-def get_path_processor(connector: Connector) -> ModuleType:
-    return (
-        posixpath
-        if connector is not None and not isinstance(connector, LocalConnector)
-        else os.path
-    )
+def get_path_processor(location: ExecutionLocation) -> ModuleType:
+    return os.path if location.local else posixpath
 
 
 def get_wraps_config(config: MutableMapping[str, Any] | None) -> WrapsConfig | None:

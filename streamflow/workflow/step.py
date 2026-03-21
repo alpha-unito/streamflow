@@ -311,14 +311,12 @@ class Combinator(ABC):
                 elif _is_parent_tag(key, tag):
                     self._add_to_port(token, self._token_values[key], port_name)
                 elif _is_parent_tag(tag, key):
-                    if tag not in self._token_values:
-                        self._token_values[tag] = {}
                     for p in self._token_values[key]:
                         for t in self._token_values[key][p]:
-                            self._add_to_port(t, self._token_values[tag], p)
-        if tag not in self._token_values:
-            self._token_values[tag] = {}
-        self._add_to_port(token, self._token_values[tag], port_name)
+                            self._add_to_port(
+                                t, self._token_values.setdefault(tag, {}), p
+                            )
+        self._add_to_port(token, self._token_values.setdefault(tag, {}), port_name)
 
     def _add_to_port(
         self,
@@ -1009,18 +1007,6 @@ class GatherStep(BaseStep):
             self._get_input_port_name() if name is None else name
         )
 
-    # async def restore(
-    #     self, on_tokens: MutableMapping[str, MutableSequence[Token]]
-    # ) -> None:
-    #     port = self.get_input_port()
-    #     self.workflow.ports[port.name] = FilterTokenPort(
-    #         filter_function=lambda t: not isinstance(t, TerminationToken) or t.value != Status.RECOVERED,
-    #         name=port.name,
-    #         workflow=self.workflow,
-    #     )
-    #     for token in port.token_list:
-    #         self.workflow.ports[port.name].put(token)
-
     async def run(self) -> None:
         if len(self.input_ports) != 2:
             raise WorkflowDefinitionException(
@@ -1247,17 +1233,15 @@ class LoopCombinatorStep(CombinatorStep):
                     )
                 elif len(parent_tags) > 1:
                     raise FailureHandlingException(
-                        f"LoopCombinatorStep {self.name} must have inputs with "
+                        f"Step {self.name} must have inputs with "
                         f"the same tags. Got: {parent_tags}"
                     )
                 parent_tag = next(iter(parent_tags))
                 # If tag depth levels are different, it means that it is necessary to restart from the first iteration
                 if len(parent_tag.split(".")) != len(token.tag.split(".")):
-                    tags.add(parent_tag)
-                    tags.add(token.tag)
+                    tags |= {parent_tag, token.tag}
                 else:
-                    tags.add(parent_tag)
-                    tags.add(".".join(parent_tag.split(".")[:-1]))
+                    tags |= {parent_tag, ".".join(parent_tag.split(".")[:-1])}
                 from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
         await self.combinator.restore(from_tags)
 
@@ -1581,7 +1565,7 @@ class ScheduleStep(BaseStep):
         job: Job,
     ) -> None:
         allocation = self.workflow.context.scheduler.get_allocation(job.name)
-        path_processor = get_path_processor(connector)
+        path_processor = get_path_processor(allocation.locations[0])
         job.input_directory = _get_directory(
             path_processor, job.input_directory, allocation.target
         )

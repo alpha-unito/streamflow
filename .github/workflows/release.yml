@@ -14,9 +14,9 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -36,7 +36,7 @@ jobs:
         run: echo "NEW_IMAGE=$(docker buildx imagetools inspect alphaunito/streamflow:${STREAMFLOW_VERSION} > /dev/null 2>&1; echo $?)" >> $GITHUB_ENV
       - name: "Build Docker image"
         if: ${{ env.NEW_IMAGE == 1 }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           build-args: |
             HELM_VERSION=v3.19.0

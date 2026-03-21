@@ -284,6 +284,10 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
     def _scandir(self):
         return os.scandir(self)
 
+    @property
+    def _tail(self):
+        return self._parts
+
     def walk(self, top_down=True, on_error=None, follow_symlinks=False):
         paths = [self]
         while paths:
@@ -340,10 +344,10 @@ class LocalStreamFlowPath(
 
     async def checksum(self) -> str | None:
         if await self.is_file():
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(
-                self.context.process_executor, _file_checksum_local, self.__str__()
-            )
+            if await self.size() > 2**11:
+                return await asyncio.to_thread(_file_checksum_local, self.__str__())
+            else:
+                return _file_checksum_local(self.__str__())
         else:
             return None
 
@@ -563,6 +567,10 @@ class RemoteStreamFlowPath(
                     else:
                         path = path.parent
         return self._inner_path
+
+    def _make_child_relpath(self, part):
+        parts = self._tail
+        return self._from_parsed_parts(self._drv, self._root, parts)
 
     async def _test(self, command: list[str]) -> bool:
         command = ["test"] + command

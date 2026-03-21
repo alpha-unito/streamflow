@@ -545,7 +545,7 @@ class CWLTransferStep(TransferStep):
                 existing.append(
                     utils.remap_token_value(
                         path_processor=get_path_processor(
-                            self.workflow.context.scheduler.get_connector(job.name)
+                            self.workflow.context.scheduler.get_locations(job.name)[0]
                         ),
                         old_dir=token_value["path"],
                         new_dir=str(dst_path),

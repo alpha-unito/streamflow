@@ -235,14 +235,14 @@ class CWLTokenProcessor(TokenProcessor):
                     logger.debug(
                         f"Processing {filepath} on location {data_location.location}."
                     )
-                connector = self.workflow.context.deployment_manager.get_connector(
-                    data_location.deployment
-                )
-                path_processor = get_path_processor(connector)
+                path_processor = get_path_processor(data_location.location)
                 base_path = path_processor.normpath(
                     data_location.path[: -len(data_location.relpath)]
                 )
                 cwl_workflow = cast(CWLWorkflow, self.workflow)
+                connector = self.workflow.context.deployment_manager.get_connector(
+                    data_location.deployment
+                )
                 # Process file contents
                 token_value = await utils.update_file_token(
                     context=self.workflow.context,
@@ -542,7 +542,6 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                             *(
                                 asyncio.create_task(
                                     utils.expand_glob(
-                                        connector=connector,
                                         workflow=self.workflow,
                                         location=location,
                                         input_directory=(
@@ -601,11 +600,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
                 )
-                return (
-                    token_list
-                    if len(token_list) > 1
-                    else token_list[0] if len(token_list) == 1 else None
-                )
+                return token_list
             # Otherwise, fill context['self'] with glob data and proceed
             else:
                 context["self"] = await utils.build_token_value(
@@ -757,7 +752,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             )
         if self.token_type != "Any":  # nosec
             if isinstance(token_value, MutableSequence):
-                if self.single:
+                if self.optional and len(token_value) == 0:
+                    token_value = None
+                elif self.single:
                     if len(token_value) == 1:
                         token_value = token_value[0]
                         _check_token_type(
@@ -791,20 +788,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     optional=self.optional,
                     check_file=True,
                 )
-        token = await self._build_token(
+        return await self._build_token(
             job, connector, context, token_value, recoverable
         )
-        if (
-            self.single
-            or isinstance(token, ListToken)
-            or (self.optional and token.value is None)
-        ):
-            return token
-        else:
-            return ListToken(
-                value=[token] if token.value is not None else [],
-                tag=token.tag,
-            )
 
 
 class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):

@@ -15,11 +15,11 @@ flake8:
 
 format:
 	isort streamflow tests
-	black streamflow tests
+	black --target-version py310 streamflow tests
 
 format-check:
 	isort --check-only streamflow tests
-	black --diff --check streamflow tests
+	black --target-version py310 --diff --check streamflow tests
 
 pyupgrade:
 	pyupgrade --py3-only --py310-plus $(shell git ls-files | grep .py | grep -v streamflow/cwl/antlr)
