@@ -36,7 +36,7 @@ from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import compare_tags, get_entity_ids
+from streamflow.core.utils import compare_tags, get_entity_ids, get_job_tag
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -376,7 +376,8 @@ class CombinatorStep(BaseStep):
                         status = _reduce_statuses([status, token.value])
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received termination token for port {task_name}"
+                                f"Step {self.name} received termination token "
+                                f"with Status {token.value.name} for port {task_name}"
                             )
                         terminated.append(task_name)
                     # Otherwise, build combination and set default status to COMPLETED
@@ -1366,7 +1367,9 @@ class LoopOutputStep(BaseStep, ABC):
             if check_termination(token):
                 status = _reduce_statuses([status, token.value])
                 if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Step {self.name} received termination token")
+                    logger.debug(
+                        f"Step {self.name} received termination token with Status {status.name}"
+                    )
                 # If no iterations have been performed, just terminate
                 if not self.token_map:
                     break
@@ -1488,10 +1491,7 @@ class ScheduleStep(BaseStep):
         return params
 
     @recoverable
-    async def _schedule(
-        self,
-        job: Job,
-    ) -> None:
+    async def _schedule(self, job: Job) -> None:
         await self.workflow.context.scheduler.schedule(
             job,
             self.binding_config,
@@ -1543,7 +1543,7 @@ class ScheduleStep(BaseStep):
                         token_inputs.append(t)
         self.get_output_port().put(
             await self._persist_token(
-                token=JobToken(value=job),
+                token=JobToken(value=job, tag=get_job_tag(job.name)),
                 port=self.get_output_port(),
                 input_token_ids=get_entity_ids(token_inputs),
             )
@@ -1631,19 +1631,17 @@ class ScheduleStep(BaseStep):
                     if name.startswith("__connector__")
                 },
             )
-            # If there are input ports
-            input_ports = {
-                k: v
-                for k, v in self.get_input_ports().items()
-                if k not in connector_ports
-            }
             await asyncio.gather(
                 *(
                     asyncio.create_task(port.get(posixpath.join(self.name, name)))
                     for name, port in connector_ports.items()
                 )
             )
-            if input_ports:
+            if input_ports := {
+                k: v
+                for k, v in self.get_input_ports().items()
+                if k not in connector_ports.keys()
+            }:
                 inputs_map: dict[str, dict[str, Token]] = {}
                 while True:
                     # Retrieve input tokens
