@@ -54,12 +54,12 @@ from streamflow.cwl.command import (
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.cwl.processor import (
     CWLCommandOutputProcessor,
+    CWLExpressionToolOutputProcessor,
     CWLObjectCommandOutputProcessor,
     CWLTokenProcessor,
 )
 from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
 from streamflow.cwl.requirement.docker.translator import (
-    CWLDockerTranslator,
     CWLDockerTranslatorConfig,
 )
 from streamflow.cwl.step import (
@@ -246,7 +246,7 @@ def _create_command_output_processor(
     optional: bool = False,
     single: bool = True,
 ) -> CommandOutputProcessor:
-    # Array type: -> MapCommandOutputProcessor
+    # Array type: -> single is False
     if isinstance(port_type, get_args(cwl_utils.parser.ArraySchema)):
         return _create_command_output_processor(
             port_name=port_name,
@@ -273,21 +273,39 @@ def _create_command_output_processor(
         else:
             enum_prefix = cwl_name_prefix
         # Return OutputProcessor
-        return CWLCommandOutputProcessor(
-            name=port_name,
-            workflow=workflow,
-            target=port_target,
-            token_type=cast(cwl_utils.parser.OutputEnumSchema, port_type).type_,
-            enum_symbols=[
-                posixpath.relpath(
-                    utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
-                )
-                for s in cast(cwl_utils.parser.OutputEnumSchema, port_type).symbols
-            ],
-            expression_lib=expression_lib,
-            full_js=full_js,
-            optional=optional,
-        )
+        if isinstance(
+            cwl_element, get_args(cwl_utils.parser.ExpressionToolOutputParameter)
+        ):
+            return CWLExpressionToolOutputProcessor(
+                name=port_name,
+                workflow=workflow,
+                token_type=port_type[0] if len(port_type) == 1 else port_type,
+                enum_symbols=[
+                    posixpath.relpath(
+                        utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
+                    )
+                    for s in cast(cwl_utils.parser.OutputEnumSchema, port_type).symbols
+                ],
+                file_format=getattr(cwl_element, "format", None),
+                optional=optional,
+                streamable=getattr(cwl_element, "streamable", None),
+            )
+        else:
+            return CWLCommandOutputProcessor(
+                name=port_name,
+                workflow=workflow,
+                target=port_target,
+                token_type=cast(cwl_utils.parser.OutputEnumSchema, port_type).type_,
+                enum_symbols=[
+                    posixpath.relpath(
+                        utils.get_name(posixpath.sep, posixpath.sep, s), enum_prefix
+                    )
+                    for s in cast(cwl_utils.parser.OutputEnumSchema, port_type).symbols
+                ],
+                expression_lib=expression_lib,
+                full_js=full_js,
+                optional=optional,
+            )
     # Record type: -> ObjectCommandOutputProcessor
     elif isinstance(port_type, get_args(cwl_utils.parser.RecordSchema)):
         # Process InlineJavascriptRequirement
@@ -327,6 +345,7 @@ def _create_command_output_processor(
                 if getattr(cwl_element, "outputBinding", None)
                 else None
             ),
+            single=single,
         )
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
@@ -614,51 +633,55 @@ def _create_list_merger(
         input_port_name = _get_source_name(input_port_name)
         combinator.add_input_port(input_port_name, port)
         combinator.combinator.add_item(input_port_name)
-    if pick_value == "first_non_null":
-        combinator.add_output_port(output_port_name, workflow.create_port())
-        transformer = workflow.create_step(
-            cls=FirstNonNullTransformer, name=name + "-transformer"
-        )
-        transformer.add_input_port(output_port_name, combinator.get_output_port())
-        transformer.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return transformer
-    elif pick_value == "the_only_non_null":
-        combinator.add_output_port(output_port_name, workflow.create_port())
-        transformer = workflow.create_step(
-            cls=OnlyNonNullTransformer, name=name + "-transformer"
-        )
-        transformer.add_input_port(output_port_name, combinator.get_output_port())
-        transformer.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return transformer
-    elif pick_value == "all_non_null":
-        combinator.add_output_port(output_port_name, workflow.create_port())
-        transformer = workflow.create_step(
-            cls=AllNonNullTransformer, name=name + "-transformer"
-        )
-        transformer.add_input_port(output_port_name, combinator.get_output_port())
-        transformer.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return transformer
-    elif link_merge is None:
-        combinator.add_output_port(output_port_name, workflow.create_port())
-        list_to_element = workflow.create_step(
-            cls=ListToElementTransformer, name=name + "-list-to-element"
-        )
-        list_to_element.add_input_port(output_port_name, combinator.get_output_port())
-        list_to_element.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return list_to_element
-    else:
-        combinator.add_output_port(
-            output_port_name, output_port or workflow.create_port()
-        )
-        return combinator
+    match pick_value:
+        case "first_non_null":
+            combinator.add_output_port(output_port_name, workflow.create_port())
+            transformer = workflow.create_step(
+                cls=FirstNonNullTransformer, name=name + "-transformer"
+            )
+            transformer.add_input_port(output_port_name, combinator.get_output_port())
+            transformer.add_output_port(
+                output_port_name, output_port or workflow.create_port()
+            )
+            return transformer
+        case "the_only_non_null":
+            combinator.add_output_port(output_port_name, workflow.create_port())
+            transformer = workflow.create_step(
+                cls=OnlyNonNullTransformer, name=name + "-transformer"
+            )
+            transformer.add_input_port(output_port_name, combinator.get_output_port())
+            transformer.add_output_port(
+                output_port_name, output_port or workflow.create_port()
+            )
+            return transformer
+        case "all_non_null":
+            combinator.add_output_port(output_port_name, workflow.create_port())
+            transformer = workflow.create_step(
+                cls=AllNonNullTransformer, name=name + "-transformer"
+            )
+            transformer.add_input_port(output_port_name, combinator.get_output_port())
+            transformer.add_output_port(
+                output_port_name, output_port or workflow.create_port()
+            )
+            return transformer
+        case _:
+            if link_merge is None:
+                combinator.add_output_port(output_port_name, workflow.create_port())
+                list_to_element = workflow.create_step(
+                    cls=ListToElementTransformer, name=name + "-list-to-element"
+                )
+                list_to_element.add_input_port(
+                    output_port_name, combinator.get_output_port()
+                )
+                list_to_element.add_output_port(
+                    output_port_name, output_port or workflow.create_port()
+                )
+                return list_to_element
+            else:
+                combinator.add_output_port(
+                    output_port_name, output_port or workflow.create_port()
+                )
+                return combinator
 
 
 def _create_loop_condition(
@@ -722,7 +745,7 @@ def _create_nested_size_tag(
 ) -> MutableSequence[Port]:
     if len(size_ports) == 0:
         return [next(iter(replicas_port.values()))]
-    new_replicas_port = {}
+    new_replicas_port: dict[str, Port] = {}
     new_size_ports = {}
     for port_name, port in size_ports.items():
         output_port_name = f"{port_name}-{next(iter(replicas_port.keys()))}"
@@ -1004,7 +1027,7 @@ def _create_token_processor_base(
             expression_lib=expression_lib,
             file_format=getattr(cwl_element, "format", None),
             full_js=full_js,
-            load_contents=_get_load_contents(cwl_element),
+            load_contents=_get_load_contents(cwl_element, only_input=True),
             load_listing=(
                 LoadListing.deep_listing
                 if force_deep_listing
@@ -1024,7 +1047,7 @@ def _create_token_processor_base(
             token_type=port_type[0] if len(port_type) == 1 else port_type,
             expression_lib=expression_lib,
             full_js=full_js,
-            load_contents=_get_load_contents(cwl_element),
+            load_contents=_get_load_contents(cwl_element, only_input=True),
             load_listing=(
                 LoadListing.deep_listing
                 if force_deep_listing
@@ -1138,7 +1161,8 @@ def _get_load_contents(
         | cwl_utils.parser.OutputParameter
         | cwl_utils.parser.WorkflowStepInput
     ),
-):
+    only_input: bool = False,
+) -> bool | None:
     if getattr(port_description, "loadContents", None) is not None:
         return port_description.loadContents
     elif (
@@ -1149,6 +1173,7 @@ def _get_load_contents(
     elif (
         getattr(port_description, "outputBinding", None)
         and port_description.outputBinding.loadContents is not None
+        and not only_input
     ):
         return port_description.outputBinding.loadContents
     else:
@@ -1255,7 +1280,7 @@ def _get_secondary_files(
     return secondary_files
 
 
-def _inject_value(value: Any):
+def _inject_value(value: Any) -> Any:
     if isinstance(value, MutableSequence):
         return [_inject_value(v) for v in value]
     elif isinstance(value, MutableMapping):
@@ -1375,13 +1400,10 @@ def _process_docker_requirement(
             f"Container type `{config.type}` not supported"
         )
     translator_type = cwl_docker_translator_classes[config.type]
-    translator = cast(
-        CWLDockerTranslator,
-        translator_type(
-            config_dir=config_dir,
-            wrapper=(config.wrapper if target.deployment.type != "local" else False),
-            **config.config,
-        ),
+    translator = translator_type(
+        config_dir=config_dir,
+        wrapper=(config.wrapper if target.deployment.type != "local" else False),
+        **config.config,
     )
     return translator.get_target(
         image=_process_docker_image(docker_requirement=docker_requirement),
@@ -1438,11 +1460,8 @@ def _process_transformers(
     input_ports: MutableMapping[str, Port],
     transformers: MutableMapping[str, Transformer],
     input_dependencies: MutableMapping[str, set[str]],
-    schedule_steps: MutableMapping[str, ScheduleStep] | None = None,
 ) -> MutableMapping[str, Port]:
     new_input_ports = {}
-    if schedule_steps is None:
-        schedule_steps = {}
     for input_name, token_transformer in transformers.items():
         # If transformer has true dependencies, use them
         if not (dependencies := input_dependencies[input_name]):
@@ -1462,10 +1481,6 @@ def _process_transformers(
                 token_transformer.add_input_port(
                     posixpath.relpath(dep_name, step_name), input_ports[dep_name]
                 )
-                if schedule_step := schedule_steps.get(input_name):
-                    schedule_step.add_input_port(
-                        posixpath.relpath(dep_name, step_name), input_ports[dep_name]
-                    )
         # Put transformer output ports in input ports map
         new_input_ports[input_name] = token_transformer.get_output_port()
     return cast(dict[str, Port], input_ports) | new_input_ports
@@ -1488,7 +1503,7 @@ def create_command_output_processor_base(
     context: MutableMapping[str, Any],
     optional: bool = False,
     single: bool = True,
-) -> CWLCommandOutputProcessor:
+) -> CommandOutputProcessor:
     if not isinstance(port_type, MutableSequence):
         port_type = [port_type]
     # Normalize port type (Python does not distinguish among all CWL number types)
@@ -1499,7 +1514,18 @@ def create_command_output_processor_base(
     requirements = context["hints"] | context["requirements"]
     expression_lib, full_js = _process_javascript_requirement(requirements)
     # Create OutputProcessor
-    if "File" in port_type:
+    if isinstance(
+        cwl_element, get_args(cwl_utils.parser.ExpressionToolOutputParameter)
+    ):
+        return CWLExpressionToolOutputProcessor(
+            name=port_name,
+            workflow=workflow,
+            token_type=port_type[0] if len(port_type) == 1 else port_type,
+            file_format=getattr(cwl_element, "format", None),
+            optional=optional,
+            streamable=getattr(cwl_element, "streamable", None),
+        )
+    elif "File" in port_type:
         return CWLCommandOutputProcessor(
             name=port_name,
             workflow=workflow,
@@ -1589,7 +1615,9 @@ class CWLTranslator:
         self.scatter: MutableMapping[str, Any] = {}
         self.workflow_config: WorkflowConfig = workflow_config
 
-    def _get_deploy_step(self, deployment_config: DeploymentConfig, workflow: Workflow):
+    def _get_deploy_step(
+        self, deployment_config: DeploymentConfig, workflow: Workflow
+    ) -> DeployStep:
         if deployment_config.name not in self.deployment_map:
             self.deployment_map[deployment_config.name] = workflow.create_step(
                 cls=DeployStep,
@@ -1727,7 +1755,7 @@ class CWLTranslator:
         self,
         workflow: Workflow,
         global_name: str,
-        port_name,
+        port_name: str,
         port: Port,
         output_directory: str,
         value: Any,
@@ -1913,7 +1941,7 @@ class CWLTranslator:
         context: MutableMapping[str, Any],
         name_prefix: str,
         cwl_name_prefix: str,
-    ):
+    ) -> None:
         context["elements"][cwl_element.id] = cwl_element
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Translating {cwl_element.__class__.__name__} {name_prefix}")
@@ -1987,7 +2015,7 @@ class CWLTranslator:
         # Process inputs
         input_ports = {}
         token_transformers = []
-        default_ports = {}
+        default_ports: dict[str, Port] = {}
         for element_input in cwl_element.inputs:
             global_name = utils.get_name(name_prefix, cwl_name_prefix, element_input.id)
             port_name = posixpath.relpath(global_name, name_prefix)
@@ -2019,16 +2047,22 @@ class CWLTranslator:
             )
             # Add the output port as an input of the schedule step
             schedule_step.add_input_port(port_name, token_transformer.get_output_port())
-            # Create a TransferStep
-            transfer_step = workflow.create_step(
-                cls=CWLTransferStep,
-                name=posixpath.join(name_prefix, "__transfer__", port_name),
-                job_port=schedule_step.get_output_port(),
-            )
-            transfer_step.add_input_port(port_name, token_transformer.get_output_port())
-            transfer_step.add_output_port(port_name, workflow.create_port())
-            # Connect the transfer step with the ExecuteStep
-            step.add_input_port(port_name, transfer_step.get_output_port(port_name))
+            if isinstance(cwl_element, get_args(cwl_utils.parser.CommandLineTool)):
+                # Create a TransferStep
+                transfer_step = workflow.create_step(
+                    cls=CWLTransferStep,
+                    name=posixpath.join(name_prefix, "__transfer__", port_name),
+                    job_port=schedule_step.get_output_port(),
+                )
+                transfer_step.add_input_port(
+                    port_name, token_transformer.get_output_port()
+                )
+                transfer_step.add_output_port(port_name, workflow.create_port())
+                # Connect the transfer step with the ExecuteStep
+                step.add_input_port(port_name, transfer_step.get_output_port(port_name))
+            elif isinstance(cwl_element, get_args(cwl_utils.parser.ExpressionTool)):
+                # Connect the token transformer step with the ExecuteStep
+                step.add_input_port(port_name, token_transformer.get_output_port())
             # Store input port and token transformer
             token_transformers.append(token_transformer)
         # Add input ports to token transformers
@@ -2346,6 +2380,12 @@ class CWLTranslator:
                 ]
         else:
             scatter_inputs = []
+        # Check if `ScatterFeatureRequirement` is defined when a step defines the `scatter` property
+        if scatter_inputs and "ScatterFeatureRequirement" not in requirements:
+            raise WorkflowDefinitionException(
+                "Workflow contains scatter but ScatterFeatureRequirement "
+                "not in requirements"
+            )
 
         # Process inner element
         run_command, inner_cwl_name_prefix, inner_context = process_embedded_tool(
@@ -2355,7 +2395,13 @@ class CWLTranslator:
             cwl_name_prefix=cwl_name_prefix,
             context=context,
         )
-
+        # If the inner command is a workflow, check if `SubworkflowFeatureRequirement` is defined
+        if isinstance(cwl_element, get_args(cwl_utils.parser.Workflow)):
+            if "SubworkflowFeatureRequirement" not in requirements:
+                raise WorkflowDefinitionException(
+                    "Workflow contains embedded workflow but "
+                    "SubworkflowFeatureRequirement not in requirements"
+                )
         # Handle optional input variables
         default_ports: MutableMapping[str, Port] = {}
         # Process inputs
@@ -2396,25 +2442,10 @@ class CWLTranslator:
             list(input_dependencies.keys()),
         )
         input_ports |= default_ports
-        # Get loop if present
-        if (loop := _get_loop(cwl_element, requirements)) is not None:
-            # Create loop conditional step
-            if loop["when"] is not None:
-                _create_loop_condition(
-                    condition=loop["when"],
-                    expression_lib=expression_lib,
-                    full_js=full_js,
-                    input_ports=input_ports,
-                    step_name=step_name,
-                    workflow=workflow,
-                )
         # If there are scatter inputs
         if scatter_inputs:
             # Retrieve scatter method (default to dotproduct)
-            scatter_method = (
-                cast(cwl_utils.parser.ScatterWorkflowStep, cwl_element).scatterMethod
-                or "dotproduct"
-            )
+            scatter_method = cwl_element.scatterMethod or "dotproduct"
             # If any scatter input is null, propagate an empty array on the output ports
             empty_scatter_conditional_step = workflow.create_step(
                 cls=CWLEmptyScatterConditionalStep,
@@ -2509,16 +2540,26 @@ class CWLTranslator:
                         "-".join(output_port_names), size_port
                     )
 
-        # Process inputs again to attach ports to transformers
+        # Process inputs again to attach ports to `valueFrom` transformers
         input_ports = _process_transformers(
             step_name=step_name,
             input_ports=input_ports,
             transformers=value_from_transformers,
             input_dependencies=input_dependencies,
-            schedule_steps={
-                k: _get_schedule_step(v) for k, v in value_from_transformers.items()
-            },
         )
+
+        # Get loop if present
+        if (loop := _get_loop(cwl_element, requirements)) is not None:
+            # Create loop conditional step
+            if loop["when"] is not None:
+                _create_loop_condition(
+                    condition=loop["when"],
+                    expression_lib=expression_lib,
+                    full_js=full_js,
+                    input_ports=input_ports,
+                    step_name=step_name,
+                    workflow=workflow,
+                )
 
         # Save input ports in the global map
         self.input_ports |= input_ports
@@ -2572,12 +2613,7 @@ class CWLTranslator:
             # If there are scatter inputs
             if scatter_inputs:
                 # Retrieve scatter method (default to dotproduct)
-                scatter_method = (
-                    cast(
-                        cwl_utils.parser.ScatterWorkflowStep, cwl_element
-                    ).scatterMethod
-                    or "dotproduct"
-                )
+                scatter_method = cwl_element.scatterMethod or "dotproduct"
                 # Perform a gather on the outputs
                 if scatter_method == "nested_crossproduct":
                     gather_steps = []
@@ -2606,7 +2642,7 @@ class CWLTranslator:
                     )
 
                     for scatter_input, size_port in zip(
-                        scatter_inputs, size_ports_list
+                        scatter_inputs, size_ports_list, strict=True
                     ):
                         scatter_port_name = posixpath.relpath(scatter_input, step_name)
                         gather_step = workflow.create_step(
@@ -2712,10 +2748,10 @@ class CWLTranslator:
                 )
                 loop_terminator_combinator.add_item(port_name)
             # Process inputs
-            loop_input_ports = {}
-            loop_default_ports = {}
-            loop_value_from_transformers = {}
-            loop_input_dependencies = {}
+            loop_input_ports: dict[str, Port] = {}
+            loop_default_ports: dict[str, Port] = {}
+            loop_value_from_transformers: dict[str, ValueFromTransformer] = {}
+            loop_input_dependencies: dict[str, set[str]] = {}
             for loop_input in loop["loop"] or []:
                 # Extract element source
                 if "Loop" in requirements:
@@ -2841,22 +2877,6 @@ class CWLTranslator:
                 raise WorkflowDefinitionException(
                     "Workflow step contains valueFrom but StepInputExpressionRequirement not in requirements"
                 )
-            # Retrieve the DeployStep for the port target
-            binding_config = get_binding_config(
-                global_name, "port", self.workflow_config
-            )
-            target = binding_config.targets[0]
-            deploy_step = self._get_deploy_step(target.deployment, workflow)
-            # Create a schedule step and connect it to the local DeployStep
-            schedule_step = workflow.create_step(
-                cls=ScheduleStep,
-                name=posixpath.join(
-                    global_name + inner_steps_prefix + "-value-from", "__schedule__"
-                ),
-                job_prefix=f"{global_name}-value-from",
-                connector_ports={target.deployment.name: deploy_step.get_output_port()},
-                binding_config=binding_config,
-            )
             # Create a ValueFromTransformer
             value_from_transformers[global_name] = workflow.create_step(
                 cls=value_from_transformer_cls,
@@ -2874,7 +2894,6 @@ class CWLTranslator:
                 expression_lib=expression_lib,
                 full_js=full_js,
                 value_from=element_input.valueFrom,
-                job_port=schedule_step.get_output_port(),
             )
             value_from_transformers[global_name].add_output_port(
                 port_name, workflow.create_port()
@@ -2962,7 +2981,7 @@ class CWLTranslator:
             # Otherwise, the input element depends on a single output port
             else:
                 source_name = utils.get_name(
-                    name_prefix, cwl_name_prefix, cast(str, element_source)
+                    name_prefix, cwl_name_prefix, element_source
                 )
                 source_port = self._get_source_port(workflow, source_name)
                 # If there is a default value, construct a default port block

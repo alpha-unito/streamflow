@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import MutableMapping
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
-from streamflow.core.exception import FailureHandlingException
+from streamflow.core.exception import UnrecoverableWorkflowException
 from streamflow.core.workflow import Job, Step
 from streamflow.log_handler import logger
 from streamflow.workflow.token import JobToken
@@ -42,14 +42,13 @@ def recoverable(func):
                 )
         try:
             await func(*args, **kwargs)
-        # When receiving a KeyboardInterrupt, propagate it (to allow debugging)
-        except KeyboardInterrupt:
-            raise
-        # When receiving a CancelledError, mark the step as Cancelled
-        except asyncio.CancelledError:
-            raise
-        # When receiving a FailureHandling exception, mark the step as Failed
-        except FailureHandlingException:
+        # Propagate unrecoverable exceptions without handling
+        except (
+            asyncio.CancelledError,
+            KeyboardInterrupt,
+            UnrecoverableWorkflowException,
+        ) as e:
+            logger.exception(e)
             raise
         # When receiving a generic exception, try to handle it
         except Exception as e:
@@ -104,7 +103,7 @@ class FailureManager(SchemaEntity):
     async def update_request(self, job_name: str) -> None: ...
 
 
-class RecoveryPolicy:
+class RecoveryPolicy(ABC):
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
 

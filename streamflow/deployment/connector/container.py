@@ -6,8 +6,10 @@ import json
 import logging
 import os
 import posixpath
+import shlex
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
+from contextlib import suppress
 from importlib.resources import files
 from shutil import which
 from typing import Any, AsyncContextManager, cast
@@ -16,7 +18,7 @@ import psutil
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -64,14 +66,23 @@ async def _get_storage_from_binds(
     )
     if returncode == 0:
         for line in stdout.splitlines():
-            mount_point, fs_type, size = line.split(" ")
-            if fs_type not in FS_TYPES_TO_SKIP:
-                storage[mount_point] = Storage(
-                    mount_point=mount_point,
-                    size=float(size) / 2**10,
+            try:
+                mount_point, fs_type, size = line.split(" ")
+                if fs_type not in FS_TYPES_TO_SKIP:
+                    storage[mount_point] = Storage(
+                        mount_point=mount_point,
+                        size=float(size) / 2**10,
+                    )
+                    if mount_point in binds:
+                        storage[mount_point].bind = binds[mount_point]
+            except ValueError as e:
+                logger.warning(
+                    f"Skipping line {line} for deployment {location.deployment}: {e}"
                 )
-                if mount_point in binds:
-                    storage[mount_point].bind = binds[mount_point]
+            except Exception as e:
+                raise WorkflowExecutionException(
+                    f"Error parsing {line} for deployment {location.deployment}: {e}"
+                )
         return storage
     else:
         raise WorkflowExecutionException(
@@ -209,7 +220,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         locations: MutableSequence[ExecutionLocation],
         read_only: bool = False,
     ) -> None:
-        bind_locations = {}
+        bind_locations: dict[str, ExecutionLocation] = {}
         copy_tasks = []
         dst = await get_local_to_remote_destination(self, locations[0], src, dst)
         for location in await self._get_effective_locations(locations, dst):
@@ -379,7 +390,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                 effective_locations = await self._get_effective_locations(
                     locations, dst
                 )
-                bind_locations = {}
+                bind_locations: dict[str, ExecutionLocation] = {}
                 unbound_locations = []
                 copy_tasks = []
                 for location in effective_locations:
@@ -521,7 +532,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
 
     async def _prepare_volumes(
         self, binds: MutableSequence[str] | None, mounts: MutableSequence[str] | None
-    ):
+    ) -> None:
         sources = [b.split(":", 2)[0] for b in binds] if binds is not None else []
         for m in mounts if mounts is not None else []:
             mount_type = next(
@@ -568,7 +579,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
     ) -> AsyncContextManager[StreamWrapper]:
         return await self.connector.get_stream_reader(
             command=self._get_run_command(
-                command=utils.encode_command(" ".join(command), "sh"),
+                command=" ".join(command),
                 location=location,
                 interactive=False,
             ),
@@ -603,6 +614,19 @@ class ContainerConnector(ConnectorWrapper, ABC):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
+        if job_name is None and stdin is None:
+            with suppress(WorkflowExecutionException):
+                return await utils.run_in_shell(
+                    shell=await self.get_shell(
+                        command=["sh"], location=location
+                    ),  # nosec
+                    location=location,
+                    command=command,
+                    environment=environment,
+                    workdir=workdir,
+                    capture_output=capture_output,
+                    timeout=timeout,
+                )
         command = utils.create_command(
             self.__class__.__name__,
             command,
@@ -623,7 +647,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         return await self.connector.run(
             location=get_inner_location(location),
             command=self._get_run_command(
-                command=utils.encode_command(command, "sh"),
+                command=command,
                 location=location,
             ),
             capture_output=capture_output,
@@ -682,10 +706,10 @@ class DockerBaseConnector(ContainerConnector, ABC):
             location.name,
             "sh",
             "-c",
-            f"'{command}'",
+            shlex.quote(command),
         ]
 
-    async def _populate_instance(self, name: str):
+    async def _populate_instance(self, name: str) -> None:
         # Build execution location
         location = ExecutionLocation(
             name=name,
@@ -846,12 +870,32 @@ class DockerBaseConnector(ContainerConnector, ABC):
             },
         )
         # Create instance
+        addresses = [
+            v["IPAddress"]
+            for v in container["NetworkSettings"]["Networks"].values()
+            if v["IPAddress"]
+        ]
         self._instances[name] = ContainerInstance(
-            address=container["NetworkSettings"]["IPAddress"],
+            address=addresses[0] if addresses else "",
             cores=cores,
             memory=memory,
             current_user=host_user == container_user,
             volumes=volumes,
+        )
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        inner_location = get_inner_location(location)
+        return await self.connector.get_shell(
+            command=[
+                "docker",
+                "exec",
+                "--interactive",
+                location.name,
+                *command,
+            ],
+            location=inner_location,
         )
 
 
@@ -888,7 +932,6 @@ class DockerConnector(DockerBaseConnector):
         deviceReadIops: MutableSequence[str] | None = None,
         deviceWriteBps: MutableSequence[str] | None = None,
         deviceWriteIops: MutableSequence[str] | None = None,
-        disableContentTrust: bool = True,
         dns: MutableSequence[str] | None = None,
         dnsOptions: MutableSequence[str] | None = None,
         dnsSearch: MutableSequence[str] | None = None,
@@ -988,7 +1031,6 @@ class DockerConnector(DockerBaseConnector):
         self.deviceReadIops: MutableSequence[str] | None = deviceReadIops
         self.deviceWriteBps: MutableSequence[str] | None = deviceWriteBps
         self.deviceWriteIops: MutableSequence[str] | None = deviceWriteIops
-        self.disableContentTrust: bool = disableContentTrust
         self.dns: MutableSequence[str] | None = dns
         self.dnsOptions: MutableSequence[str] | None = dnsOptions
         self.dnsSearch: MutableSequence[str] | None = dnsSearch
@@ -1111,7 +1153,6 @@ class DockerConnector(DockerBaseConnector):
                 get_option("device-read-iops", self.deviceReadIops),
                 get_option("device-write-bps", self.deviceWriteBps),
                 get_option("device-write-iops", self.deviceWriteIops),
-                f"--disable-content-trust={'true' if self.disableContentTrust else 'false'}",
                 get_option("dns", self.dns),
                 get_option("dns-option", self.dnsOptions),
                 get_option("dns-search", self.dnsSearch),
@@ -1459,6 +1500,7 @@ class DockerComposeConnector(DockerBaseConnector):
                         for location in locations
                     )
                 ),
+                strict=True,
             )
         }
         return {
@@ -1661,7 +1703,7 @@ class SingularityConnector(ContainerConnector):
             f"instance://{location.name}",
             "sh",
             "-c",
-            f"'{command}'",
+            shlex.quote(command),
         ]
 
     async def _get_singularity_version(self) -> str:
@@ -1957,6 +1999,19 @@ class SingularityConnector(ContainerConnector):
             .joinpath("schemas")
             .joinpath("singularity.json")
             .read_text("utf-8")
+        )
+
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        return await self.connector.get_shell(
+            command=[
+                "singularity",
+                "exec",
+                f"instance://{location.name}",
+                *command,
+            ],
+            location=get_inner_location(location),
         )
 
     async def undeploy(self, external: bool) -> None:

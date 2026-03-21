@@ -1,15 +1,26 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import inspect
 import logging
+import os
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any
+from contextlib import AbstractContextManager
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, overload
 
 import pytest
+from pytest import LogCaptureFixture
 
+import streamflow.data
+import streamflow.deployment
+import streamflow.deployment.connector
+import streamflow.deployment.filter
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.utils import contains_persistent_id
 from streamflow.core.workflow import Port, Step, Token, Workflow
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import (
     DefaultDatabaseLoadingContext,
@@ -20,9 +31,21 @@ from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
+from tests.utils.connector import (
+    AioTarConnector,
+    FailureConnector,
+    ParameterizableHardwareConnector,
+)
+from tests.utils.data import CustomDataManager
+from tests.utils.deployment import CustomDeploymentManager, ReverseTargetsBindingFilter
+
+A = TypeVar("A")
+S = TypeVar("S", bound=Step)
+T = TypeVar("T", bound=Token)
+W = TypeVar("W", bound=Workflow)
 
 
-def get_full_instantiation(cls_: type[Any], **arguments) -> Any:
+def get_full_instantiation(cls_: type[A], **arguments) -> A:
     """
     Instantiates a class using the provided arguments, checking whether the resulting
     instance has values that differ from the class's default values.
@@ -64,7 +87,9 @@ def check_combinators(
         != new_combinator.workflow.persistent_id
     )
     for original_inner, new_inner in zip(
-        original_combinator.combinators.values(), new_combinator.combinators.values()
+        original_combinator.combinators.values(),
+        new_combinator.combinators.values(),
+        strict=True,
     ):
         check_combinators(original_inner, new_inner)
 
@@ -93,17 +118,48 @@ def check_persistent_id(
     assert new_elem.workflow.persistent_id == new_workflow.persistent_id
 
 
+async def compare_remote_dirs(
+    src_path: StreamFlowPath, dst_path: StreamFlowPath
+) -> None:
+    # The two directories must have the same order of elements
+    src_path, src_dirs, src_files = await src_path.walk(
+        follow_symlinks=True
+    ).__anext__()
+    dst_path, dst_dirs, dst_files = await dst_path.walk(
+        follow_symlinks=True
+    ).__anext__()
+    assert len(src_files) == len(dst_files)
+    for src_file, dst_file in zip(sorted(src_files), sorted(dst_files), strict=True):
+        assert await (dst_path / dst_file).exists()
+        assert src_file == dst_file
+        assert (
+            await (src_path / src_file).checksum()
+            == await (dst_path / dst_file).checksum()
+        )
+    assert len(src_dirs) == len(dst_dirs)
+    tasks = []
+    for src_dir, dst_dir in zip(sorted(src_dirs), sorted(dst_dirs), strict=True):
+        assert await (dst_path / dst_dir).exists()
+        assert os.path.basename(src_dir) == os.path.basename(dst_dir)
+        tasks.append(
+            asyncio.create_task(
+                compare_remote_dirs(src_path / src_dir, dst_path / dst_dir)
+            )
+        )
+    await asyncio.gather(*tasks)
+
+
 async def create_and_run_step(
     context: StreamFlowContext,
     workflow: Workflow,
     in_port: Port,
     out_port: Port,
-    step_cls: type[Step],
+    step_cls: type[S],
     kwargs_step: MutableMapping[str, Any],
-    token_list: MutableSequence[Token],
+    token_list: MutableSequence[T],
     port_name: str = "test",
     save_input_token: bool = True,
-) -> Step:
+) -> S:
     # Create step
     step = workflow.create_step(cls=step_cls, **kwargs_step)
     step.add_input_port(port_name, in_port)
@@ -117,19 +173,42 @@ async def create_and_run_step(
     return step
 
 
+if TYPE_CHECKING:
+
+    @overload
+    async def duplicate_and_test(
+        workflow: W,
+        step_cls: type[S],
+        kwargs_step: MutableMapping[str, Any],
+        context: StreamFlowContext,
+        test_are_eq: Literal[True] = ...,
+    ) -> tuple[None, None, None]: ...
+
+    @overload
+    async def duplicate_and_test(
+        workflow: W,
+        step_cls: type[S],
+        kwargs_step: MutableMapping[str, Any],
+        context: StreamFlowContext,
+        test_are_eq: Literal[False],
+    ) -> tuple[S, W, S]: ...
+
+
 async def duplicate_and_test(
-    workflow: Workflow,
-    step_cls: type[Step],
+    workflow: W,
+    step_cls: type[S],
     kwargs_step: MutableMapping[str, Any],
     context: StreamFlowContext,
     test_are_eq: bool = True,
-) -> tuple[Step, Workflow, Step] | tuple[None, None, None]:
+) -> tuple[S, W, S] | tuple[None, None, None]:
     step = workflow.create_step(cls=step_cls, **kwargs_step)
     await workflow.save(context)
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
     check_persistent_id(workflow, new_workflow, step, new_step)
     if test_are_eq:
-        for p1, p2 in zip(workflow.ports.values(), new_workflow.ports.values()):
+        for p1, p2 in zip(
+            workflow.ports.values(), new_workflow.ports.values(), strict=True
+        ):
             assert type(p1) is type(p2)
             assert p1.persistent_id != p2.persistent_id
             assert p1.workflow.name == p2.workflow.name
@@ -146,8 +225,8 @@ async def duplicate_and_test(
 
 
 async def duplicate_elements(
-    step: Step, workflow: Workflow, context: StreamFlowContext
-) -> tuple[Workflow, Step]:
+    step: S, workflow: W, context: StreamFlowContext
+) -> tuple[W, S]:
     loading_context = WorkflowBuilder(deep_copy=False)
     new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
     new_step = await loading_context.load_step(context, step.persistent_id)
@@ -244,3 +323,86 @@ async def verify_dependency_tokens(
                 assert contains_persistent_id(
                     t1.persistent_id, alternative_expected_dependee
                 )
+
+
+class InjectPlugin(AbstractContextManager):
+    def __init__(self, plugin_name: str) -> None:
+        self.plugin_name: str = plugin_name
+
+    def __enter__(self) -> None:
+        match self.plugin_name:
+            case "aiotar":
+                streamflow.deployment.connector.connector_classes.update(
+                    {"aiotar": AioTarConnector}
+                )
+            case "custom-data":
+                streamflow.data.data_manager_classes.update(
+                    {"custom-data": CustomDataManager}
+                )
+            case "custom-deployment":
+                streamflow.deployment.deployment_manager_classes.update(
+                    {"custom-deployment": CustomDeploymentManager}
+                )
+            case "failure-connector":
+                streamflow.deployment.connector.connector_classes.update(
+                    {"failure-connector": FailureConnector}
+                )
+            case "parameterizable-hardware":
+                streamflow.deployment.connector.connector_classes.update(
+                    {"parameterizable-hardware": ParameterizableHardwareConnector}
+                )
+            case "reverse":
+                streamflow.deployment.filter.binding_filter_classes.update(
+                    {"reverse": ReverseTargetsBindingFilter}
+                )
+            case _:
+                raise ValueError(f"Unknown plugin name: {self.plugin_name}")
+
+    def __exit__(
+        self,
+        type_: type[BaseException] | None,
+        value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        match self.plugin_name:
+            case "aiotar":
+                streamflow.deployment.connector.connector_classes.pop("aiotar")
+            case "custom-data":
+                streamflow.data.data_manager_classes.pop("custom-data")
+            case "custom-deployment":
+                streamflow.deployment.deployment_manager_classes.pop(
+                    "custom-deployment"
+                )
+            case "failure-connector":
+                streamflow.deployment.connector.connector_classes.pop(
+                    "failure-connector"
+                )
+            case "parameterizable-hardware":
+                streamflow.deployment.connector.connector_classes.pop(
+                    "parameterizable-hardware",
+                )
+            case "reverse":
+                streamflow.deployment.filter.binding_filter_classes.pop("reverse")
+            case _:
+                raise ValueError(f"Unknown plugin name: {self.plugin_name}")
+
+
+@contextlib.contextmanager
+def caplog_streamflow(
+    caplog: LogCaptureFixture, level: int = logging.INFO
+) -> LogCaptureFixture:
+    """
+    Context manager to capture logs from the StreamFlow logger.
+
+    Since the StreamFlow logger disables propagation (propagate=False),
+    standard caplog cannot intercept its records via the root logger.
+    This context manager manually attaches the pytest capture handler to the
+    logger and removes it upon exit to ensure logs are captured.
+    """
+    _logger = logging.getLogger("streamflow")
+    _logger.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(level, logger="streamflow"):
+            yield caplog
+    finally:
+        _logger.removeHandler(caplog.handler)

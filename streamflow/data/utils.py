@@ -32,7 +32,7 @@ async def bind_mount_point(
     :return: a new `Hardware` object with the eventual bind in the storages resolved
     """
     path_processor = get_path_processor(connector)
-    storage = {}
+    storage: dict[str, Storage] = {}
     for disk in hardware.storage.values():
         if disk.bind is not None:
             mount_point = await get_mount_point(context, location, disk.bind)

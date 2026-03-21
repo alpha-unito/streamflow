@@ -7,7 +7,7 @@ from collections.abc import MutableMapping, MutableSequence
 from typing import Any, AsyncContextManager
 
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation
 from streamflow.log_handler import logger
@@ -21,7 +21,7 @@ class FutureConnector(Connector):
         connector_type: type[Connector],
         external: bool,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             deployment_name=name,
             config_dir=config_dir,
@@ -34,7 +34,7 @@ class FutureConnector(Connector):
         self.deploy_event: asyncio.Event = asyncio.Event()
         self._connector: Connector | None = None
 
-    async def _safe_deploy_event_wait(self):
+    async def _safe_deploy_event_wait(self) -> None:
         await self.deploy_event.wait()
         if self._connector is None:
             raise WorkflowExecutionException(
@@ -42,7 +42,7 @@ class FutureConnector(Connector):
             )
 
     @property
-    def connector(self):
+    def connector(self) -> Connector:
         if hasattr(self._connector, "connector"):
             return self._connector.connector
         else:
@@ -151,6 +151,17 @@ class FutureConnector(Connector):
                 await self._safe_deploy_event_wait()
         return await self._connector.get_available_locations(service=service)
 
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        if self._connector is None:
+            if not self.deploying:
+                self.deploying = True
+                await self.deploy(self.external)
+            else:
+                await self._safe_deploy_event_wait()
+        return await self._connector.get_shell(command=command, location=location)
+
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> AsyncContextManager[StreamWrapper]:
@@ -214,7 +225,7 @@ class FutureConnector(Connector):
 
 
 class FutureMeta(ABCMeta):
-    def __instancecheck__(self, instance):
+    def __instancecheck__(self, instance: object) -> bool:
         if isinstance(instance, FutureConnector):
             return super().__subclasscheck__(instance.type)
         else:

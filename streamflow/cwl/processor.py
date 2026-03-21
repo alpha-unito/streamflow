@@ -33,6 +33,7 @@ from streamflow.cwl.token import CWLFileToken
 from streamflow.cwl.utils import (
     LoadListing,
     SecondaryFile,
+    build_token,
     is_expression,
     resolve_dependencies,
 )
@@ -97,7 +98,7 @@ async def _fill_context(
     output_eval: str,
     full_js: bool,
     expression_lib: MutableSequence[str] | None,
-):
+) -> None:
     # Fill context with exit code if required
     if "exitCode" in resolve_dependencies(
         expression=output_eval,
@@ -113,14 +114,21 @@ async def _fill_context(
 class CWLCommandOutput(CommandOutput):
     __slots__ = "exit_code"
 
-    def __init__(self, value: Any, status: Status, exit_code: int):
+    def __init__(
+        self,
+        value: Any,
+        status: Status,
+        exit_code: int | None = 0,
+    ):
         super().__init__(value, status)
         self.exit_code: int = exit_code
 
-    def update(self, value: Any) -> CWLCommandOutput:
-        return CWLCommandOutput(
-            value=value, status=self.status, exit_code=self.exit_code
-        )
+    def update(self, value: Any) -> Self:
+        return self.__class__(value=value, status=self.status, exit_code=self.exit_code)
+
+
+class CWLOutputJSONCommandOutput(CWLCommandOutput):
+    pass
 
 
 class CWLTokenProcessor(TokenProcessor):
@@ -270,6 +278,7 @@ class CWLTokenProcessor(TokenProcessor):
                                     for sf in token_value["secondaryFiles"]
                                 )
                             ),
+                            strict=True,
                         )
                     )
                 else:
@@ -420,61 +429,79 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         connector: Connector | None,
         context: MutableMapping[str, Any],
         token_value: Any,
+        recoverable: bool,
     ) -> Token:
-        if isinstance(token_value, MutableMapping):
-            if utils.get_token_class(token_value) in ["File", "Directory"]:
-                connector = self._get_connector(connector, job)
-                locations = await self._get_locations(connector, job)
-                # Register path
-                await utils.register_data(
-                    context=self.workflow.context,
-                    connector=connector,
-                    locations=locations,
-                    token_value=token_value,
-                    base_path=(
-                        self.target.workdir if self.target else job.output_directory
-                    ),
-                )
-                # Process file format
-                if self.file_format:
-                    context |= {"self": token_value}
-                    token_value["format"] = utils.eval_expression(
-                        expression=self.file_format,
-                        context=context,
-                        full_js=self.full_js,
-                        expression_lib=self.expression_lib,
-                    )
-                return CWLFileToken(value=token_value, tag=get_tag(job.inputs.values()))
-            else:
-                token_tasks = {
-                    k: asyncio.create_task(
-                        self._build_token(job, connector, context, v)
-                    )
-                    for k, v in token_value.items()
-                }
-                return ObjectToken(
-                    value=dict(
-                        zip(
-                            token_tasks.keys(),
-                            await asyncio.gather(*token_tasks.values()),
+        match token_value:
+            case MutableMapping():
+                match utils.get_token_class(token_value):
+                    case "File" | "Directory":
+                        connector = self._get_connector(connector, job)
+                        locations = await self._get_locations(connector, job)
+                        # Register path
+                        await utils.register_data(
+                            context=self.workflow.context,
+                            connector=connector,
+                            locations=locations,
+                            token_value=token_value,
+                            base_path=(
+                                self.target.workdir
+                                if self.target
+                                else job.output_directory
+                            ),
+                        )
+                        # Process file format
+                        if self.file_format:
+                            context |= {"self": token_value}
+                            token_value["format"] = utils.eval_expression(
+                                expression=self.file_format,
+                                context=context,
+                                full_js=self.full_js,
+                                expression_lib=self.expression_lib,
+                            )
+                        return CWLFileToken(
+                            value=token_value,
+                            tag=get_tag(job.inputs.values()),
+                            recoverable=recoverable,
+                        )
+                    case _:
+                        token_tasks = {
+                            k: asyncio.create_task(
+                                self._build_token(
+                                    job, connector, context, v, recoverable
+                                )
+                            )
+                            for k, v in token_value.items()
+                        }
+                        return ObjectToken(
+                            value=dict(
+                                zip(
+                                    token_tasks.keys(),
+                                    await asyncio.gather(*token_tasks.values()),
+                                    strict=True,
+                                )
+                            ),
+                            tag=get_tag(job.inputs.values()),
+                        )
+            case MutableSequence():
+                return ListToken(
+                    value=await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                self._build_token(
+                                    job, connector, context, t, recoverable
+                                )
+                            )
+                            for t in token_value
                         )
                     ),
                     tag=get_tag(job.inputs.values()),
                 )
-        elif isinstance(token_value, MutableSequence):
-            return ListToken(
-                value=await asyncio.gather(
-                    *(
-                        asyncio.create_task(
-                            self._build_token(job, connector, context, t)
-                        )
-                        for t in token_value
-                    )
-                ),
-                tag=get_tag(job.inputs.values()),
-            )
-        else:
-            return Token(value=token_value, tag=get_tag(job.inputs.values()))
+            case _:
+                return Token(
+                    value=token_value,
+                    tag=get_tag(job.inputs.values()),
+                    recoverable=recoverable,
+                )
 
     async def _process_command_output(
         self,
@@ -482,14 +509,14 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None,
         context: MutableMapping[str, Any],
-    ):
+    ) -> MutableMapping[str, Any]:
         connector = self._get_connector(connector, job)
         locations = await self._get_locations(connector, job)
         cwl_workflow = cast(CWLWorkflow, self.workflow)
         # Generate the output object as described in `outputs` field
         if self.glob is not None:
             # Adjust glob path
-            globpaths = []
+            globpaths: list[str] = []
             for glob in (
                 self.glob if isinstance(self.glob, MutableSequence) else [self.glob]
             ):
@@ -506,10 +533,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                 globpaths.extend(
                     globpath if isinstance(globpath, MutableSequence) else [globpath]
                 )
-            # Wait for command to finish and resolve glob
-            await command_output
+            # Resolve glob
+            location_globpaths: MutableMapping[str, list[MutableMapping[str, Any]]] = {}
             for location in locations:
-                globpaths = dict(
+                expanded_globs = dict(
                     flatten_list(
                         await asyncio.gather(
                             *(
@@ -542,10 +569,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     )
                 )
                 # Get token class from paths
-                globpaths = [
+                location_globpaths[location.name] = [
                     {"path": p, "class": c}
                     for p, c in zip(
-                        globpaths.keys(),
+                        expanded_globs.keys(),
                         await asyncio.gather(
                             *(
                                 asyncio.create_task(
@@ -553,9 +580,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                                         p, job, self.workflow.context
                                     )
                                 )
-                                for p in globpaths.values()
+                                for p in expanded_globs.values()
                             )
                         ),
+                        strict=True,
                     )
                 ]
             # If evaluation is not needed, simply return paths as token value
@@ -569,7 +597,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     secondary_files=self.secondary_files,
                     connector=connector,
                     locations=locations,
-                    token_value=globpaths,
+                    token_value=flatten_list(location_globpaths.values()),
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
                 )
@@ -589,7 +617,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     secondary_files=self.secondary_files,
                     connector=connector,
                     locations=locations,
-                    token_value=globpaths,
+                    token_value=flatten_list(location_globpaths.values()),
                     load_contents=self.load_contents,
                     load_listing=self.load_listing,
                 )
@@ -642,6 +670,39 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             load_listing=self.load_listing,
         )
 
+    async def _process_command_output_json(
+        self,
+        job: Job,
+        command_output: asyncio.Future[CommandOutput],
+        connector: Connector | None,
+        context: MutableMapping[str, Any],
+    ) -> MutableMapping[str, Any]:
+        connector = self._get_connector(connector, job)
+        locations = await self._get_locations(connector, job)
+        result = cast(CWLCommandOutput, await command_output)
+        if not isinstance(result, CWLOutputJSONCommandOutput):
+            raise ProcessorTypeError(
+                f"Expected CWLOutputJSONCommandOutput, got {type(result)}"
+            )
+        token_value = result.value
+        if isinstance(token_value, MutableMapping) and self.name in token_value:
+            raise ProcessorTypeError(
+                f"Token {self.name} should be extracted by a `PopCommandOutputProcessor` before being evaluated"
+            )
+        return await utils.build_token_value(
+            context=self.workflow.context,
+            cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
+            js_context=context,
+            full_js=self.full_js,
+            expression_lib=self.expression_lib,
+            secondary_files=self.secondary_files,
+            connector=connector,
+            locations=locations,
+            token_value=token_value,
+            load_contents=self.load_contents,
+            load_listing=self.load_listing,
+        )
+
     async def _save_additional_params(
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
@@ -668,6 +729,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         # Remap output and tmp directories when target is specified
         output_directory = self.target.workdir if self.target else job.output_directory
@@ -679,12 +741,20 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             tmp_directory=tmp_directory,
             hardware=self.workflow.context.scheduler.get_hardware(job.name),
         )
-        token_value = await self._process_command_output(
-            job,
-            command_output,
-            connector,
-            context,
-        )
+        if isinstance(await command_output, CWLOutputJSONCommandOutput):
+            token_value = await self._process_command_output_json(
+                job,
+                command_output,
+                connector,
+                context,
+            )
+        else:
+            token_value = await self._process_command_output(
+                job,
+                command_output,
+                connector,
+                context,
+            )
         if self.token_type != "Any":  # nosec
             if isinstance(token_value, MutableSequence):
                 if self.single:
@@ -721,14 +791,19 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     optional=self.optional,
                     check_file=True,
                 )
-        token = await self._build_token(job, connector, context, token_value)
-        if self.single or isinstance(token, ListToken):
+        token = await self._build_token(
+            job, connector, context, token_value, recoverable
+        )
+        if (
+            self.single
+            or isinstance(token, ListToken)
+            or (self.optional and token.value is None)
+        ):
             return token
         else:
             return ListToken(
                 value=[token] if token.value is not None else [],
                 tag=token.tag,
-                recoverable=token.recoverable,
             )
 
 
@@ -742,6 +817,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         full_js: bool = False,
         output_eval: str | None = None,
         target: Target | None = None,
+        single: bool = False,
     ):
         super().__init__(
             name=name, processors=processors, workflow=workflow, target=target
@@ -749,6 +825,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         self.expression_lib: MutableSequence[str] | None = expression_lib
         self.full_js: bool = full_js
         self.output_eval: str | None = output_eval
+        self.single: bool = single
 
     @classmethod
     async def _load(
@@ -780,18 +857,68 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                             for v in row["processors"].values()
                         )
                     ),
+                    strict=True,
                 )
             },
             expression_lib=row["expression_lib"],
             full_js=row["full_js"],
             output_eval=row["output_eval"],
+            single=row["single"],
         )
+
+    async def _process(
+        self,
+        job: Job,
+        command_output: asyncio.Future[CommandOutput],
+        connector: Connector | None = None,
+        recoverable: bool = False,
+    ) -> Token | None:
+        result = await command_output
+        if isinstance(token_value := result.value, MutableSequence):
+            if self.single:
+                if len(token_value) == 1:
+                    token_value = token_value[0]
+                    return await super().process(
+                        job=job,
+                        command_output=make_future(result.update(token_value)),
+                        connector=connector,
+                        recoverable=recoverable,
+                    )
+                else:
+                    raise ProcessorTypeError(
+                        f"Expected {self.name} token of type record, got list."
+                    )
+            else:
+                return ListToken(
+                    value=await asyncio.gather(
+                        *(
+                            asyncio.create_task(
+                                super(CWLObjectCommandOutputProcessor, self).process(
+                                    job=job,
+                                    command_output=make_future(result.update(value)),
+                                    connector=connector,
+                                    recoverable=recoverable,
+                                )
+                            )
+                            for value in token_value
+                        ),
+                    ),
+                    tag=get_tag(job.inputs.values()),
+                )
+        else:
+            return await super().process(
+                job=job,
+                command_output=command_output,
+                connector=connector,
+                recoverable=recoverable,
+            )
 
     async def _propagate(
         self,
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> ObjectToken:
         return ObjectToken(
             value=dict(
@@ -800,11 +927,17 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
-                                p.process(job, command_output, connector)
+                                p.process(
+                                    job=job,
+                                    command_output=command_output,
+                                    connector=connector,
+                                    recoverable=recoverable,
+                                )
                             )
                             for p in self.processors.values()
                         )
                     ),
+                    strict=True,
                 )
             ),
             tag=get_tag(job.inputs.values()),
@@ -817,6 +950,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,
             "output_eval": self.output_eval,
+            "single": self.single,
         }
 
     async def process(
@@ -824,6 +958,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         # Remap output and tmp directories when target is specified
         output_directory = self.target.workdir if self.target else job.output_directory
@@ -857,14 +992,113 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         # Process output
         process_tasks = [
             asyncio.create_task(
-                super().process(
-                    job=job, command_output=command_output, connector=connector
+                self._process(
+                    job=job,
+                    command_output=command_output,
+                    connector=connector,
+                    recoverable=recoverable,
                 )
             ),
             asyncio.create_task(
                 self._propagate(
-                    job=job, command_output=command_output, connector=connector
+                    job=job,
+                    command_output=command_output,
+                    connector=connector,
+                    recoverable=recoverable,
                 )
             ),
         ]
         return await eval_processors(process_tasks, name=self.name)
+
+
+class CWLExpressionToolOutputProcessor(CommandOutputProcessor):
+    def __init__(
+        self,
+        name: str,
+        workflow: CWLWorkflow,
+        target: Target | None = None,
+        token_type: str | MutableSequence[str] | None = None,
+        enum_symbols: MutableSequence[str] | None = None,
+        file_format: str | None = None,
+        optional: bool = False,
+        streamable: bool = False,
+    ):
+        super().__init__(name, workflow, target)
+        self.token_type: str | MutableSequence[str] | None = token_type
+        self.enum_symbols: str | MutableSequence[str] = enum_symbols or []
+        self.file_format: str | None = file_format
+        self.optional: bool = optional
+        self.streamable: bool = streamable
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Self:
+        return cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            target=(
+                (await loading_context.load_target(context, row["target"]))
+                if row["target"]
+                else None
+            ),
+            token_type=row["token_type"],
+            file_format=row["file_format"],
+            enum_symbols=row["enum_symbols"],
+            optional=row["optional"],
+            streamable=row["streamable"],
+        )
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "token_type": self.token_type,
+            "enum_symbols": self.enum_symbols,
+            "file_format": self.file_format,
+            "optional": self.optional,
+            "streamable": self.streamable,
+        }
+
+    async def process(
+        self,
+        job: Job,
+        command_output: asyncio.Future[CommandOutput],
+        connector: Connector | None = None,
+        recoverable: bool = False,
+    ) -> Token | None:
+        result = cast(CWLCommandOutput, await command_output)
+        token_value = result.value
+        if self.token_type != "Any":  # nosec
+            if isinstance(token_value, MutableSequence):
+                for value in token_value:
+                    _check_token_type(
+                        name=self.name,
+                        token_value=value,
+                        token_type=self.token_type,
+                        enum_symbols=self.enum_symbols,
+                        optional=self.optional,
+                        check_file=True,
+                    )
+            else:
+                _check_token_type(
+                    name=self.name,
+                    token_value=token_value,
+                    token_type=self.token_type,
+                    enum_symbols=self.enum_symbols,
+                    optional=self.optional,
+                    check_file=True,
+                )
+        return await build_token(
+            cwl_version=cast(CWLWorkflow, self.workflow).cwl_version,
+            inputs=job.inputs,
+            token_value=token_value,
+            streamflow_context=self.workflow.context,
+            recoverable=True,
+        )

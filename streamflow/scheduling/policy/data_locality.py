@@ -43,6 +43,7 @@ class DataLocalityPolicy(Policy):
                         for t in job.inputs.values()
                     )
                 ),
+                strict=True,
             )
         }
         for _, token in sorted(

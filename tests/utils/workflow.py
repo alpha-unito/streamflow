@@ -4,7 +4,8 @@ import asyncio
 import json
 import os
 import posixpath
-from collections.abc import Iterable, MutableMapping, MutableSequence
+from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
+from pathlib import PurePath
 from typing import TYPE_CHECKING, Any, cast
 
 from typing_extensions import Self
@@ -25,7 +26,7 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import flatten_list, get_job_tag, get_tag
+from streamflow.core.utils import flatten_list, get_entity_ids, get_job_tag, get_tag
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -36,6 +37,7 @@ from streamflow.core.workflow import (
     Token,
     Workflow,
 )
+from streamflow.cwl.transformer import ForwardTransformer
 from streamflow.cwl.utils import get_token_class, search_in_parent_locations
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
@@ -51,15 +53,22 @@ from streamflow.workflow.combinator import (
 from streamflow.workflow.port import ConnectorPort, JobPort
 from streamflow.workflow.step import (
     CombinatorStep,
+    ConditionalStep,
     DefaultCommandOutputProcessor,
     DeployStep,
     ExecuteStep,
     InputInjectorStep,
     LoopCombinatorStep,
+    LoopOutputStep,
     ScheduleStep,
     TransferStep,
 )
-from streamflow.workflow.token import FileToken, ListToken, ObjectToken
+from streamflow.workflow.token import (
+    FileToken,
+    IterationTerminationToken,
+    ListToken,
+    ObjectToken,
+)
 from streamflow.workflow.utils import get_job_token
 from tests.utils.deployment import get_docker_deployment_config
 from tests.utils.utils import get_full_instantiation
@@ -70,17 +79,46 @@ if TYPE_CHECKING:
 CWL_VERSION = "v1.2"
 
 
-async def _invalidate_token(context: StreamFlowContext, job: Job, token: Token) -> None:
-    if isinstance(token, FileToken):
-        for loc in context.scheduler.get_locations(job.name):
-            for path in await token.get_paths(context):
-                context.data_manager.invalidate_location(loc, path)
-    elif isinstance(token, ListToken):
-        for t in token.value:
-            await _invalidate_token(context, job, t)
-    elif isinstance(token, ObjectToken):
-        for t in token.value.value():
-            await _invalidate_token(context, job, t)
+async def _copy_file(job: Job, context: StreamFlowContext, value: str) -> str:
+    connector = context.scheduler.get_connector(job.name)
+    locations = context.scheduler.get_locations(job.name)
+    if not await StreamFlowPath(value, context=context, location=locations[0]).exists():
+        raise WorkflowExecutionException(
+            f"Job {job.name} input does not exist: File {value}"
+        )
+    output = f"result-{PurePath(job.name).parts[1]}"
+    await StreamFlowPath(
+        job.output_directory, context=context, location=locations[0]
+    ).mkdir(parents=True, exist_ok=True)
+    await connector.run(
+        location=locations[0],
+        command=["cp", "-r", value, output],
+        workdir=job.output_directory,
+    )
+    output = os.path.join(job.output_directory, output)
+    if not await StreamFlowPath(
+        output, context=context, location=locations[0]
+    ).exists():
+        raise WorkflowExecutionException(
+            f"CMD Job {job.name} output does not exist: File {output}"
+        )
+    return output
+
+
+async def _delete_job_workdir(context: StreamFlowContext, job: Job) -> None:
+    """
+    Delete workdir of the workflow.
+    Use carefully because it will delete the parent directory of the job output directory.
+    """
+    workdir = (
+        os.path.dirname(job.output_directory)
+        if job.output_directory
+        else context.scheduler.get_allocation(job.name).target.workdir
+    )
+    if os.path.basename(workdir) != "test-fs-volatile":
+        raise Exception(f"Invalid workdir to delete: {workdir}")
+    for loc in context.scheduler.get_locations(job.name):
+        await StreamFlowPath(workdir, context=context, location=loc).rmtree()
 
 
 async def _register_path(
@@ -152,8 +190,8 @@ def create_schedule_step(
     workflow: Workflow,
     deploy_steps: Iterable[DeployStep],
     cls: type[ScheduleStep] | None = None,
-    binding_config: BindingConfig = None,
-    hardware_requirement: HardwareRequirement = None,
+    binding_config: BindingConfig | None = None,
+    hardware_requirement: HardwareRequirement | None = None,
     name_prefix: str | None = None,
     **arguments,
 ) -> ScheduleStep:
@@ -180,7 +218,9 @@ def create_schedule_step(
         job_prefix=name_prefix,
         connector_ports={
             target.deployment.name: deploy_step.get_output_port()
-            for target, deploy_step in zip(binding_config.targets, deploy_steps)
+            for target, deploy_step in zip(
+                binding_config.targets, deploy_steps, strict=True
+            )
         },
         binding_config=binding_config,
         hardware_requirement=hardware_requirement,
@@ -226,26 +266,29 @@ def get_combinator_step(
     workflow: Workflow, combinator_type: str, inner_combinator: bool = False
 ) -> CombinatorStep:
     combinator_step_cls = CombinatorStep
-    name = utils.random_name()
-    if combinator_type == "cartesian_product_combinator":
-        combinator = get_cartesian_product_combinator(workflow, name)
-    elif combinator_type == "dot_combinator":
-        combinator = get_dot_combinator(workflow, name)
-    elif combinator_type == "loop_combinator":
-        combinator_step_cls = LoopCombinatorStep
-        combinator = get_loop_combinator(workflow, name)
-    elif combinator_type == "loop_termination_combinator":
-        combinator = get_loop_terminator_combinator(workflow, name)
-    elif combinator_type == "nested_crossproduct":
-        combinator = get_nested_crossproduct(workflow, name)
-    else:
-        raise ValueError(
-            f"Invalid input combinator type: {combinator_type} is not supported"
-        )
+    name = posixpath.join(posixpath.sep, utils.random_name())
+    match combinator_type:
+        case "cartesian_product_combinator":
+            combinator = get_cartesian_product_combinator(workflow, name)
+        case "dot_product_combinator":
+            combinator = get_dot_product_combinator(workflow, name)
+        case "loop_combinator":
+            combinator_step_cls = LoopCombinatorStep
+            combinator = get_loop_combinator(workflow, name)
+        case "loop_termination_combinator":
+            combinator = get_loop_terminator_combinator(workflow, name)
+        case "nested_crossproduct":
+            combinator = get_nested_crossproduct(workflow, name)
+        case _:
+            raise ValueError(
+                f"Invalid input combinator type: {combinator_type} is not supported"
+            )
     if inner_combinator:
         if combinator_type == "nested_crossproduct":
             raise ValueError("Nested crossproduct already has inner combinators")
-        combinator.add_combinator(get_dot_combinator(workflow, name), {"test_name_1"})
+        combinator.add_combinator(
+            get_dot_product_combinator(workflow, name), {"test_name_1"}
+        )
         combinator.add_combinator(
             get_cartesian_product_combinator(workflow, name), {"test_name_2"}
         )
@@ -259,7 +302,7 @@ def get_combinator_step(
     return step
 
 
-def get_dot_combinator(
+def get_dot_product_combinator(
     workflow: Workflow, name: str | None = None
 ) -> DotProductCombinator:
     return get_full_instantiation(
@@ -307,45 +350,75 @@ def get_nested_crossproduct(
     return combinator
 
 
-def random_job_name(step_name: str | None = None):
+def random_job_name(step_name: str | None = None) -> str:
     step_name = step_name or utils.random_name()
     return os.path.join(posixpath.sep, step_name, "0.0")
 
 
-async def build_token(job: Job, token_value: Any, context: StreamFlowContext) -> Token:
-    if isinstance(token_value, MutableSequence):
-        return ListToken(
-            tag=get_tag(job.inputs.values()),
-            value=[await build_token(job, v, context) for v in token_value],
-        )
-    elif isinstance(token_value, MutableMapping):
-        if get_token_class(token_value) in ["File", "Directory"]:
-            connector = context.scheduler.get_connector(job.name)
-            locations = context.scheduler.get_locations(job.name)
-            await _register_path(
-                context,
-                connector,
-                next(iter(locations)),
-                token_value["path"],
-                token_value["path"],
-            )
-            return BaseFileToken(
-                tag=get_tag(job.inputs.values()), value=token_value["path"]
-            )
-        else:
-            return ObjectToken(
+async def build_token(
+    job: Job, token_value: Any, context: StreamFlowContext, recoverable: bool = False
+) -> Token:
+    match token_value:
+        case MutableSequence():
+            return ListToken(
                 tag=get_tag(job.inputs.values()),
-                value={
-                    k: await build_token(job, v, context)
-                    for k, v in token_value.items()
-                },
+                value=await asyncio.gather(
+                    *(
+                        asyncio.create_task(build_token(job, v, context, recoverable))
+                        for v in token_value
+                    )
+                ),
             )
-    elif isinstance(token_value, FileToken):
-        return token_value.update(token_value.value)
-    elif isinstance(token_value, Token):
-        return token_value.update(token_value.value)
-    else:
-        return Token(tag=get_tag(job.inputs.values()), value=token_value)
+        case MutableMapping():
+            if get_token_class(token_value) in ["File", "Directory"]:
+                connector = context.scheduler.get_connector(job.name)
+                locations = context.scheduler.get_locations(job.name)
+                relpath = (
+                    os.path.relpath(token_value["path"], job.output_directory)
+                    if job.output_directory
+                    and token_value["path"].startswith(job.output_directory)
+                    else os.path.basename(token_value["path"])
+                )
+                await _register_path(
+                    context,
+                    connector,
+                    next(iter(locations)),
+                    token_value["path"],
+                    relpath,
+                )
+                return BaseFileToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=token_value["path"],
+                    recoverable=recoverable,
+                )
+            else:
+                return ObjectToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=dict(
+                        zip(
+                            token_value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(
+                                        build_token(job, v, context, recoverable)
+                                    )
+                                    for v in token_value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    ),
+                )
+        case Token():
+            token = token_value.update(token_value.value)
+            token.recoverable = recoverable
+            return token
+        case _:
+            return Token(
+                tag=get_tag(job.inputs.values()),
+                value=token_value,
+                recoverable=recoverable,
+            )
 
 
 class BaseFileToken(FileToken):
@@ -362,7 +435,87 @@ class BaseInputInjectorStep(InputInjectorStep):
             job=job,
             token_value=token_value,
             context=self.workflow.context,
+            recoverable=True,
         )
+
+
+class BaseLoopConditionalStep(ConditionalStep):
+    def __init__(self, name: str, workflow: Workflow, condition: str):
+        super().__init__(name, workflow)
+        self.condition: str = condition
+        self.skip_ports: MutableMapping[str, str] = {}
+
+    async def _eval(self, inputs: MutableMapping[str, Token]):
+        return eval(self.condition)(inputs)
+
+    async def _on_true(self, inputs: MutableMapping[str, Token]) -> None:
+        # Next iteration: propagate outputs to the loop
+        for port_name, port in self.get_output_ports().items():
+            port.put(
+                await self._persist_token(
+                    token=inputs[port_name].update(inputs[port_name].value),
+                    port=port,
+                    input_token_ids=get_entity_ids(inputs.values()),
+                )
+            )
+
+    async def _on_false(self, inputs: MutableMapping[str, Token]) -> None:
+        # Loop termination: propagate outputs outside the loop
+        for port in self.get_skip_ports().values():
+            port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
+
+    async def _save_additional_params(
+        self, context: StreamFlowContext
+    ) -> MutableMapping[str, Any]:
+        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            "skip_ports": {
+                k: p.persistent_id for k, p in self.get_skip_ports().items()
+            },
+            "condition": self.condition,
+        }
+
+    @classmethod
+    async def _load(
+        cls,
+        context: StreamFlowContext,
+        row: MutableMapping[str, Any],
+        loading_context: DatabaseLoadingContext,
+    ) -> Self:
+        step = cls(
+            name=row["name"],
+            workflow=cast(
+                CWLWorkflow,
+                await loading_context.load_workflow(context, row["workflow"]),
+            ),
+            condition=row["params"]["condition"],
+        )
+        for k, port in zip(
+            row["params"]["skip_ports"].keys(),
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(loading_context.load_port(context, port_id))
+                    for port_id in row["params"]["skip_ports"].values()
+                )
+            ),
+        ):
+            step.add_skip_port(k, port)
+        return step
+
+    def add_skip_port(self, name: str, port: Port) -> None:
+        if port.name not in self.workflow.ports:
+            self.workflow.ports[port.name] = port
+        self.skip_ports[name] = port.name
+
+    def get_skip_ports(self) -> MutableMapping[str, Port]:
+        return {k: self.workflow.ports[v] for k, v in self.skip_ports.items()}
+
+
+class BaseLoopOutputLastStep(LoopOutputStep):
+    async def _process_output(self, tag: str) -> Token:
+        return sorted(
+            self.token_map.get(tag, [Token(value=None)]),
+            key=lambda t: int(t.tag.split(".")[-1]),
+        )[-1].retag(tag=tag)
 
 
 class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
@@ -388,7 +541,7 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
             workflow=await loading_context.load_workflow(context, row["workflow"]),
             value_type=row["value_type"],
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                await loading_context.load_target(context, row["target"])
                 if row["target"]
                 else None
             ),
@@ -408,27 +561,54 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
         job: Job,
         command_output: asyncio.Future[CommandOutput],
         connector: Connector | None = None,
+        recoverable: bool = False,
     ) -> Token | None:
         context = self.workflow.context
         value = (await command_output).value
-        if self.value_type == "file":
-            locations = context.scheduler.get_locations(job.name)
-            await _register_path(
-                context, connector, next(iter(locations)), value, value
-            )
-            return BaseFileToken(tag=get_tag(job.inputs.values()), value=value)
-        elif self.value_type == "list":
-            return ListToken(
-                tag=get_tag(job.inputs.values()),
-                value=[await build_token(job, v, context) for v in value],
-            )
-        elif self.value_type == "dict":
-            return ObjectToken(
-                tag=get_tag(job.inputs.values()),
-                value={k: await build_token(job, v, context) for k, v in value.items()},
-            )
-        else:
-            return Token(tag=get_tag(job.inputs.values()), value=value)
+        match self.value_type:
+            case "file":
+                locations = context.scheduler.get_locations(job.name)
+                connector = connector or context.scheduler.get_connector(job.name)
+                if not await StreamFlowPath(
+                    value, context=context, location=locations[0]
+                ).exists():
+                    raise WorkflowExecutionException(
+                        f"Job {job.name} output does not exist: File {value}"
+                    )
+                await _register_path(
+                    context=context,
+                    connector=connector,
+                    location=next(iter(locations)),
+                    path=value,
+                    relpath=os.path.relpath(value, job.output_directory),
+                )
+                return BaseFileToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=value,
+                    recoverable=recoverable,
+                )
+            case "list":
+                return ListToken(
+                    tag=get_tag(job.inputs.values()),
+                    value=[
+                        await build_token(job, v, context, recoverable=recoverable)
+                        for v in value
+                    ],
+                )
+            case "object":
+                return ObjectToken(
+                    tag=get_tag(job.inputs.values()),
+                    value={
+                        k: await build_token(job, v, context, recoverable=recoverable)
+                        for k, v in value.items()
+                    },
+                )
+            case _:
+                return Token(
+                    tag=get_tag(job.inputs.values()),
+                    value=value,
+                    recoverable=recoverable,
+                )
 
 
 class InjectorFailureCommand(Command):
@@ -483,7 +663,6 @@ class InjectorFailureCommand(Command):
                 for s in steps
             )
         )
-
         tag = get_job_tag(job.name)
         num_executions = sum(
             jt["value"]["job"]["params"]["name"] == job.name
@@ -497,21 +676,42 @@ class InjectorFailureCommand(Command):
         if (
             max_failures := self.failure_tags.get(tag, None)
         ) is not None and num_executions < max_failures:
-            if self.failure_type == InjectorFailureCommand.INJECT_TOKEN:
-                context.failure_manager.get_request(job.name).output_tokens = {
-                    k: t.update(t.value, recoverable=True)
-                    for k, t in job.inputs.items()
-                }
-            elif self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(context, job, t)
+            match self.failure_type:
+                case InjectorFailureCommand.INJECT_TOKEN:
+                    output_tokens = {}
+                    for k, t in job.inputs.items():
+                        output_tokens[k] = t.update(t.value)
+                        output_tokens[k].recoverable = True
+                    context.failure_manager.get_request(job.name).output_tokens = (
+                        output_tokens
+                    )
+                case InjectorFailureCommand.FAIL_STOP:
+                    await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
             try:
                 operation, input_value_type, input_value = eval(self.command)(
                     job.inputs
                 )
-                cmd_out = CommandOutput(input_value, Status.COMPLETED)
+                if operation == "copy":
+                    if input_value_type == "file":
+                        output = await _copy_file(job, context, input_value)
+                    elif input_value_type == "list[file]":
+                        output = []
+                        for iv in input_value:
+                            output.append(await _copy_file(job, context, iv))
+                    else:
+                        output = input_value
+                elif operation == "inc":
+                    if input_value_type == "integer":
+                        output = int(input_value) + 1
+                    else:
+                        raise NotImplementedError(
+                            f"Increment not implemented for {input_value_type}"
+                        )
+                else:
+                    raise NotImplementedError("Operation not supported", operation)
+                cmd_out = CommandOutput(output, Status.COMPLETED)
             except Exception as err:
                 logger.error(f"Failed command evaluation: {err}")
                 raise FailureHandlingException(err)
@@ -526,6 +726,7 @@ class InjectorFailureCommand(Command):
                 "status": cmd_out.status,
             },
         )
+        logger.info(f"Job result {job.name}: {cmd_out.value}")
         return cmd_out
 
     async def _save_additional_params(
@@ -636,7 +837,7 @@ class InjectorFailureScheduleStep(ScheduleStep):
         connector: Connector,
         locations: MutableSequence[ExecutionLocation],
         job: Job,
-    ):
+    ) -> None:
         # Counts the number of step rollbacks
         loading_context = DefaultDatabaseLoadingContext()
         workflows = await asyncio.gather(
@@ -657,8 +858,7 @@ class InjectorFailureScheduleStep(ScheduleStep):
             [w.steps[self.name] for w in workflows if self.name in w.steps]
         ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
             if self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(self.workflow.context, job, t)
+                await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         await super()._set_job_directories(connector, locations, job)
 
@@ -711,16 +911,28 @@ class InjectorFailureTransferStep(TransferStep):
         dst_connector = self.workflow.context.scheduler.get_connector(job.name)
         dst_path_processor = get_path_processor(dst_connector)
         dst_locations = self.workflow.context.scheduler.get_locations(job.name)
-        source_location = await self.workflow.context.data_manager.get_source_location(
+        if source_location := await self.workflow.context.data_manager.get_source_location(
             path=path, dst_deployment=dst_connector.deployment_name
-        )
-        dst_path = dst_path_processor.join(job.input_directory, source_location.relpath)
-        await self.workflow.context.data_manager.transfer_data(
-            src_location=source_location.location,
-            src_path=source_location.path,
-            dst_locations=dst_locations,
-            dst_path=dst_path,
-        )
+        ):
+            dst_path = dst_path_processor.join(
+                job.input_directory, source_location.relpath
+            )
+            try:
+                await self.workflow.context.data_manager.transfer_data(
+                    src_location=source_location.location,
+                    src_path=source_location.path,
+                    dst_locations=dst_locations,
+                    dst_path=dst_path,
+                    writable=True,  # To avoid symbolic links, as recovery could be as simple as creating a new one.
+                )
+            except WorkflowExecutionException as err:
+                raise WorkflowExecutionException(
+                    f"Job {job.name} failed transfer: {err}"
+                )
+        else:
+            raise WorkflowExecutionException(
+                f"Job {job.name} input does not exist: File {path}"
+            )
         return dst_path
 
     async def transfer(self, job: Job, token: Token) -> Token:
@@ -744,35 +956,44 @@ class InjectorFailureTransferStep(TransferStep):
             [w.steps[self.name] for w in workflows if self.name in w.steps]
         ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
             if self.failure_type == InjectorFailureCommand.FAIL_STOP:
-                for t in job.inputs.values():
-                    await _invalidate_token(self.workflow.context, job, t)
+                await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         # Execute the transfer
-        if isinstance(token, ListToken):
-            return token.update(
-                await asyncio.gather(
-                    *(asyncio.create_task(self.transfer(job, t)) for t in token.value)
+        match token:
+            case ListToken():
+                return token.update(
+                    value=await asyncio.gather(
+                        *(
+                            asyncio.create_task(self.transfer(job, t))
+                            for t in token.value
+                        )
+                    ),
                 )
-            )
-        elif isinstance(token, ObjectToken):
-            return token.update(
-                {
-                    k: v
-                    for k, v in zip(
-                        token.value.keys(),
-                        await asyncio.gather(
-                            *(
-                                asyncio.create_task(self.transfer(job, t))
-                                for t in token.value.values()
-                            )
-                        ),
-                    )
-                }
-            )
-        elif isinstance(token, FileToken):
-            return token.update(await self._transfer_path(job, token.value))
-        else:
-            return token.update(token.value)
+            case ObjectToken():
+                return token.update(
+                    value=dict(
+                        zip(
+                            token.value.keys(),
+                            await asyncio.gather(
+                                *(
+                                    asyncio.create_task(self.transfer(job, t))
+                                    for t in token.value.values()
+                                )
+                            ),
+                            strict=True,
+                        )
+                    ),
+                )
+            case FileToken():
+                token = token.update(
+                    await self._transfer_path(job, token.value),
+                )
+                token.recoverable = False
+                return token
+            case _:
+                token = token.update(token.value)
+                token.recoverable = False
+                return token
 
 
 class RecoveryTranslator:
@@ -780,7 +1001,7 @@ class RecoveryTranslator:
         self.deployment_configs: MutableMapping[str, DeploymentConfig] = {}
         self.workflow: Workflow = workflow
 
-    def _get_deploy_step(self, deployment_name: str):
+    def _get_deploy_step(self, deployment_name: str) -> DeployStep:
         step_name = posixpath.join("__deploy__", deployment_name)
         if step_name not in self.workflow.steps.keys():
             return self.workflow.create_step(
@@ -889,3 +1110,117 @@ class RecoveryTranslator:
                 EvalCommandOutputProcessor(output, workflow, value_type),
             )
         return execute_step
+
+    def get_input_loop(
+        self,
+        step_name: str,
+        input_ports: MutableMapping[str, Port],
+        condition_function: str,
+    ) -> MutableMapping[str, Port]:
+        loop_combinator = LoopCombinator(
+            workflow=self.workflow, name=step_name + "-loop-combinator"
+        )
+        forward_ports = {}
+        for port_name, port in input_ports.items():
+            # Decouple loop ports through a forwarder
+            loop_forwarder = self.workflow.create_step(
+                cls=ForwardTransformer,
+                name=os.path.join(step_name, port_name) + "-input-forward-transformer",
+            )
+            loop_forwarder.add_input_port(port_name, port)
+            forward_ports[port_name] = self.workflow.create_port()
+            loop_forwarder.add_output_port(port_name, forward_ports[port_name])
+            # Add item to combinator
+            loop_combinator.add_item(port_name)
+        # Create a combinator step and add all inputs to it
+        combinator_step = self.workflow.create_step(
+            cls=LoopCombinatorStep,
+            name=step_name + "-loop-combinator",
+            combinator=loop_combinator,
+        )
+        for port_name, port in forward_ports.items():
+            combinator_step.add_input_port(port_name, port)
+            combinator_step.add_output_port(port_name, self.workflow.create_port())
+        # Create loop conditional step
+        loop_conditional_step = self.workflow.create_step(
+            cls=BaseLoopConditionalStep,
+            name=step_name + "-loop-when",
+            condition=condition_function,
+        )
+        # Add inputs to conditional step
+        output_ports = {}
+        for port_name in input_ports:
+            loop_conditional_step.add_input_port(
+                port_name, combinator_step.get_output_port(port_name)
+            )
+            output_ports[port_name] = self.workflow.create_port()
+            loop_conditional_step.add_output_port(port_name, output_ports[port_name])
+        return output_ports
+
+    def get_output_loop(
+        self,
+        step_name: str,
+        loop_ports: MutableMapping[str, Port],
+        output_ports: MutableSet[str],
+    ) -> MutableMapping[str, Port]:
+        """
+        loop_ports are the output ports which are needed as input for the next iteration
+        output_ports are the ports which produced the data which are the output of the loop
+        """
+        loop_conditional_step = cast(
+            BaseLoopConditionalStep, self.workflow.steps[step_name + "-loop-when"]
+        )
+        combinator_step = self.workflow.steps[step_name + "-loop-combinator"]
+        external_output_ports = {}
+        internal_ports = dict(loop_ports)
+        # internal_ports = { k : (p if p else loop_conditional_step.get_output_port(k)) for k, p in loop_ports.items() }
+        # Create a loop termination combinator
+        loop_terminator_combinator = LoopTerminationCombinator(
+            workflow=self.workflow, name=step_name + "-loop-termination-combinator"
+        )
+        loop_terminator_step = self.workflow.create_step(
+            cls=CombinatorStep,
+            name=step_name + "-loop-terminator",
+            combinator=loop_terminator_combinator,
+        )
+        for port_name, port in combinator_step.get_input_ports().items():
+            loop_terminator_step.add_output_port(port_name, port)
+            loop_terminator_combinator.add_output_item(port_name)
+        for port_name in output_ports:
+            # Create loop forwarder
+            loop_forwarder = self.workflow.create_step(
+                cls=ForwardTransformer,
+                name=os.path.join(step_name, port_name) + "-output-forward-transformer",
+            )
+            loop_forwarder.add_input_port(port_name, loop_ports[port_name])
+            loop_forwarder.add_output_port(port_name, self.workflow.create_port())
+            internal_ports[port_name] = loop_forwarder.get_output_port(port_name)
+            # Create loop output step
+            loop_output_step = self.workflow.create_step(
+                cls=BaseLoopOutputLastStep,
+                name=os.path.join(step_name, port_name) + "-loop-output",
+            )
+            loop_output_step.add_input_port(port_name, loop_forwarder.get_output_port())
+            loop_conditional_step.add_skip_port(
+                port_name, loop_forwarder.get_output_port()
+            )
+            loop_output_step.add_output_port(port_name, self.workflow.create_port())
+            external_output_ports[port_name] = loop_output_step.get_output_port(
+                port_name
+            )
+            loop_terminator_step.add_input_port(
+                port_name, loop_output_step.get_output_port(port_name)
+            )
+            loop_terminator_combinator.add_item(port_name)
+        for port_name in loop_ports:
+            # Create loop output step
+            loop_forwarder = self.workflow.create_step(
+                cls=ForwardTransformer,
+                name=os.path.join(step_name, port_name)
+                + "-back-propagation-transformer",
+            )
+            loop_forwarder.add_input_port(port_name, internal_ports[port_name])
+            loop_forwarder.add_output_port(
+                port_name, combinator_step.get_input_port(port_name)
+            )
+        return external_output_ports

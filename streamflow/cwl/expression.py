@@ -100,7 +100,7 @@ class DependencyResolver:
         listener = CWLDependencyListener()
         walker = antlr4.ParseTreeWalker()
         walker.walk(listener, parser.program())
-        self.deps = listener.deps
+        self.deps |= listener.deps
 
     def regex_eval(
         self,
@@ -121,7 +121,7 @@ class DependencyResolver:
                     and not remaining_string[m.end(1) :]
                 ):
                     return None
-                self.deps = {key}
+                self.deps.add(key)
             return None
         else:
             return None

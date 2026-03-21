@@ -48,6 +48,10 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
     ) -> MutableMapping[str, AvailableLocation]:
         ...
 
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell: ...
+
     async def get_stream_reader(
         self,
         command: MutableSequence[str],
@@ -85,6 +89,8 @@ The ``streamflow.core.deployment`` module defines the ``Connector`` interface, w
 The ``deploy`` method instantiates the remote execution environment, making it ready to receive requests for data transfers and command executions. A ``deployment`` object can be marked as ``external`` in the StreamFlow file. In that case, the ``Connector`` should assume that the execution environment is already up and running, and the ``deploy`` method should only open the necessary connections to communicate with it.
 
 The ``undeploy`` method destroys the remote execution environment, potentially cleaning up all the temporary resources instantiated during the workflow execution (e.g., intermediate results). If a ``deployment`` object is marked as ``external``, the ``undeploy`` method should not destroy it but just close all the connections opened by the ``deploy`` method.
+
+The ``get_shell`` method returns a ``Shell`` object, which is an abstraction of a persistent remote shell that can be used to execute commands remotely in an efficient way. The ``command`` parameter is used to obtain a shell instance (e.g., ``["sh"]`` for a standard POSIX shell), and the ``location`` parameter identifies the remote ``ExecutionLocation`` where the shell should be instantiated.
 
 The ``get_available_locations`` method is used in the scheduling phase to obtain the locations available for job execution, identified by their unique name (see :ref:`here <Scheduling>`). The method receives an optional input parameter to filter valid locations. The ``service`` parameter specifies a specific set of locations in a deployment, and its precise meaning differs for each deployment type (see :ref:`here <Binding steps and deployments>`).
 

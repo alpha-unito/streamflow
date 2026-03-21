@@ -8,7 +8,8 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from importlib_metadata import entry_points
-from referencing._core import Resolver, Resource
+from referencing import Resource
+from referencing._core import Resolver
 
 from streamflow.config.schema import SfSchema
 from streamflow.core.exception import InvalidPluginException
@@ -19,7 +20,9 @@ from streamflow.log_handler import logger
 PLUGIN_ENTRY_POINT = "unito.streamflow.plugin"
 
 
-def _filter_by_name(classes: MutableMapping[str, Any], name: str):
+def _filter_by_name(
+    classes: MutableMapping[str, Any], name: str
+) -> MutableMapping[str, Any]:
     filtered_classes = {}
     for class_ in classes:
         ext_objs = [ext for ext in classes[class_] if ext["name"] == name]
@@ -28,7 +31,9 @@ def _filter_by_name(classes: MutableMapping[str, Any], name: str):
     return filtered_classes
 
 
-def _flatten_all_of(entity_schema):
+def _flatten_all_of(
+    entity_schema: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
     for obj in entity_schema["allOf"]:
         if "allOf" in obj:
             obj["properties"] = _flatten_all_of(obj) | obj.get("properties", {})
@@ -63,11 +68,16 @@ def _replace_refs(contents: Any, resolver: Resolver) -> None:
         path = PurePosixPath(k)
         element = contents
         for part in path.parts[1:]:
-            if isinstance(element, MutableMapping):
-                element = element[part]
-            elif isinstance(element, MutableSequence):
-                element = element[int(part)]
-        element.update(v)
+            match element:
+                case MutableMapping():
+                    element = element[part]
+                case MutableSequence():
+                    element = element[int(part)]
+        if isinstance(element, MutableMapping) and "$id" in element:
+            element.setdefault("$defs", {}).update(v.get("$defs", {}))
+            element.setdefault("properties", {}).update(v.get("properties", {}))
+        else:
+            element.update(v)
 
 
 def _resolve_refs(
@@ -75,7 +85,7 @@ def _resolve_refs(
     resolver: Resolver,
     path: PurePosixPath,
     refs: MutableMapping[str, Any],
-):
+) -> None:
     if isinstance(contents, MutableMapping):
         for k, v in contents.items():
             _resolve_refs(v, resolver, path / k, refs)
@@ -116,9 +126,11 @@ def _get_type_repr(
         return None
 
 
-def _split_refs(refs: MutableMapping[str, Any], processed: MutableSequence[str]):
+def _split_refs(
+    refs: MutableMapping[str, Any], processed: MutableSequence[str]
+) -> MutableMapping[str, MutableSequence[str]]:
     refs_descs = {}
-    subrefs = {}
+    subrefs: MutableMapping[str, Any] = {}
     for k, v in refs.items():
         refs_descs[k] = [
             _get_property_desc(name, prop, subrefs) for name, prop in v.items()
@@ -129,9 +141,15 @@ def _split_refs(refs: MutableMapping[str, Any], processed: MutableSequence[str])
     return refs_descs
 
 
-def _split_schema(schema: MutableMapping[str, Any]):
+def _split_schema(
+    schema: MutableMapping[str, Any],
+) -> tuple[
+    MutableSequence[str],
+    MutableSequence[str],
+    MutableMapping[str, MutableMapping[str, Any]],
+]:
     required, optional = [], []
-    refs = {}
+    refs: MutableMapping[str, MutableMapping[str, Any]] = {}
     for k, v in schema.get("properties", {}).items():
         if k in schema.get("required", []):
             required.append(_get_property_desc(k, v, refs))
@@ -141,7 +159,7 @@ def _split_schema(schema: MutableMapping[str, Any]):
 
 
 def list_extensions(name: str | None, type_: str | None) -> None:
-    extensions = {}
+    extensions: dict[str, dict[str, dict[str, str]]] = {}
     max_sizes = {
         "name": 0,
         "class": 0,
@@ -363,7 +381,7 @@ def show_plugin(plugin: str) -> None:
             if len(classes) == 0:
                 print("It does not provide any StreamFlow extension")
             else:
-                ext_objs = {}
+                ext_objs: dict[str, list[dict[str, str]]] = {}
                 max_sizes = {"name": 0, "class": 0}
                 for extension_point, items in classes.items():
                     for item in items:

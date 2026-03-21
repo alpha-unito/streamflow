@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -96,7 +97,7 @@ class _RemotePathMapper:
             tree += self._node_repr(child, level + 1)
         return tree
 
-    def _remove_node(self, location: DataLocation, node: _RemotePathNode):
+    def _remove_node(self, location: DataLocation, node: _RemotePathNode) -> None:
         if location.deployment in node.locations:
             del node.locations[location.deployment][location.name]
         for n in node.children.values():
@@ -194,7 +195,7 @@ class _RemotePathMapper:
         # Return location
         return data_location
 
-    def remove_location(self, location: DataLocation):
+    def remove_location(self, location: DataLocation) -> None:
         data_locations = self._filesystem.locations.setdefault(
             location.deployment, {}
         ).get(location.name)
@@ -207,7 +208,7 @@ class DefaultDataManager(DataManager):
         super().__init__(context)
         self.path_mapper = _RemotePathMapper(context)
 
-    async def close(self):
+    async def close(self) -> None:
         pass
 
     def get_data_locations(
@@ -326,7 +327,7 @@ class DefaultDataManager(DataManager):
         dst_connector = self.context.deployment_manager.get_connector(
             next(iter(dst_locations)).deployment
         )
-        # Create destination folder
+        # Create destination folder (if it is not registered)
         await asyncio.gather(
             *(
                 asyncio.create_task(
@@ -334,7 +335,18 @@ class DefaultDataManager(DataManager):
                         dst_path, context=self.context, location=location
                     ).parent.mkdir(mode=0o777, parents=True, exist_ok=True)
                 )
-                for location in dst_locations
+                for location in (
+                    loc
+                    for loc in dst_locations
+                    if len(
+                        self.get_data_locations(
+                            path=os.path.dirname(dst_path),
+                            deployment=loc.deployment,
+                            location_name=loc.name,
+                        )
+                    )
+                    == 0
+                )
             )
         )
         # Follow symlink for source path

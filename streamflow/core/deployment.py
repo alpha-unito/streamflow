@@ -4,7 +4,7 @@ import asyncio
 import os
 import posixpath
 import tempfile
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, AsyncContextManager, cast
 
@@ -65,8 +65,43 @@ class ExecutionLocation:
         else:
             return posixpath.join(self.deployment, self.name)
 
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, ExecutionLocation):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and self.deployment == other.deployment
+            and self.environment == other.environment
+            and self.hostname == other.hostname
+            and self.local == other.local
+            and self.mounts == other.mounts
+            and self.service == other.service
+            and self.stacked == other.stacked
+            and self.wraps == other.wraps
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.name,
+                self.deployment,
+                frozenset(self.environment.items()),
+                self.hostname,
+                self.local,
+                frozenset(self.mounts.items()),
+                self.service,
+                self.stacked,
+                self.wraps,
+            )
+        )
+
 
 class BindingFilter(SchemaEntity):
+    __slots__ = "name"
+
+    def __init__(self, name: str) -> None:
+        self.name: str = name
+
     @abstractmethod
     async def get_targets(
         self, job: Job, targets: MutableSequence[Target]
@@ -133,6 +168,11 @@ class Connector(SchemaEntity):
 
     @abstractmethod
     async def undeploy(self, external: bool) -> None: ...
+
+    @abstractmethod
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell: ...
 
     @abstractmethod
     async def get_stream_reader(
@@ -252,6 +292,41 @@ class DeploymentConfig(PersistableEntity):
                 )
 
 
+class FilterConfig(PersistableEntity):
+    __slots__ = ("name", "type", "config")
+
+    def __init__(self, name: str, type: str, config: MutableMapping[str, Any]):
+        super().__init__()
+        self.name: str = name
+        self.type: str = type
+        self.config: MutableMapping[str, Any] = config or {}
+
+    @classmethod
+    async def load(
+        cls,
+        context: StreamFlowContext,
+        persistent_id: int,
+        loading_context: DatabaseLoadingContext,
+    ) -> Self:
+        row = await context.database.get_filter(persistent_id)
+        obj = cls(
+            name=row["name"],
+            type=row["type"],
+            config=row["config"],
+        )
+        loading_context.add_filter(persistent_id, obj)
+        return obj
+
+    async def save(self, context: StreamFlowContext) -> None:
+        async with self.persistence_lock:
+            if not self.persistent_id:
+                self.persistent_id = await context.database.add_filter(
+                    name=self.name,
+                    type=self.type,
+                    config=self.config,
+                )
+
+
 class Target(PersistableEntity):
     def __init__(
         self,
@@ -353,39 +428,32 @@ class LocalTarget(Target):
         return cls(workdir=row["workdir"])
 
 
-class FilterConfig(PersistableEntity):
-    __slots__ = ("name", "type", "config")
+class Shell(ABC):
+    __slots__ = ("command", "buffer_size")
 
-    def __init__(self, name: str, type: str, config: MutableMapping[str, Any]):
-        super().__init__()
-        self.name: str = name
-        self.type: str = type
-        self.config: MutableMapping[str, Any] = config or {}
+    def __init__(
+        self,
+        command: MutableSequence[str],
+        buffer_size: int,
+    ) -> None:
+        self.command: MutableSequence[str] = command
+        self.buffer_size: int = buffer_size
 
-    @classmethod
-    async def load(
-        cls,
-        context: StreamFlowContext,
-        persistent_id: int,
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        row = await context.database.get_filter(persistent_id)
-        obj = cls(
-            name=row["name"],
-            type=row["type"],
-            config=row["config"],
-        )
-        loading_context.add_filter(persistent_id, obj)
-        return obj
+    @abstractmethod
+    async def close(self) -> None: ...
 
-    async def save(self, context: StreamFlowContext) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                self.persistent_id = await context.database.add_filter(
-                    name=self.name,
-                    type=self.type,
-                    config=self.config,
-                )
+    @abstractmethod
+    async def closed(self) -> bool: ...
+
+    @abstractmethod
+    async def execute(
+        self,
+        command: MutableSequence[str],
+        environment: MutableMapping[str, str] | None = ...,
+        workdir: str | None = ...,
+        capture_output: bool = ...,
+        timeout: int | None = ...,
+    ) -> tuple[str, int] | None: ...
 
 
 class WrapsConfig:

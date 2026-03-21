@@ -9,19 +9,18 @@ import shlex
 import tarfile
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
-from typing import AsyncContextManager
+from types import TracebackType
+from typing import Any, AsyncContextManager
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.utils import get_local_to_remote_destination
 from streamflow.deployment import aiotarstream
 from streamflow.deployment.future import FutureAware
-from streamflow.deployment.stream import (
-    SubprocessStreamReaderWrapperContextManager,
-    SubprocessStreamWriterWrapperContextManager,
-)
+from streamflow.deployment.shell import BaseShell
+from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.log_handler import logger
 
 FS_TYPES_TO_SKIP = {
@@ -72,7 +71,13 @@ async def extract_tar_stream(
         # Otherwise, if copying a directory, modify the member path to
         # move all the file hierarchy inside `dst`
         else:
-            member.path = posixpath.relpath(member.path, posixpath.basename(src))
+            # `member.path` is an alias of `member.name` and updates automatically.
+            member.name = posixpath.relpath(member.name, posixpath.basename(src))
+            if member.linkname:
+                # `member.linkpath` is an alias of `member.linkname` and updates automatically.
+                member.linkname = posixpath.relpath(
+                    member.linkname, posixpath.basename(src)
+                )
             await tar.extract(
                 member, os.path.normpath(os.path.join(dst, os.path.curdir))
             )
@@ -256,12 +261,126 @@ async def copy_same_connector(
     return locations
 
 
+class SubprocessStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
+    def __init__(self, coro) -> None:
+        self.coro = coro
+        self.proc: asyncio.subprocess.Process | None = None
+        self.stream: StreamWrapper | None = None
+
+
+class SubprocessStreamReaderWrapper(BaseStreamWrapper):
+    async def close(self) -> None:
+        self.closed = True
+
+    async def write(self, data: bytes) -> int:
+        raise NotImplementedError
+
+
+class SubprocessStreamReaderWrapperContextManager(
+    SubprocessStreamWrapperContextManager
+):
+    async def __aenter__(self) -> StreamWrapper:
+        self.proc = await self.coro
+        self.stream = SubprocessStreamReaderWrapper(self.proc.stdout)
+        return self.stream
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        await self.proc.wait()
+        if self.stream:
+            await self.stream.close()
+
+
+class SubprocessStreamWriterWrapper(BaseStreamWrapper):
+    async def _close(self) -> None:
+        self.stream.close()
+        await self.stream.wait_closed()
+
+    async def read(self, n: int = -1) -> bytes:
+        raise NotImplementedError
+
+    async def write(self, data: Any) -> None:
+        self.stream.write(data)
+        await self.stream.drain()
+
+
+class SubprocessStreamWriterWrapperContextManager(
+    SubprocessStreamWrapperContextManager
+):
+    async def __aenter__(self) -> StreamWrapper:
+        self.proc = await self.coro
+        self.stream = SubprocessStreamWriterWrapper(self.proc.stdin)
+        return self.stream
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if self.stream:
+            await self.stream.close()
+        await self.proc.wait()
+
+
+class SubprocessShell(BaseShell):
+    __slots__ = "_proc"
+
+    def __init__(
+        self,
+        command: MutableSequence[str],
+        buffer_size: int,
+        process: asyncio.subprocess.Process,
+    ) -> None:
+        super().__init__(command, buffer_size)
+        self._proc: asyncio.subprocess.Process = process
+        self._reader = SubprocessStreamReaderWrapper(self._proc.stdout)
+        self._writer = SubprocessStreamWriterWrapper(self._proc.stdin)
+
+    async def _close(self) -> None:
+        try:
+            if self._proc.returncode is None:
+                await self._writer.write(b"exit\n")
+                try:
+                    await asyncio.wait_for(self._proc.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        f"Shell with command `{' '.join(self.command)}` "
+                        "did not exit gracefully. Killing"
+                    )
+                    self._proc.kill()
+                    await self._proc.wait()
+        except Exception:
+            with contextlib.suppress(Exception):
+                self._proc.kill()
+                await self._proc.wait()
+
+
 class BaseConnector(Connector, FutureAware, ABC):
     def __init__(self, deployment_name: str, config_dir: str, transferBufferSize: int):
         super().__init__(
             deployment_name=deployment_name,
             config_dir=config_dir,
             transferBufferSize=transferBufferSize,
+        )
+        self._shells: MutableMapping[str, Shell] = {}
+        self._shells_lock: asyncio.Lock = asyncio.Lock()
+
+    async def _create_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        return SubprocessShell(
+            command=command, buffer_size=self.transferBufferSize, process=process
         )
 
     async def copy_local_to_remote(
@@ -330,6 +449,24 @@ class BaseConnector(Connector, FutureAware, ABC):
                 source_location=source_location,
             )
 
+    async def get_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        async with self._shells_lock:
+            if (key := str(hash("".join(command)))) in self._shells:
+                shell = self._shells[key]
+                if not await shell.closed():
+                    return shell
+                else:
+                    del self._shells[key]
+            try:
+                self._shells[key] = await self._create_shell(command, location)
+                return self._shells[key]
+            except Exception as e:
+                raise WorkflowExecutionException(
+                    f"Failed to create shell with command `{' '.join(command)}`: {e}"
+                ) from e
+
     async def get_stream_reader(
         self,
         command: MutableSequence[str],
@@ -369,6 +506,19 @@ class BaseConnector(Connector, FutureAware, ABC):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
+        if job_name is None and stdin is None:
+            with contextlib.suppress(WorkflowExecutionException):
+                return await utils.run_in_shell(
+                    shell=await self.get_shell(
+                        command=["sh"], location=location
+                    ),  # nosec
+                    location=location,
+                    command=command,
+                    environment=environment,
+                    workdir=workdir,
+                    capture_output=capture_output,
+                    timeout=timeout,
+                )
         command_str = utils.create_command(
             self.__class__.__name__,
             command,
@@ -388,10 +538,17 @@ class BaseConnector(Connector, FutureAware, ABC):
             )
         return await utils.run_in_subprocess(
             location=location,
-            command=[utils.encode_command(command_str, "sh")],
+            command=[command_str],
             capture_output=capture_output,
             timeout=timeout,
         )
+
+    async def undeploy(self, external: bool) -> None:
+        async with self._shells_lock:
+            await asyncio.gather(
+                *(asyncio.create_task(shell.close()) for shell in self._shells.values())
+            )
+            self._shells.clear()
 
 
 class BatchConnector(Connector, ABC):

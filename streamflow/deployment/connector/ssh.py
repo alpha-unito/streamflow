@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
+from types import TracebackType
 from typing import Any, AsyncContextManager
 
 import asyncssh
@@ -13,7 +15,7 @@ from asyncssh import ChannelOpenError, ConnectionLost, DisconnectError
 
 from streamflow.core import utils
 from streamflow.core.data import StreamWrapper
-from streamflow.core.deployment import Connector, ExecutionLocation
+from streamflow.core.deployment import Connector, ExecutionLocation, Shell
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import (
@@ -22,7 +24,8 @@ from streamflow.deployment.connector.base import (
     copy_remote_to_remote,
     copy_same_connector,
 )
-from streamflow.deployment.stream import StreamReaderWrapper, StreamWriterWrapper
+from streamflow.deployment.shell import BaseShell
+from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.deployment.template import CommandTemplateMap
 from streamflow.log_handler import logger
 
@@ -67,7 +70,7 @@ class SSHContext:
     ) -> asyncssh.SSHClientConnection | None:
         if config is None:
             return None
-        (hostname, port) = parse_hostname(config.hostname)
+        hostname, port = parse_hostname(config.hostname)
         return await asyncssh.connect(
             client_keys=config.client_keys,
             compression_algs=None,
@@ -237,7 +240,12 @@ class SSHContextManager:
                                 await context.reset()
                     await asyncio.sleep(self._retry_delay)
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         async with self._condition:
             if self._selected_context:
                 if self._proc:
@@ -294,6 +302,25 @@ class SSHContextFactory:
         )
 
 
+class SSHShell(BaseShell):
+    __slots__ = "_context"
+
+    def __init__(
+        self,
+        command: MutableSequence[str],
+        buffer_size: int,
+        process: asyncssh.SSHClientProcess,
+        context: SSHContextManager,
+    ):
+        super().__init__(command=command, buffer_size=buffer_size)
+        self._context: SSHContextManager = context
+        self._reader = SSHStreamReaderWrapper(process.stdout)
+        self._writer = SSHStreamWriterWrapper(process.stdin)
+
+    async def _close(self) -> None:
+        await self._context.__aexit__(None, None, None)
+
+
 class SSHStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
     def __init__(
         self,
@@ -308,14 +335,27 @@ class SSHStreamWrapperContextManager(AsyncContextManager[StreamWrapper], ABC):
         self.ssh_context: SSHContextManager | None = None
         self.stream: StreamWrapper | None = None
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         if self.stream:
             await self.stream.close()
         await self.ssh_context.__aexit__(exc_type, exc_val, exc_tb)
 
 
+class SSHStreamReaderWrapper(BaseStreamWrapper):
+    async def close(self) -> None:
+        self.closed = True
+
+    async def write(self, data: Any) -> None:
+        raise NotImplementedError
+
+
 class SSHStreamReaderWrapperContextManager(SSHStreamWrapperContextManager):
-    async def __aenter__(self) -> StreamReaderWrapper:
+    async def __aenter__(self) -> StreamWrapper:
         self.ssh_context = self.ssh_context_factory.get(
             command=" ".join(self.command),
             environment=self.environment,
@@ -323,12 +363,25 @@ class SSHStreamReaderWrapperContextManager(SSHStreamWrapperContextManager):
             encoding=None,
         )
         proc = await self.ssh_context.__aenter__()
-        self.stream = StreamReaderWrapper(proc.stdout)
+        self.stream = SSHStreamReaderWrapper(proc.stdout)
         return self.stream
 
 
+class SSHStreamWriterWrapper(BaseStreamWrapper):
+    async def _close(self) -> None:
+        self.stream.close()
+        await self.stream.wait_closed()
+
+    async def read(self, n: int = -1) -> bytes:
+        raise NotImplementedError
+
+    async def write(self, data: Any) -> None:
+        self.stream.write(data)
+        await self.stream.drain()
+
+
 class SSHStreamWriterWrapperContextManager(SSHStreamWrapperContextManager):
-    async def __aenter__(self) -> StreamWriterWrapper:
+    async def __aenter__(self) -> StreamWrapper:
         self.ssh_context = self.ssh_context_factory.get(
             command=" ".join(self.command),
             environment=self.environment,
@@ -337,7 +390,7 @@ class SSHStreamWriterWrapperContextManager(SSHStreamWrapperContextManager):
             encoding=None,
         )
         proc = await self.ssh_context.__aenter__()
-        self.stream = StreamWriterWrapper(proc.stdin)
+        self.stream = SSHStreamWriterWrapper(proc.stdin)
         return self.stream
 
 
@@ -436,41 +489,21 @@ class SSHConnector(BaseConnector):
         self.hardware: MutableMapping[str, Hardware] = {}
         self._cls_context: type[SSHContext] = SSHContext
 
-    async def copy_remote_to_remote(
-        self,
-        src: str,
-        dst: str,
-        locations: MutableSequence[ExecutionLocation],
-        source_location: ExecutionLocation,
-        source_connector: Connector | None = None,
-        read_only: bool = False,
-    ) -> None:
-        source_connector = source_connector or self
-        if locations := await copy_same_connector(
-            connector=self,
-            locations=locations,
-            source_location=source_location,
-            src=src,
-            dst=dst,
-            read_only=read_only,
-        ):
-            conn_per_round = min(len(locations), self.maxConcurrentSessions)
-            rounds = self.maxConcurrentSessions // conn_per_round
-            if len(locations) % conn_per_round != 0:
-                rounds += 1
-            location_groups = [
-                locations[i : i + rounds] for i in range(0, len(locations), rounds)
-            ]
-            for location_group in location_groups:
-                # Perform remote to remote copy
-                await copy_remote_to_remote(
-                    connector=self,
-                    locations=location_group,
-                    src=src,
-                    dst=dst,
-                    source_connector=source_connector,
-                    source_location=source_location,
-                )
+    async def _create_shell(
+        self, command: MutableSequence[str], location: ExecutionLocation
+    ) -> Shell:
+        context = self._get_ssh_context_factory(location).get(
+            command=" ".join(command),
+            environment=location.environment,
+            stderr=asyncio.subprocess.STDOUT,
+            encoding=None,
+        )
+        return SSHShell(
+            command=command,
+            buffer_size=self.transferBufferSize,
+            process=await context.__aenter__(),
+            context=context,
+        )
 
     async def _get_available_location(self, location: str) -> Hardware:
         if location not in self.hardware.keys():
@@ -494,11 +527,20 @@ class SSHConnector(BaseConnector):
                             f"An error message occurred: {cores}"
                         ) from None
                     for line in dir_info_list:
-                        mount_point, fs_type, size = line.split(" ")
-                        if fs_type not in FS_TYPES_TO_SKIP:
-                            self.hardware[location].storage[mount_point] = Storage(
-                                mount_point=mount_point,
-                                size=float(size) / 2**10,
+                        try:
+                            mount_point, fs_type, size = line.split(" ")
+                            if fs_type not in FS_TYPES_TO_SKIP:
+                                self.hardware[location].storage[mount_point] = Storage(
+                                    mount_point=mount_point,
+                                    size=float(size) / 2**10,
+                                )
+                        except ValueError as e:
+                            logger.warning(
+                                f"Skipping line {line} for deployment {self.deployment_name}: {e}"
+                            )
+                        except Exception as e:
+                            raise WorkflowExecutionException(
+                                f"Error parsing {line} for deployment {self.deployment_name}: {e}"
                             )
                 else:
                     raise WorkflowExecutionException(result.returncode)
@@ -530,7 +572,7 @@ class SSHConnector(BaseConnector):
                     command_str, location, f" for job {job_name}" if job_name else ""
                 )
             )
-        return utils.encode_command(command_str)
+        return command_str
 
     def _get_config(
         self, node: str | MutableMapping[str, Any] | None
@@ -590,7 +632,7 @@ class SSHConnector(BaseConnector):
         self, location: ExecutionLocation
     ) -> SSHContextFactory:
         if self.dataTransferConfig:
-            if location not in self.data_transfer_context_factories:
+            if location.name not in self.data_transfer_context_factories:
                 self.data_transfer_context_factories[location.name] = SSHContextFactory(
                     cls_context=self._cls_context,
                     streamflow_config_dir=self.config_dir,
@@ -602,7 +644,7 @@ class SSHConnector(BaseConnector):
                 )
             return self.data_transfer_context_factories[location.name]
         else:
-            if location not in self.ssh_context_factories:
+            if location.name not in self.ssh_context_factories:
                 self.ssh_context_factories[location.name] = SSHContextFactory(
                     cls_context=self._cls_context,
                     streamflow_config_dir=self.config_dir,
@@ -613,6 +655,42 @@ class SSHConnector(BaseConnector):
                     retry_delay=self.retryDelay,
                 )
             return self.ssh_context_factories[location.name]
+
+    async def copy_remote_to_remote(
+        self,
+        src: str,
+        dst: str,
+        locations: MutableSequence[ExecutionLocation],
+        source_location: ExecutionLocation,
+        source_connector: Connector | None = None,
+        read_only: bool = False,
+    ) -> None:
+        source_connector = source_connector or self
+        if locations := await copy_same_connector(
+            connector=self,
+            locations=locations,
+            source_location=source_location,
+            src=src,
+            dst=dst,
+            read_only=read_only,
+        ):
+            conn_per_round = min(len(locations), self.maxConcurrentSessions)
+            rounds = self.maxConcurrentSessions // conn_per_round
+            if len(locations) % conn_per_round != 0:
+                rounds += 1
+            location_groups = [
+                locations[i : i + rounds] for i in range(0, len(locations), rounds)
+            ]
+            for location_group in location_groups:
+                # Perform remote to remote copy
+                await copy_remote_to_remote(
+                    connector=self,
+                    locations=location_group,
+                    src=src,
+                    dst=dst,
+                    source_connector=source_connector,
+                    source_location=source_location,
+                )
 
     async def deploy(self, external: bool) -> None:
         pass
@@ -629,7 +707,9 @@ class SSHConnector(BaseConnector):
                 for location_obj in self.nodes.values()
             )
         )
-        for location_obj, hardware in zip(self.nodes.values(), hardware_locations):
+        for location_obj, hardware in zip(
+            self.nodes.values(), hardware_locations, strict=True
+        ):
             locations[location_obj.hostname] = AvailableLocation(
                 name=location_obj.hostname,
                 deployment=self.deployment_name,
@@ -679,6 +759,19 @@ class SSHConnector(BaseConnector):
         timeout: int | None = None,
         job_name: str | None = None,
     ) -> tuple[str, int] | None:
+        if job_name is None and stdin is None:
+            with contextlib.suppress(WorkflowExecutionException):
+                return await utils.run_in_shell(
+                    shell=await self.get_shell(
+                        command=["sh"], location=location
+                    ),  # nosec
+                    location=location,
+                    command=command,
+                    environment=environment,
+                    workdir=workdir,
+                    capture_output=capture_output,
+                    timeout=timeout,
+                )
         command = self._get_command(
             location=location,
             command=command,
@@ -703,7 +796,6 @@ class SSHConnector(BaseConnector):
                 environment=environment,
                 workdir=workdir,
             )
-            command = utils.encode_command(command)
         async with self._get_ssh_client_process(
             location=location.name,
             command=command,
@@ -714,6 +806,7 @@ class SSHConnector(BaseConnector):
         return (result.stdout.strip(), result.returncode) if capture_output else None
 
     async def undeploy(self, external: bool) -> None:
+        await super().undeploy(external)
         await asyncio.gather(
             *(
                 asyncio.create_task(ssh_context.close())

@@ -6,7 +6,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast, overload
 
 from typing_extensions import Self
 
@@ -190,6 +190,7 @@ class Job:
                             for t in row["inputs"].values()
                         )
                     ),
+                    strict=True,
                 )
             },
             input_directory=row["input_directory"],
@@ -328,6 +329,7 @@ class Status(IntEnum):
     CANCELLED = 6
     ROLLBACK = 7
     RECOVERY = 8
+    RECOVERED = 9
 
 
 class Step(PersistableEntity, ABC):
@@ -378,7 +380,7 @@ class Step(PersistableEntity, ABC):
     def add_output_port(self, name: str, port: Port) -> None:
         self._add_port(name, port, DependencyType.OUTPUT)
 
-    def get_input_port(self, name: str | None = None) -> Port | None:
+    def get_input_port(self, name: str | None = None) -> Port:
         if name is None:
             if len(self.input_ports) == 1:
                 return self.workflow.ports.get(next(iter(self.input_ports.values())))
@@ -386,16 +388,18 @@ class Step(PersistableEntity, ABC):
                 raise WorkflowExecutionException(
                     f"Cannot retrieve default input port as step {self.name} contains multiple input ports."
                 )
-        return (
-            self.workflow.ports.get(self.input_ports[name])
-            if name in self.input_ports
-            else None
-        )
+        else:
+            if name in self.input_ports:
+                return self.workflow.ports[self.input_ports[name]]
+            else:
+                raise WorkflowExecutionException(
+                    f"Cannot retrieve input port {name} from step {self.name}"
+                )
 
     def get_input_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.input_ports.items()}
 
-    def get_output_port(self, name: str | None = None) -> Port | None:
+    def get_output_port(self, name: str | None = None) -> Port:
         if name is None:
             if len(self.output_ports) == 1:
                 return self.workflow.ports.get(next(iter(self.output_ports.values())))
@@ -403,11 +407,13 @@ class Step(PersistableEntity, ABC):
                 raise WorkflowExecutionException(
                     f"Cannot retrieve default output port as step {self.name} contains multiple output ports."
                 )
-        return (
-            self.workflow.ports.get(self.output_ports[name])
-            if name in self.output_ports
-            else None
-        )
+        else:
+            if name in self.output_ports:
+                return self.workflow.ports[self.output_ports[name]]
+            else:
+                raise WorkflowExecutionException(
+                    f"Cannot retrieve output port {name} from step {self.name}"
+                )
 
     def get_output_ports(self) -> MutableMapping[str, Port]:
         return {k: self.workflow.ports[v] for k, v in self.output_ports.items()}
@@ -436,7 +442,9 @@ class Step(PersistableEntity, ABC):
                 for d in input_deps
             )
         )
-        step.input_ports = {d["name"]: p.name for d, p in zip(input_deps, input_ports)}
+        step.input_ports = {
+            d["name"]: p.name for d, p in zip(input_deps, input_ports, strict=True)
+        }
         output_deps = await context.database.get_output_ports(persistent_id)
         output_ports = await asyncio.gather(
             *(
@@ -445,9 +453,24 @@ class Step(PersistableEntity, ABC):
             )
         )
         step.output_ports = {
-            d["name"]: p.name for d, p in zip(output_deps, output_ports)
+            d["name"]: p.name for d, p in zip(output_deps, output_ports, strict=True)
         }
         return step
+
+    @abstractmethod
+    async def restore(
+        self, on_tokens: MutableMapping[str, MutableSequence[Token]]
+    ) -> None:
+        """
+        Restore a specific state of the step.
+        This method sets the appropriate attributes within the step to allow it
+        to continue execution from the desired state.
+
+        :param on_tokens:
+            A mapping of ports to tokens. The ports are the output ports
+            of the step, and the tokens represent the missing output tokens.
+        """
+        ...
 
     @abstractmethod
     async def run(self) -> None: ...
@@ -458,7 +481,7 @@ class Step(PersistableEntity, ABC):
                 self.persistent_id = await context.database.add_step(
                     name=self.name,
                     workflow_id=self.workflow.persistent_id,
-                    status=cast(int, self.status.value),
+                    status=self.status.value,
                     type=type(self),
                     params=await self._save_additional_params(context),
                 )
@@ -492,13 +515,13 @@ class Step(PersistableEntity, ABC):
 
 
 class Token(PersistableEntity):
-    __slots__ = ("persistent_id", "recoverable", "value", "tag")
+    __slots__ = ("persistent_id", "value", "tag", "_recoverable")
 
     def __init__(self, value: Any, tag: str = "0", recoverable: bool = False):
         super().__init__()
-        self.recoverable: bool = recoverable
         self.value: Any = value
         self.tag: str = tag
+        self._recoverable: bool = recoverable
 
     @classmethod
     async def _load(
@@ -507,10 +530,7 @@ class Token(PersistableEntity):
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        value = row["value"]
-        if isinstance(value, MutableMapping) and "token" in value:
-            value = await loading_context.load_token(context, value["token"])
-        return cls(tag=row["tag"], value=value, recoverable=row["recoverable"])
+        return cls(tag=row["tag"], value=row["value"], recoverable=row["recoverable"])
 
     async def _save_value(self, context: StreamFlowContext):
         return self.value
@@ -532,10 +552,22 @@ class Token(PersistableEntity):
         return token
 
     async def is_available(self, context: StreamFlowContext) -> bool:
-        return self.recoverable
+        return self._recoverable
 
-    def retag(self, tag: str, recoverable: bool = False) -> Token:
-        return self.__class__(tag=tag, value=self.value, recoverable=recoverable)
+    @property
+    def recoverable(self) -> bool:
+        return self._recoverable
+
+    @recoverable.setter
+    def recoverable(self, recoverable: bool) -> None:
+        if self.persistent_id is not None and self._recoverable != recoverable:
+            raise WorkflowExecutionException(
+                "The `recoverable` property can't be changed after the `Token` has been persisted."
+            )
+        self._recoverable = recoverable
+
+    def retag(self, tag: str) -> Token:
+        return self.__class__(tag=tag, value=self.value, recoverable=self._recoverable)
 
     async def save(
         self, context: StreamFlowContext, port_id: int | None = None
@@ -545,7 +577,7 @@ class Token(PersistableEntity):
                 try:
                     self.persistent_id = await context.database.add_token(
                         port=port_id,
-                        recoverable=self.recoverable,
+                        recoverable=self._recoverable,
                         tag=self.tag,
                         type=type(self),
                         value=await self._save_value(context),
@@ -553,8 +585,8 @@ class Token(PersistableEntity):
                 except TypeError as e:
                     raise WorkflowExecutionException from e
 
-    def update(self, value: Any, recoverable: bool = False) -> Token:
-        return self.__class__(tag=self.tag, value=value, recoverable=recoverable)
+    def update(self, value: Any) -> Token:
+        return self.__class__(tag=self.tag, value=value, recoverable=self._recoverable)
 
 
 if TYPE_CHECKING:
@@ -592,6 +624,16 @@ class Workflow(PersistableEntity):
         self, context: StreamFlowContext
     ) -> MutableMapping[str, Any]:
         return {"config": self.config, "output_ports": self.output_ports}
+
+    if TYPE_CHECKING:
+
+        @overload
+        def create_port(self) -> Port: ...
+
+        @overload
+        def create_port(
+            self, cls: type[P] = ..., name: str | None = ..., **kwargs
+        ) -> P: ...
 
     def create_port(self, cls: type[P] = Port, name: str | None = None, **kwargs) -> P:
         if name is None:
@@ -646,6 +688,7 @@ class Workflow(PersistableEntity):
                         for row in rows
                     )
                 ),
+                strict=True,
             )
         }
         workflow.output_ports = params["output_ports"]
@@ -662,6 +705,7 @@ class Workflow(PersistableEntity):
                         for row in rows
                     )
                 ),
+                strict=True,
             )
         }
         return workflow

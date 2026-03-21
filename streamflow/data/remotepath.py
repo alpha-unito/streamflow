@@ -7,10 +7,11 @@ import io
 import os
 import pathlib
 import posixpath
+import shlex
 import shutil
 import sys
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, MutableMapping, MutableSequence
+from collections.abc import AsyncIterator, Callable, MutableMapping, MutableSequence
 from email.message import Message
 from pathlib import Path, PosixPath, PurePath, PurePosixPath, WindowsPath
 from typing import TYPE_CHECKING, cast
@@ -21,6 +22,11 @@ from typing_extensions import Self
 
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
+
+if sys.version_info >= (3, 13):
+    from pathlib import UnsupportedOperation
+else:
+    UnsupportedOperation = NotImplementedError
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -147,7 +153,11 @@ def get_inner_path(
 
 class StreamFlowPath(PurePath, ABC):
     def __new__(
-        cls, *args, context: StreamFlowContext, location: ExecutionLocation, **kwargs
+        cls,
+        *args: str | os.PathLike[str],
+        context: StreamFlowContext,
+        location: ExecutionLocation,
+        **kwargs: object,
     ) -> Self:
         if cls is StreamFlowPath:
             cls = LocalStreamFlowPath if location.local else RemoteStreamFlowPath
@@ -164,7 +174,7 @@ class StreamFlowPath(PurePath, ABC):
 
     @abstractmethod
     def glob(
-        self, pattern, *, case_sensitive=None
+        self, pattern: str, *, case_sensitive: bool | None = None
     ) -> AsyncIterator[StreamFlowPath]: ...
 
     @abstractmethod
@@ -177,13 +187,17 @@ class StreamFlowPath(PurePath, ABC):
     async def is_symlink(self) -> bool: ...
 
     @abstractmethod
-    async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None: ...
+    async def mkdir(
+        self, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+    ) -> None: ...
 
     @abstractmethod
-    async def read_text(self, n=-1, encoding=None, errors=None) -> str: ...
+    async def read_text(
+        self, n: int = -1, encoding: str | None = None, errors: str | None = None
+    ) -> str: ...
 
     @abstractmethod
-    async def resolve(self, strict=False) -> StreamFlowPath | None: ...
+    async def resolve(self, strict: bool = False) -> StreamFlowPath | None: ...
 
     @abstractmethod
     async def rmtree(self) -> None: ...
@@ -192,11 +206,19 @@ class StreamFlowPath(PurePath, ABC):
     async def size(self) -> int: ...
 
     @abstractmethod
-    async def symlink_to(self, target, target_is_directory=False) -> None: ...
+    async def symlink_to(
+        self, target: str | os.PathLike[str], target_is_directory: bool = False
+    ) -> None: ...
+
+    @abstractmethod
+    async def hardlink_to(self, target: str | os.PathLike[str]) -> None: ...
 
     @abstractmethod
     def walk(
-        self, top_down=True, on_error=None, follow_symlinks=False
+        self,
+        top_down: bool = True,
+        on_error: Callable[[OSError], object] | None = None,
+        follow_symlinks: bool = False,
     ) -> AsyncIterator[
         tuple[
             StreamFlowPath,
@@ -207,7 +229,11 @@ class StreamFlowPath(PurePath, ABC):
 
     @abstractmethod
     async def write_text(
-        self, data: str, encoding=None, errors=None, newline=None
+        self,
+        data: str,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
     ) -> int: ...
 
 
@@ -219,9 +245,8 @@ class classinstancemethod(classmethod):
 
 
 class __LegacyStreamFlowPath(StreamFlowPath, ABC):
-
     @classinstancemethod
-    def _from_parts(self, args, init=sys.version_info < (3, 10)) -> StreamFlowPath:
+    def _from_parts(self, args) -> StreamFlowPath:
         obj = (
             object.__new__(self)
             if isinstance(self, type)
@@ -234,8 +259,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         obj._drv = drv
         obj._root = root
         obj._parts = parts
-        if init:
-            obj._init()
         return obj
 
     @classinstancemethod
@@ -244,7 +267,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         drv,
         root,
         parts,
-        init=sys.version_info < (3, 10),
     ):
         obj = (
             object.__new__(self)
@@ -257,8 +279,6 @@ class __LegacyStreamFlowPath(StreamFlowPath, ABC):
         obj._drv = drv
         obj._root = root
         obj._parts = parts
-        if init:
-            obj._init()
         return obj
 
     def _scandir(self):
@@ -303,15 +323,20 @@ class LocalStreamFlowPath(
 ):
     def __init__(
         self,
-        *args,
+        *args: str | os.PathLike[str],
         context: StreamFlowContext,
         location: ExecutionLocation | None = None,
-    ):
+    ) -> None:
         if sys.version_info < (3, 12):
             super().__init__()
         else:
             super().__init__(*args)
         self.context: StreamFlowContext = context
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, RemoteStreamFlowPath):
+            return False
+        return super().__eq__(other)
 
     async def checksum(self) -> str | None:
         if await self.is_file():
@@ -326,7 +351,7 @@ class LocalStreamFlowPath(
         return cast(Path, super()).exists()
 
     async def glob(
-        self, pattern, *, case_sensitive=None
+        self, pattern: str, *, case_sensitive: bool | None = None
     ) -> AsyncIterator[LocalStreamFlowPath]:
         for path in glob.glob(str(self / pattern)):
             yield self.with_segments(path)
@@ -340,7 +365,9 @@ class LocalStreamFlowPath(
     async def is_symlink(self) -> bool:
         return cast(Path, super()).is_symlink()
 
-    async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None:
+    async def mkdir(
+        self, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+    ) -> None:
         try:
             os.mkdir(self, mode)
         except FileNotFoundError:
@@ -372,13 +399,14 @@ class LocalStreamFlowPath(
         else:
             return super().parents
 
-    async def read_text(self, n=-1, encoding=None, errors=None) -> str:
-        if sys.version_info >= (3, 10):
-            encoding = io.text_encoding(encoding)
+    async def read_text(
+        self, n: int = -1, encoding: str | None = None, errors: str | None = None
+    ) -> str:
+        encoding = io.text_encoding(encoding)
         with self.open(mode="r", encoding=encoding, errors=errors) as f:
             return f.read(n)
 
-    async def resolve(self, strict=False) -> LocalStreamFlowPath | None:
+    async def resolve(self, strict: bool = False) -> LocalStreamFlowPath | None:
         if await self.exists():
             return self.with_segments(super().resolve(strict=strict))
         else:
@@ -405,13 +433,24 @@ class LocalStreamFlowPath(
                         total_size += fp.stat().st_size
             return total_size
 
-    async def symlink_to(self, target, target_is_directory=False) -> None:
+    async def symlink_to(
+        self, target: str | os.PathLike[str], target_is_directory: bool = False
+    ) -> None:
         return cast(Path, super()).symlink_to(
             target=target, target_is_directory=target_is_directory
         )
 
+    async def hardlink_to(self, target: str | os.PathLike[str]) -> None:
+        try:
+            return cast(Path, super()).hardlink_to(target=target)
+        except UnsupportedOperation as err:
+            raise WorkflowExecutionException(err)
+
     async def walk(
-        self, top_down=True, on_error=None, follow_symlinks=False
+        self,
+        top_down: bool = True,
+        on_error: Callable[[OSError], object] | None = None,
+        follow_symlinks: bool = False,
     ) -> AsyncIterator[
         tuple[
             LocalStreamFlowPath,
@@ -424,10 +463,10 @@ class LocalStreamFlowPath(
         ):
             yield dirpath, dirnames, filenames
 
-    def with_segments(self, *pathsegments) -> Self:
+    def with_segments(self, *pathsegments: str | os.PathLike[str]) -> Self:
         return type(self)(*pathsegments, context=self.context)
 
-    async def write_text(self, data: str, **kwargs) -> int:
+    async def write_text(self, data: str, **kwargs: str | None) -> int:
         return cast(Path, super()).write_text(data=data, **kwargs)
 
 
@@ -435,9 +474,14 @@ class RemoteStreamFlowPath(
     PurePosixPath,
     __LegacyStreamFlowPath if sys.version_info < (3, 12) else StreamFlowPath,
 ):
-    __slots__ = ("context", "connector", "location")
+    __slots__ = ("context", "connector", "location", "_inner_path")
 
-    def __init__(self, *args, context: StreamFlowContext, location: ExecutionLocation):
+    def __init__(
+        self,
+        *args: str | os.PathLike[str],
+        context: StreamFlowContext,
+        location: ExecutionLocation,
+    ) -> None:
         if sys.version_info < (3, 12):
             super().__init__()
         else:
@@ -448,6 +492,13 @@ class RemoteStreamFlowPath(
         )
         self.location: ExecutionLocation = location
         self._inner_path: StreamFlowPath | None = None
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, RemoteStreamFlowPath):
+            return False
+        if other.connector != self.connector or other.location != self.location:
+            return False
+        return super().__eq__(other)
 
     def _is_valid_inner_path(self, location: DataLocation) -> bool:
         return (
@@ -531,13 +582,14 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.checksum()
         else:
+            path = shlex.quote(self.__str__())
             command = [
                 "test",
                 "-f",
-                f"'{self.__str__()}'",
+                path,
                 "&&",
                 "sha1sum",
-                f"'{self.__str__()}'",
+                path,
                 "|",
                 "awk",
                 "'{print $1}'",
@@ -557,10 +609,10 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.exists()
         else:
-            return await self._test(command=(["-e", f"'{self.__str__()}'"]))
+            return await self._test(command=(["-e", shlex.quote(self.__str__())]))
 
     async def glob(
-        self, pattern, *, case_sensitive=None
+        self, pattern: str, *, case_sensitive: bool | None = None
     ) -> AsyncIterator[RemoteStreamFlowPath]:
         if (inner_path := await self._get_inner_path()) != self:
             async for path in inner_path.glob(pattern, case_sensitive=case_sensitive):
@@ -573,18 +625,19 @@ class RemoteStreamFlowPath(
             if not pattern:
                 raise ValueError(f"Unacceptable pattern: {pattern!r}")
             command = [
+                "set",
+                "--",
+                f"{shlex.quote(str(self))}/{pattern}",
+                ";",
+                "test",
+                "-e",
+                '"$1"',
+                "&&",
                 "printf",
-                '"%s\\0"',
-                str(self / pattern),
-                "|",
-                "xargs",
-                "-0",
-                "-I{}",
-                "sh",
-                "-c",
-                '"if [ -e \\"{}\\" ]; then echo \\"{}\\"; fi"',
-                "|",
-                "sort",
+                "'%s\\n'",
+                '"$@"',
+                ";",
+                ":",
             ]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
@@ -597,18 +650,20 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.is_dir()
         else:
-            return await self._test(command=["-d", f"'{self.__str__()}'"])
+            return await self._test(command=["-d", shlex.quote(self.__str__())])
 
     async def is_file(self) -> bool:
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.is_file()
         else:
-            return await self._test(command=["-f", f"'{self.__str__()}'"])
+            return await self._test(command=["-f", shlex.quote(self.__str__())])
 
     async def is_symlink(self) -> bool:
-        return await self._test(command=["-L", f"'{self.__str__()}'"])
+        return await self._test(command=["-L", shlex.quote(self.__str__())])
 
-    async def mkdir(self, mode=0o777, parents=False, exist_ok=False) -> None:
+    async def mkdir(
+        self, mode: int = 0o777, parents: bool = False, exist_ok: bool = False
+    ) -> None:
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.mkdir(mode=mode, parents=parents, exist_ok=exist_ok)
         else:
@@ -621,7 +676,9 @@ class RemoteStreamFlowPath(
             )
             _check_status(command, self.location, result, status)
 
-    async def read_text(self, n=-1, encoding=None, errors=None) -> str:
+    async def read_text(
+        self, n: int = -1, encoding: str | None = None, errors: str | None = None
+    ) -> str:
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.read_text(n=n, encoding=encoding, errors=errors)
         else:
@@ -633,7 +690,7 @@ class RemoteStreamFlowPath(
             _check_status(command, self.location, result, status)
             return result.strip()
 
-    async def resolve(self, strict=False) -> RemoteStreamFlowPath | None:
+    async def resolve(self, strict: bool = False) -> RemoteStreamFlowPath | None:
         # If at least one primary location is present on the site, return its path
         if locations := self.context.data_manager.get_data_locations(
             path=self.__str__(),
@@ -645,14 +702,15 @@ class RemoteStreamFlowPath(
                 if loc.data_type == DataType.PRIMARY:
                     return self.with_segments(loc.path)
         # Otherwise, analyse the remote path
+        path = shlex.quote(self.__str__())
         command = [
             "test",
             "-e",
-            f"'{self.__str__()}'",
+            path,
             "&&",
             "readlink",
             "-f",
-            f"'{self.__str__()}'",
+            path,
         ]
         result, status = await self.connector.run(
             location=self.location, command=command, capture_output=True
@@ -669,7 +727,7 @@ class RemoteStreamFlowPath(
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.rmtree()
         else:
-            command = ["rm", "-rf ", self.__str__()]
+            command = ["rm", "-rf", self.__str__()]
             result, status = await self.connector.run(
                 location=self.location, command=command, capture_output=True
             )
@@ -696,7 +754,9 @@ class RemoteStreamFlowPath(
             result = result.strip().strip("'\"")
             return int(result) if result.isdigit() else 0
 
-    async def symlink_to(self, target, target_is_directory=False) -> None:
+    async def symlink_to(
+        self, target: str | os.PathLike[str], target_is_directory: bool = False
+    ) -> None:
         if (inner_path := await self._get_inner_path()) != self:
             await inner_path.symlink_to(target, target_is_directory=target_is_directory)
         else:
@@ -706,8 +766,21 @@ class RemoteStreamFlowPath(
             )
             _check_status(command, self.location, result, status)
 
+    async def hardlink_to(self, target: str | os.PathLike[str]) -> None:
+        if (inner_path := await self._get_inner_path()) != self:
+            await inner_path.hardlink_to(target)
+        else:
+            command = ["ln", "-nf", str(target), self.__str__()]
+            result, status = await self.connector.run(
+                location=self.location, command=command, capture_output=True
+            )
+            _check_status(command, self.location, result, status)
+
     async def walk(
-        self, top_down=True, on_error=None, follow_symlinks=False
+        self,
+        top_down: bool = True,
+        on_error: Callable[[OSError], object] | None = None,
+        follow_symlinks: bool = False,
     ) -> AsyncIterator[
         tuple[
             RemoteStreamFlowPath,
@@ -719,9 +792,13 @@ class RemoteStreamFlowPath(
             async for path, dirnames, filenames in inner_path.walk(
                 top_down=top_down, on_error=on_error, follow_symlinks=follow_symlinks
             ):
-                yield _get_outer_path(
-                    context=self.context, location=self.location, path=path
-                ), dirnames, filenames
+                yield (
+                    _get_outer_path(
+                        context=self.context, location=self.location, path=path
+                    ),
+                    dirnames,
+                    filenames,
+                )
         else:
             paths = [self]
             while paths:
@@ -732,7 +809,9 @@ class RemoteStreamFlowPath(
                 command = ["find"]
                 if follow_symlinks:
                     command.append("-L")
-                command.extend([f"'{str(path)}'", "-mindepth", "1", "-maxdepth", "1"])
+                command.extend(
+                    [shlex.quote(str(path)), "-mindepth", "1", "-maxdepth", "1"]
+                )
                 try:
                     content, status = await self.connector.run(
                         location=self.location,
@@ -775,10 +854,10 @@ class RemoteStreamFlowPath(
                     paths.append((path, dirnames, filenames))
                 paths += [path._make_child_relpath(d) for d in reversed(dirnames)]
 
-    def with_segments(self, *pathsegments) -> Self:
+    def with_segments(self, *pathsegments: str | os.PathLike[str]) -> Self:
         return type(self)(*pathsegments, context=self.context, location=self.location)
 
-    async def write_text(self, data: str, **kwargs) -> int:
+    async def write_text(self, data: str, **kwargs: str | None) -> int:
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.write_text(data, **kwargs)
         else:
@@ -871,5 +950,6 @@ async def get_storage_usages(
                     for storage in hardware.storage.values()
                 )
             ),
+            strict=True,
         )
     )

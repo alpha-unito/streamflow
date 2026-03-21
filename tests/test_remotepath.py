@@ -16,12 +16,14 @@ from tests.utils.deployment import get_docker_deployment_config, get_location
 
 
 @pytest_asyncio.fixture(scope="session")
-async def location(context, deployment_src) -> ExecutionLocation:
+async def location(
+    context: StreamFlowContext, deployment_src: str
+) -> ExecutionLocation:
     return await get_location(context, deployment_src)
 
 
 @pytest.fixture(scope="session")
-def connector(context, location) -> Connector:
+def connector(context: StreamFlowContext, location: ExecutionLocation) -> Connector:
     return context.deployment_manager.get_connector(location.deployment)
 
 
@@ -224,6 +226,7 @@ async def test_symlink(
         assert await path.is_symlink()
         assert (await path.resolve()).name == src.name
         await path.rmtree()
+        assert await src.exists()
         assert not await path.exists()
         await src.rmtree()
         # Test symlink to directory
@@ -234,6 +237,45 @@ async def test_symlink(
         assert (await path.resolve()).name == src.name
         await path.rmtree()
         assert not await path.exists()
+    finally:
+        await path.rmtree()
+        await src.rmtree()
+
+
+@pytest.mark.asyncio
+async def test_hardlink(
+    context: StreamFlowContext, connector: Connector, location: ExecutionLocation
+) -> None:
+    """Test hardlink creation deletion."""
+    src = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
+    path = StreamFlowPath(
+        tempfile.gettempdir() if location.local else "/tmp",
+        utils.random_name(),
+        context=context,
+        location=location,
+    )
+    try:
+        # Test symlink to file
+        await src.write_text("StreamFlow")
+        await path.hardlink_to(src)
+        assert await path.exists()
+        assert await path.is_file()
+        assert await path.checksum() == await src.checksum()
+        await path.rmtree()
+        assert await src.exists()
+        assert not await path.exists()
+        await src.rmtree()
+        # Test symlink to directory
+        await src.mkdir(mode=0o777)
+        with pytest.raises((WorkflowExecutionException, PermissionError)) as err:
+            await path.hardlink_to(src)
+        if isinstance(err.type, WorkflowExecutionException):
+            assert "1 Command 'ln -nf " in str(err.value)
     finally:
         await path.rmtree()
         await src.rmtree()

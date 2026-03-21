@@ -4,26 +4,29 @@ import argparse
 import os
 import platform
 from asyncio.locks import Lock
-from collections.abc import AsyncGenerator, Callable, Collection, MutableSequence
+from collections.abc import (
+    AsyncGenerator,
+    Callable,
+    Collection,
+    MutableMapping,
+    MutableSequence,
+)
 from typing import Any
 
 import pytest
 import pytest_asyncio
 
-import streamflow.deployment.connector
-import streamflow.deployment.filter
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import PersistableEntity
 from streamflow.main import build_context
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from tests.utils.connector import FailureConnector, ParameterizableHardwareConnector
-from tests.utils.deployment import ReverseTargetsBindingFilter, get_deployment_config
+from tests.utils.deployment import get_deployment_config
 
 
-def csvtype(choices):
+def csvtype(choices: Collection[str]) -> Callable[[str], list[str]]:
     """Return a function that splits and checks comma-separated values."""
 
-    def splitarg(arg):
+    def splitarg(arg: str) -> list[str]:
         values = arg.split(",")
         for value in values:
             if value not in choices:
@@ -37,7 +40,7 @@ def csvtype(choices):
     return splitarg
 
 
-def pytest_addoption(parser):
+def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--deploys",
         type=csvtype(all_deployment_types()),
@@ -47,24 +50,12 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_configure(config):
-    streamflow.deployment.connector.connector_classes.update(
-        {
-            "failure": FailureConnector,
-            "parameterizable_hardware": ParameterizableHardwareConnector,
-        }
-    )
-    streamflow.deployment.filter.binding_filter_classes.update(
-        {"reverse": ReverseTargetsBindingFilter}
-    )
-
-
 @pytest.fixture(scope="session")
-def chosen_deployment_types(request):
+def chosen_deployment_types(request: pytest.FixtureRequest) -> MutableSequence[str]:
     return request.config.getoption("--deploys")
 
 
-def pytest_generate_tests(metafunc):
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "deployment" in metafunc.fixturenames:
         metafunc.parametrize(
             "deployment", metafunc.config.getoption("deploys"), scope="session"
@@ -134,7 +125,7 @@ def pytest_generate_tests(metafunc):
         )
 
 
-def all_deployment_types():
+def all_deployment_types() -> list[str]:
     deployments_ = ["local", "docker", "docker-compose", "docker-wrapper", "slurm"]
     if platform.system() == "Linux":
         deployments_.extend(["kubernetes", "singularity", "ssh"])
@@ -151,7 +142,7 @@ async def context(
             "path": os.getcwd(),
         },
     )
-    for deployment_t in (*chosen_deployment_types, "parameterizable_hardware"):
+    for deployment_t in chosen_deployment_types:
         config = await get_deployment_config(_context, deployment_t)
         await _context.deployment_manager.deploy(config)
     yield _context
@@ -164,7 +155,9 @@ def is_primitive_type(elem: Any) -> bool:
     return type(elem) in (int, float, str, bool)
 
 
-def get_class_callables(class_type) -> MutableSequence[Callable]:
+def get_class_callables(
+    class_type: type[object],
+) -> MutableSequence[Callable[..., Any]]:
     """The function given in input a class type returns a list of strings with the method names"""
     return [
         getattr(class_type, func)
@@ -173,7 +166,7 @@ def get_class_callables(class_type) -> MutableSequence[Callable]:
     ]
 
 
-def object_to_dict(obj):
+def object_to_dict(obj: Any) -> MutableMapping[str, Any]:
     """The function given in input an object returns a dictionary with attribute:value"""
     return {
         attr: getattr(obj, attr)
@@ -203,7 +196,7 @@ def are_equals(elem1, elem2, obj_compared=None):
     if isinstance(elem1, Collection) and not isinstance(elem1, dict):
         if len(elem1) != len(elem2):
             return False
-        for e1, e2 in zip(elem1, elem2):
+        for e1, e2 in zip(elem1, elem2, strict=True):
             if not are_equals(e1, e2, obj_compared):
                 return False
         return True
@@ -246,7 +239,9 @@ def are_equals(elem1, elem2, obj_compared=None):
     return True
 
 
-async def save_load_and_test(elem: PersistableEntity, context):
+async def save_load_and_test(
+    elem: PersistableEntity, context: StreamFlowContext
+) -> None:
     assert elem.persistent_id is None
     await elem.save(context)
     assert elem.persistent_id is not None

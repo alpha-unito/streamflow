@@ -39,7 +39,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         deviceReadIops: MutableSequence[str] | None = None,
         deviceWriteBps: MutableSequence[str] | None = None,
         deviceWriteIops: MutableSequence[str] | None = None,
-        disableContentTrust: bool = True,
         dns: MutableSequence[str] | None = None,
         dnsOptions: MutableSequence[str] | None = None,
         dnsSearch: MutableSequence[str] | None = None,
@@ -131,7 +130,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
         self.deviceReadIops: MutableSequence[str] | None = deviceReadIops
         self.deviceWriteBps: MutableSequence[str] | None = deviceWriteBps
         self.deviceWriteIops: MutableSequence[str] | None = deviceWriteIops
-        self.disableContentTrust: bool = disableContentTrust
         self.dns: MutableSequence[str] | None = dns
         self.dnsOptions: MutableSequence[str] | None = dnsOptions
         self.dnsSearch: MutableSequence[str] | None = dnsSearch
@@ -255,7 +253,6 @@ class DockerCWLDockerTranslator(CWLDockerTranslator):
                     "deviceReadIops": self.deviceReadIops,
                     "deviceWriteBps": self.deviceWriteBps,
                     "deviceWriteIops": self.deviceWriteIops,
-                    "disableContentTrust": self.disableContentTrust,
                     "dns": self.dns,
                     "dnsOptions": self.dnsOptions,
                     "dnsSearch": self.dnsSearch,

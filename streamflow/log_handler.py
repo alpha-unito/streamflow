@@ -95,25 +95,26 @@ class HighlitingFilter(logging.Filter):
         msg_tok = msg.split(" ")
         for pattern, category in self.patterns.items():
             if msg_tok[0] == pattern:
-                if category == 0:
-                    msg_tok[0] = msg_tok[0].replace(
-                        pattern, self.bold_blue + pattern + self.reset
-                    )
-                elif category == 1:
-                    msg_tok[0] = msg_tok[0].replace(
-                        pattern, self.bold_green + pattern + self.reset
-                    )
-                elif category == 2:
-                    msg_tok[0] = msg_tok[0].replace(
-                        pattern, self.bold_yellow + pattern + self.reset
-                    )
-                elif category == 3:
-                    # Failed workflows are reported as error-level logging, hence the coloring here
-                    # should comply with the coloring in the logger formatter: plain red formatting
-                    # is restored after the bold red error token
-                    msg_tok[0] = msg_tok[0].replace(
-                        pattern, self.bold_red + pattern + self.reset + self.red
-                    )
+                match category:
+                    case 0:
+                        msg_tok[0] = msg_tok[0].replace(
+                            pattern, self.bold_blue + pattern + self.reset
+                        )
+                    case 1:
+                        msg_tok[0] = msg_tok[0].replace(
+                            pattern, self.bold_green + pattern + self.reset
+                        )
+                    case 2:
+                        msg_tok[0] = msg_tok[0].replace(
+                            pattern, self.bold_yellow + pattern + self.reset
+                        )
+                    case 3:
+                        # Failed workflows are reported as error-level logging, hence the coloring here
+                        # should comply with the coloring in the logger formatter: plain red formatting
+                        # is restored after the bold red error token
+                        msg_tok[0] = msg_tok[0].replace(
+                            pattern, self.bold_red + pattern + self.reset + self.red
+                        )
         return " ".join(msg_tok)
 
 

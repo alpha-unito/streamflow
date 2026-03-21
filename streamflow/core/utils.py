@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import datetime
 import importlib
 import itertools
@@ -15,11 +14,12 @@ from typing import TYPE_CHECKING, Any
 
 from streamflow.core.exception import ProcessorTypeError, WorkflowExecutionException
 from streamflow.core.persistence import PersistableEntity
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import TypeVar
 
-    from streamflow.core.deployment import Connector, ExecutionLocation
+    from streamflow.core.deployment import Connector, ExecutionLocation, Shell
     from streamflow.core.workflow import Token
 
     T = TypeVar("T")
@@ -60,7 +60,7 @@ def compare_tags(tag1: str, tag2: str) -> int:
     list2 = tag2.split(".")
     if (res := (len(list1) - len(list2))) != 0:
         return res
-    for elem1, elem2 in zip(list1, list2):
+    for elem1, elem2 in zip(list1, list2, strict=True):
         if (res := (int(elem1) - int(elem2))) != 0:
             return res
     return 0
@@ -110,9 +110,7 @@ def create_command(
             f"The `{class_name}` does not support `stderr` pipe redirection."
         )
     # Build command
-    return "".join(
-        "{workdir}" "{environment}" "{command}" "{stdin}" "{stdout}" "{stderr}"
-    ).format(
+    return "".join("{workdir}{environment}{command}{stdin}{stdout}{stderr}").format(
         workdir=f"cd {workdir} && " if workdir is not None else "",
         environment=(
             "".join(
@@ -129,7 +127,7 @@ def create_command(
 
 
 def get_job_step_name(job_name: str) -> str:
-    return PurePosixPath(job_name).parent.name
+    return PurePosixPath(job_name).parent.as_posix()
 
 
 def get_job_tag(job_name: str) -> str:
@@ -140,11 +138,7 @@ def dict_product(**kwargs) -> MutableMapping[Any, Any]:
     keys = kwargs.keys()
     vals = kwargs.values()
     for instance in itertools.product(*vals):
-        yield dict(zip(keys, list(instance)))
-
-
-def encode_command(command: str, shell: str = "sh") -> str:
-    return f"echo {base64.b64encode(command.encode('utf-8')).decode('utf-8')} | base64 -d | {shell}"
+        yield dict(zip(keys, list(instance), strict=True))
 
 
 async def eval_processors(unfinished: Iterable[asyncio.Task], name: str) -> Token:
@@ -191,7 +185,7 @@ def format_seconds_to_hhmmss(seconds: int) -> str:
     return "%02i:%02i:%02i" % (hours, minutes, seconds)
 
 
-def get_class_fullname(cls: type):
+def get_class_fullname(cls: type) -> str:
     return cls.__module__ + "." + cls.__qualname__
 
 
@@ -214,7 +208,7 @@ def get_entity_ids(
 
 async def get_local_to_remote_destination(
     dst_connector: Connector, dst_location: ExecutionLocation, src: str, dst: str
-):
+) -> str:
     is_dst_dir, status = await dst_connector.run(
         location=dst_location,
         command=[f'test -d "{dst}"'],
@@ -309,13 +303,39 @@ def get_tag(tokens: Iterable[Token]) -> str:
 
 
 def make_future(obj: T) -> asyncio.Future[T]:
-    future = asyncio.Future()
+    future: asyncio.Future[T] = asyncio.Future()
     future.set_result(obj)
     return future
 
 
 def random_name() -> str:
     return str(uuid.uuid4())
+
+
+async def run_in_shell(
+    shell: Shell,
+    location: ExecutionLocation,
+    command: MutableSequence[str],
+    environment: MutableMapping[str, str] | None = None,
+    workdir: str | None = None,
+    capture_output: bool = False,
+    timeout: int | None = None,
+) -> tuple[str, int] | None:
+    try:
+        return await shell.execute(
+            command=command,
+            environment=environment,
+            workdir=workdir,
+            capture_output=capture_output,
+            timeout=timeout,
+        )
+    except WorkflowExecutionException as e:
+        logger.warning(
+            f"Persistent shell failed for location {location.name} "
+            f"of deployment {location.deployment}: "
+            f"falling back to direct exec: {e}"
+        )
+        raise e
 
 
 async def run_in_subprocess(
@@ -343,5 +363,5 @@ async def run_in_subprocess(
         return None
 
 
-def wrap_command(command: str):
+def wrap_command(command: str) -> list[str]:
     return ["/bin/sh", "-c", f"{command}"]

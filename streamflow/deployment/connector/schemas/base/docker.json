@@ -174,12 +174,6 @@
       "title": "Devices write IOPS",
       "description": "Limit write rate (IO per second) from a device"
     },
-    "disableContentTrust": {
-      "type": "boolean",
-      "title": "Disable content trust",
-      "description": "Skip image verification",
-      "default": true
-    },
     "dns": {
       "type": "array",
       "items": {
