@@ -83,7 +83,9 @@ class InterWorkflowPort(Port):
         boundary_action: BoundaryAction,
     ) -> None:
         # Deep copy of `boundary_tags` because it will be manipulated
-        boundary = BoundaryRule(port=port, action=boundary_action, tags=list(boundary_tags))
+        boundary = BoundaryRule(
+            port=port, action=boundary_action, tags=list(boundary_tags)
+        )
         self.boundaries.append(boundary)
 
         # Create a copy of `token_list` because the list can be modified
