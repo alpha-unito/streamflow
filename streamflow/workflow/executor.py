@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import MutableMapping, MutableSequence
+from collections.abc import Iterable, MutableMapping, MutableSequence
 from typing import TYPE_CHECKING, overload
 
 from streamflow.core import utils
@@ -24,7 +24,8 @@ class StreamFlowExecutor(Executor):
         self.executions: MutableSequence[asyncio.Task[None]] = []
         self.output_tasks: MutableMapping[str, asyncio.Task[Token]] = {}
         self.received: MutableSequence[str] = []
-        self.closed: bool = False
+        self._closed: bool = False
+        self._closing: asyncio.Event | None = None
 
     if TYPE_CHECKING:
 
@@ -33,6 +34,19 @@ class StreamFlowExecutor(Executor):
         @overload
         async def _handle_exception(self, task: asyncio.Task[None]) -> None: ...
 
+    async def _cancel(self, tasks: Iterable[asyncio.Task]) -> None:
+        if self._closed:
+            return
+        if self._closing is not None:
+            await self._closing.wait()
+        else:
+            # Cancel all tasks
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks)
+            # Mark the executor as closed
+            self._closed = True
+
     async def _handle_exception(self, task: asyncio.Task[Token | None]) -> Token | None:
         try:
             return await task
@@ -40,21 +54,8 @@ class StreamFlowExecutor(Executor):
             pass
         except Exception as exc:
             logger.exception(exc)
-            if not self.closed:
-                await self._shutdown()
+            await self.close()
             return None
-
-    async def _shutdown(self) -> None:
-        # Terminate all steps
-        await asyncio.gather(
-            *(
-                asyncio.create_task(step.terminate(Status.CANCELLED))
-                for step in self.workflow.steps.values()
-                if not step.terminated
-            )
-        )
-        # Mark the executor as closed
-        self.closed = True
 
     async def _wait_outputs(
         self, output_consumer: str, output_tokens: MutableMapping[str, Any]
@@ -73,15 +74,13 @@ class StreamFlowExecutor(Executor):
             # If a TerminationToken is received, the corresponding port terminated its outputs
             if isinstance(token, TerminationToken):
                 if token.value in (Status.CANCELLED, Status.FAILED):
-                    self.closed = True
-                    for t in unfinished:
-                        t.cancel()
+                    await self._cancel(unfinished)
                     return output_tokens
                 else:
                     self.received.append(task_name)
                     # When the last port terminates, the entire executor terminates
                     if len(self.received) == len(self.workflow.output_ports):
-                        self.closed = True
+                        await self.close()
             else:
                 # Collect result
                 output_tokens[task_name] = get_token_value(token)
@@ -106,9 +105,34 @@ class StreamFlowExecutor(Executor):
                     ),
                     name=port_name,
                 )
-                self.closed = False
+                # Reopen the executor if it was closed
+                if await self.closed():
+                    self._closing = None
+                    self._closed = False
         # Return output tokens
         return output_tokens
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        if self._closing is not None:
+            await self._closing.wait()
+        else:
+            # Terminate all steps
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(step.terminate(Status.CANCELLED))
+                    for step in self.workflow.steps.values()
+                    if not step.terminated
+                )
+            )
+            # Mark the executor as closed
+            self._closed = True
+
+    async def closed(self) -> bool:
+        if self._closing is not None:
+            await self._closing.wait()
+        return self._closed
 
     async def run(self) -> MutableMapping[str, Any]:
         try:
@@ -138,7 +162,7 @@ class StreamFlowExecutor(Executor):
                         ),
                         name=port_name,
                     )
-                while not self.closed:
+                while not await self.closed():
                     output_tokens = await self._wait_outputs(
                         output_consumer, output_tokens
                     )
@@ -156,12 +180,11 @@ class StreamFlowExecutor(Executor):
                 )
             # Print output tokens
             return output_tokens
-        except Exception:
+        except BaseException:
             if self.workflow.persistent_id:
                 await self.workflow.context.database.update_workflow(
                     self.workflow.persistent_id,
                     {"status": Status.FAILED.value, "end_time": time.time_ns()},
                 )
-            if not self.closed:
-                await self._shutdown()
+            await self.close()
             raise
