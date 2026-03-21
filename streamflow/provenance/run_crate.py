@@ -28,7 +28,6 @@ from streamflow.core.exception import (
 )
 from streamflow.core.persistence import DatabaseLoadingContext
 from streamflow.core.provenance import ProvenanceManager
-from streamflow.core.utils import get_job_tag
 from streamflow.core.workflow import Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.version import VERSION
@@ -836,13 +835,11 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                             ),
                         }
                         self.graph[create_action["@id"]] = create_action
-                        tag = get_job_tag(
-                            (
-                                await self.context.database.get_token(
-                                    execution["job_token"]
-                                )
-                            )["value"]["job"]["params"]["name"]
-                        )
+                        tag = (
+                            await self.context.database.get_token(
+                                execution["job_token"]
+                            )
+                        )["tag"]
                         self.create_action_map.setdefault(wf_id, {}).setdefault(
                             jsonld_step["workExample"]["@id"], {}
                         ).setdefault(step_name, {}).setdefault(tag, []).append(
