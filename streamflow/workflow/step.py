@@ -381,7 +381,8 @@ class CombinatorStep(BaseStep):
                         status = _reduce_statuses([status, token.value])
                         if logger.isEnabledFor(logging.DEBUG):
                             logger.debug(
-                                f"Step {self.name} received termination token for port {task_name}"
+                                f"Step {self.name} received termination token "
+                                f"with Status {token.value.name} for port {task_name}"
                             )
                         terminated.append(task_name)
                     # Otherwise, build combination and set default status to COMPLETED
@@ -1632,12 +1633,14 @@ class ScheduleStep(BaseStep):
     async def run(self) -> None:
         try:
             # Retrieve connector
-            connector_ports = {
-                name: self.get_input_port(name)
-                for name in self.input_ports
-                if name.startswith("__connector__")
-            }
-            # If there are input ports
+            connector_ports = cast(
+                MutableMapping[str, ConnectorPort],
+                {
+                    name: self.get_input_port(name)
+                    for name in self.input_ports
+                    if name.startswith("__connector__")
+                },
+            )
             await asyncio.gather(
                 *(
                     asyncio.create_task(port.get(posixpath.join(self.name, name)))
