@@ -253,20 +253,6 @@ class GraphMapper:
                 return token_id
         return None
 
-    def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
-        port_names = set()
-        if job_node := next(
-            (
-                port
-                for port, token_ids in self.port_tokens.items()
-                if job_token.persistent_id in token_ids
-            ),
-            None,
-        ):
-            for port_name in self.dcg_ports.successors(job_node):
-                port_names.add(port_name)
-        return list(port_names)
-
     async def get_step_ids(
         self, output_port_names: Iterable[str]
     ) -> MutableSequence[int]:
