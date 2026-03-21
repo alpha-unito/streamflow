@@ -29,15 +29,6 @@ from streamflow.workflow.token import JobToken
 from streamflow.workflow.utils import get_job_token
 
 
-async def _execute_recover_workflow(new_workflow: Workflow, failed_job: Job) -> None:
-    if len(new_workflow.steps) == 0:
-        raise FailureHandlingException("Empty recovery workflow")
-    await new_workflow.save(new_workflow.context)
-    logger.info(f"Failed job {failed_job.name} runs {len(new_workflow.steps)} steps")
-    executor = StreamFlowExecutor(new_workflow)
-    await executor.run()
-
-
 async def _inject_tokens(
     failed_job: Job,
     failed_step: Step,
@@ -171,11 +162,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         )
         if mapper.dag_tokens.empty():
             raise FailureHandlingException(
-                f"Impossible to recover from {failed_job.name}: empty token graph"
-            )
-        if mapper.dcg_ports.empty():
-            raise FailureHandlingException(
-                f"Impossible to recover from {failed_job.name}: empty port graph"
+                f"Impossible to recover {failed_job.name}: empty token graph"
             )
         # Populate new workflow
         step_ids = await mapper.get_step_ids(failed_step.output_ports.values())
@@ -204,6 +191,15 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     if port.name in mapper.port_tokens.keys()
                 }
             )
+        # Execute
+        if len(new_workflow.steps) == 0:
+            raise FailureHandlingException("Empty recovery workflow")
+        await new_workflow.save(new_workflow.context)
+        logger.info(
+            f"Failed job {failed_job.name} runs {len(new_workflow.steps)} steps"
+        )
+        executor = StreamFlowExecutor(new_workflow)
+        await executor.run()
         return new_workflow
 
     async def _sync_workflows(
@@ -267,6 +263,5 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
 
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
         # Create recover workflow
-        new_workflow = await self._recover_workflow(failed_job, failed_step)
-        # Execute new workflow
-        await _execute_recover_workflow(new_workflow, failed_job)
+        await self._recover_workflow(failed_job, failed_step)
+        # TODO: remove `_recover_workflow`
