@@ -138,7 +138,7 @@ async def _get_listing(
         loc_path = StreamFlowPath(dirpath, context=context, location=location)
         async for dirpath, dirnames, filenames in loc_path.walk(follow_symlinks=True):
             for dirname in dirnames:
-                directory = dirpath / dirname
+                directory = loc_path / dirname
                 if str(directory) not in listing_tokens:
                     load_listing = (
                         LoadListing.deep_listing
@@ -158,7 +158,7 @@ async def _get_listing(
                         )
                     )
             for filename in filenames:
-                file = dirpath / filename
+                file = loc_path / filename
                 if str(file) not in listing_tokens:
                     listing_tokens[str(file)] = asyncio.create_task(
                         get_file_token(  # nosec
@@ -198,8 +198,8 @@ async def _process_secondary_file(
         case MutableMapping():
             filepath = get_path_from_token(secondary_file)
             for location in locations:
-                if await (
-                    path := StreamFlowPath(filepath, context=context, location=location)
+                if await StreamFlowPath(
+                    filepath, context=context, location=location
                 ).exists():
                     return await get_file_token(
                         context=context,
@@ -1218,6 +1218,8 @@ def remap_token_value(
                             old_dir=old_dir,
                             new_dir=new_dir,
                         )
+                    if "dirname" in value:
+                        value["dirname"] = new_dir
                     if "secondaryFiles" in value:
                         value["secondaryFiles"] = [
                             remap_token_value(path_processor, old_dir, new_dir, sf)
@@ -1387,10 +1389,11 @@ async def update_file_token(
             elif not load_contents and "contents" in new_token_value:
                 del new_token_value["contents"]
         # Process listings
-        if get_token_class(new_token_value) == "Directory" and load_listing is not None:
+        if get_token_class(new_token_value) == "Directory":
             # If load listing is set to `no_listing`, remove the listing entries in present
-            if load_listing == LoadListing.no_listing and "listing" in new_token_value:
-                del new_token_value["listing"]
+            if load_listing is None or load_listing == LoadListing.no_listing:
+                if "listing" in new_token_value:
+                    del new_token_value["listing"]
             # If listing is not present or if the token needs a deep listing, process directory contents
             elif (
                 "listing" not in new_token_value
