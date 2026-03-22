@@ -47,7 +47,7 @@ class DefaultFailureManager(FailureManager):
         if job_name in self._retry_requests.keys():
             return self._retry_requests[job_name]
         else:
-            return self._retry_requests.setdefault(job_name, RetryRequest())
+            return self._retry_requests.setdefault(job_name, RetryRequest(job_name))
 
     @classmethod
     def get_schema(cls) -> str:
@@ -67,23 +67,12 @@ class DefaultFailureManager(FailureManager):
         await self._do_handle_failure(job, step)
 
     async def is_recovered(self, job_name: str) -> TokenAvailability:
-        if request := self._retry_requests.get(job_name):
-            async with request.lock:
-                if self.context.scheduler.get_allocation(job_name).status in (
-                    Status.ROLLBACK,
-                    Status.RUNNING,
-                    Status.FIREABLE,
-                ):
-                    return TokenAvailability.FutureAvailable
-                elif len(request.output_tokens) > 0 and all(
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(t.is_available(self.context))
-                            for t in request.output_tokens.values()
-                        )
-                    )
-                ):
-                    return TokenAvailability.Available
+        if self.context.scheduler.get_allocation(job_name).status in (
+            Status.ROLLBACK,
+            Status.RUNNING,
+            Status.FIREABLE,
+        ):
+            return TokenAvailability.FutureAvailable
         return TokenAvailability.Unavailable
 
     async def notify(
@@ -92,20 +81,11 @@ class DefaultFailureManager(FailureManager):
         output_token: Token,
         job_token: JobToken | None = None,
     ) -> None:
-        if job_token is not None:
-            job_name = job_token.value.name
-            if job_name in self._retry_requests.keys():
-                async with self._retry_requests[job_name].lock:
-                    self._retry_requests[job_name].job_token = job_token
-                    self._retry_requests[job_name].output_tokens.setdefault(
-                        output_port, output_token
-                    )
+        pass
 
     async def update_request(self, job_name: str) -> None:
         retry_request = self._retry_requests[job_name]
-        async with retry_request.lock:
-            retry_request.job_token = None
-            retry_request.output_tokens = {}
+        retry_request.job_token = None
         if self.max_retries is None or retry_request.version < self.max_retries:
             retry_request.version += 1
             if logger.isEnabledFor(logging.DEBUG):
