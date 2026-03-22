@@ -126,82 +126,6 @@ async def _populate_workflow(
 
 
 class RollbackRecoveryPolicy(RecoveryPolicy):
-    async def _recover_workflow(self, failed_job: Job, failed_step: Step) -> Workflow:
-        workflow = failed_step.workflow
-        workflow_builder = WorkflowBuilder(deep_copy=False)
-        new_workflow = await workflow_builder.load_workflow(
-            workflow.context, workflow.persistent_id
-        )
-        # Retrieve tokens
-        provenance = ProvenanceGraph(workflow.context)
-        await provenance.build_graph(
-            inputs=[
-                *failed_job.inputs.values(),
-                *(
-                    p.token_list[0]
-                    for p in failed_step.get_input_ports().values()
-                    if isinstance(p, ConnectorPort)
-                ),
-                *(
-                    get_job_token(failed_job.name, p.token_list)
-                    for p in failed_step.get_input_ports().values()
-                    if isinstance(p, JobPort)
-                ),
-            ]
-        )
-        mapper = await create_graph_mapper(self.context, provenance)
-        # Synchronize between multiple recovery workflows
-        job_tokens = list(
-            filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
-        )
-        await self._sync_workflows(
-            {*(t.value.name for t in job_tokens), failed_job.name},
-            job_tokens,
-            mapper,
-            new_workflow,
-        )
-        if mapper.dag_tokens.empty():
-            raise FailureHandlingException(
-                f"Impossible to recover {failed_job.name}: empty token graph"
-            )
-        # Populate new workflow
-        step_ids = await mapper.get_step_ids(failed_step.output_ports.values())
-        await _populate_workflow(
-            failed_step=failed_step,
-            step_ids=step_ids,
-            workflow=new_workflow,
-            workflow_builder=workflow_builder,
-        )
-        await _inject_tokens(
-            failed_job=failed_job,
-            failed_step=failed_step,
-            mapper=mapper,
-            workflow=new_workflow,
-        )
-        # Resume steps
-        for step in new_workflow.steps.values():
-            await step.restore(
-                on_tokens={
-                    port.name: [
-                        mapper.token_instances[token_id]
-                        for token_id in mapper.port_tokens[port.name]
-                        if not mapper.token_availability[token_id]
-                    ]
-                    for port in step.get_output_ports().values()
-                    if port.name in mapper.port_tokens.keys()
-                }
-            )
-        # Execute
-        if len(new_workflow.steps) == 0:
-            raise FailureHandlingException("Empty recovery workflow")
-        await new_workflow.save(new_workflow.context)
-        logger.info(
-            f"Failed job {failed_job.name} runs {len(new_workflow.steps)} steps"
-        )
-        executor = StreamFlowExecutor(new_workflow)
-        await executor.run()
-        return new_workflow
-
     async def _sync_workflows(
         self,
         job_names: MutableSet[str],
@@ -262,6 +186,76 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 retry_request.workflow = workflow
 
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
-        # Create recover workflow
-        await self._recover_workflow(failed_job, failed_step)
-        # TODO: remove `_recover_workflow`
+        workflow = failed_step.workflow
+        workflow_builder = WorkflowBuilder(deep_copy=False)
+        new_workflow = await workflow_builder.load_workflow(
+            workflow.context, workflow.persistent_id
+        )
+        # Retrieve tokens
+        provenance = ProvenanceGraph(workflow.context)
+        await provenance.build_graph(
+            inputs=[
+                *failed_job.inputs.values(),
+                *(
+                    p.token_list[0]
+                    for p in failed_step.get_input_ports().values()
+                    if isinstance(p, ConnectorPort)
+                ),
+                *(
+                    get_job_token(failed_job.name, p.token_list)
+                    for p in failed_step.get_input_ports().values()
+                    if isinstance(p, JobPort)
+                ),
+            ]
+        )
+        mapper = await create_graph_mapper(self.context, provenance)
+        # Synchronize between multiple recovery workflows
+        job_tokens = list(
+            filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
+        )
+        await self._sync_workflows(
+            job_names={*(t.value.name for t in job_tokens), failed_job.name},
+            job_tokens=job_tokens,
+            mapper=mapper,
+            workflow=new_workflow,
+        )
+        if mapper.dag_tokens.empty():
+            raise FailureHandlingException(
+                f"Impossible to recover {failed_job.name}: empty token graph"
+            )
+        # Populate new workflow
+        step_ids = await mapper.get_step_ids(failed_step.output_ports.values())
+        await _populate_workflow(
+            failed_step=failed_step,
+            step_ids=step_ids,
+            workflow=new_workflow,
+            workflow_builder=workflow_builder,
+        )
+        await _inject_tokens(
+            failed_job=failed_job,
+            failed_step=failed_step,
+            mapper=mapper,
+            workflow=new_workflow,
+        )
+        # Resume steps
+        for step in new_workflow.steps.values():
+            await step.restore(
+                on_tokens={
+                    port.name: [
+                        mapper.token_instances[token_id]
+                        for token_id in mapper.port_tokens[port.name]
+                        if not mapper.token_availability[token_id]
+                    ]
+                    for port in step.get_output_ports().values()
+                    if port.name in mapper.port_tokens.keys()
+                }
+            )
+        # Execute
+        if len(new_workflow.steps) == 0:
+            raise FailureHandlingException("Empty recovery workflow")
+        await new_workflow.save(new_workflow.context)
+        logger.info(
+            f"Failed job {failed_job.name} runs {len(new_workflow.steps)} steps"
+        )
+        executor = StreamFlowExecutor(new_workflow)
+        await executor.run()
