@@ -90,15 +90,13 @@ async def _inject_tokens(
         # Inject tokens
         for token in token_list:
             if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Injecting token {token.persistent_id} {token.tag} of port {port.name}"
-                )
+                logger.debug(f"Injecting token {token.tag} of port {port.name}")
             port.put(token)
 
 
 async def _populate_workflow(
     failed_step: Step,
-    step_ids: MutableSequence[int],
+    step_ids: MutableSet[int],
     workflow: Workflow,
     workflow_builder: WorkflowBuilder,
 ) -> None:
@@ -254,8 +252,5 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         if len(new_workflow.steps) == 0:
             raise FailureHandlingException("Empty recovery workflow")
         await new_workflow.save(new_workflow.context)
-        logger.info(
-            f"Failed job {failed_job.name} runs {len(new_workflow.steps)} steps"
-        )
         executor = StreamFlowExecutor(new_workflow)
         await executor.run()

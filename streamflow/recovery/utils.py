@@ -291,9 +291,7 @@ class GraphMapper:
                     port_names.add(port_name)
         return list(port_names)
 
-    async def get_step_ids(
-        self, output_port_names: Iterable[str]
-    ) -> MutableSequence[int]:
+    async def get_step_ids(self, output_port_names: Iterable[str]) -> MutableSet[int]:
         port_ids = {
             min(self.port_name_ids[port_name])
             for port_name in self.port_tokens.keys()
@@ -337,7 +335,7 @@ class GraphMapper:
                 step_name = (await self.context.database.get_step(step_id))["name"]
                 logger.debug(f"Removing step {step_name}")
             step_ids.remove(step_id)
-        return list(step_ids)
+        return step_ids
 
     def remove_port(self, port_name: str) -> MutableSequence[str]:
         if logger.isEnabledFor(logging.DEBUG):
