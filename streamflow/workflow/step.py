@@ -1211,15 +1211,19 @@ class LoopCombinatorStep(CombinatorStep):
                 token = min(
                     tokens, key=cmp_to_key(lambda x, y: compare_tags(x.tag, y.tag))
                 )
-                parent_tags = {
-                    t.tag
-                    for t in await load_dependee_tokens(
-                        persistent_id=token.persistent_id,
-                        context=self.workflow.context,
-                        loading_context=loading_context,
+                if (
+                    len(
+                        parent_tags := {
+                            t.tag
+                            for t in await load_dependee_tokens(
+                                persistent_id=token.persistent_id,
+                                context=self.workflow.context,
+                                loading_context=loading_context,
+                            )
+                        }
                     )
-                }
-                if len(parent_tags) == 0:
+                    == 0
+                ):
                     raise FailureHandlingException(
                         f"Failed to load parents for token tag {token.tag} in step {self.name}."
                     )
