@@ -54,7 +54,7 @@ Base Class                                                                      
 :ref:`streamflow.core.persistence.Database <Database>`                                            ``register_database``
 :ref:`streamflow.core.deployment.DeploymentManager <DeploymentManager>`                           ``register_deployment_manager``
 :ref:`streamflow.core.recovery.FailureManager <FailureManager>`                                   ``register_failure_manager``
-:ref:`streamflow.core.scheduling.Policy <Policy>`                                                 ``register_policy``
+:ref:`streamflow.core.scheduling.SchedulingPolicy <SchedulingPolicy>`                             ``register_scheduling_policy``
 :ref:`streamflow.core.scheduling.Scheduler <Scheduler>`                                           ``register_scheduler``
 =============================================================================================     ===================================
 

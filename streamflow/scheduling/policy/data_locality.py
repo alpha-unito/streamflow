@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.scheduling import Hardware, JobAllocation, Policy
+from streamflow.core.scheduling import Hardware, JobAllocation, SchedulingPolicy
 from streamflow.workflow.token import FileToken
 
 if TYPE_CHECKING:
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Job
 
 
-class DataLocalityPolicy(Policy):
+class DataLocalityPolicy(SchedulingPolicy):
     async def get_location(
         self,
         context: StreamFlowContext,

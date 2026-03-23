@@ -9,7 +9,7 @@ from streamflow.core.data import DataManager
 from streamflow.core.deployment import BindingFilter, Connector, DeploymentManager
 from streamflow.core.persistence import Database
 from streamflow.core.recovery import CheckpointManager, FailureManager
-from streamflow.core.scheduling import Policy, Scheduler
+from streamflow.core.scheduling import Scheduler, SchedulingPolicy
 from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
 from streamflow.cwl.requirement.docker.translator import CWLDockerTranslator
 from streamflow.data import data_manager_classes
@@ -20,7 +20,7 @@ from streamflow.log_handler import logger
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
-from streamflow.scheduling.policy import policy_classes
+from streamflow.scheduling.policy import policy_classes as scheduling_policy_classes
 
 if sys.version_info < (3, 11):
     from importlib.abc import Traversable
@@ -37,7 +37,7 @@ extension_points: MutableMapping[str, MutableMapping[str, Any]] = {
     "database": database_classes,
     "deployment_manager": deployment_manager_classes,
     "failure_manager": failure_manager_classes,
-    "policy": policy_classes,
+    "scheduling_policy": scheduling_policy_classes,
     "scheduler": scheduler_classes,
 }
 
@@ -95,8 +95,10 @@ class StreamFlowPlugin(ABC):
     def register_failure_manager(self, name: str, cls: type[FailureManager]) -> None:
         self._register(name, cls, "failure_manager")
 
-    def register_policy(self, name: str, cls: type[Policy]) -> None:
-        self._register(name, cls, "policy")
+    def register_scheduling_policy(
+        self, name: str, cls: type[SchedulingPolicy]
+    ) -> None:
+        self._register(name, cls, "scheduling_policy")
 
     def register_scheduler(self, name: str, cls: type[Scheduler]) -> None:
         self._register(name, cls, "scheduler")

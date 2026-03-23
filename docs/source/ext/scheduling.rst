@@ -2,7 +2,7 @@
 Scheduling
 ==========
 
-StreamFlow lets user implement their scheduling infrastructure. There are two extension points related to scheduling: :ref:`Scheduler <Scheduler>` and :ref:`Policy <Policy>`. The ``Scheduler`` interface implements all the scheduling infrastructure, including data structures, to store the global current allocation status. The ``Policy`` interface implements a specific placement strategy to map jobs onto available locations. Both interfaces are specified in the ``streamflow.core.scheduling`` module.
+StreamFlow lets user implement their scheduling infrastructure. There are two extension points related to scheduling: :ref:`Scheduler <Scheduler>` and :ref:`SchedulingPolicy <SchedulingPolicy>`. The ``Scheduler`` interface implements all the scheduling infrastructure, including data structures, to store the global current allocation status. The ``Policy`` interface implements a specific placement strategy to map jobs onto available locations. Both interfaces are specified in the ``streamflow.core.scheduling`` module.
 
 In StreamFlow, the ``Job`` object is the allocation unit. Each workflow step generates zero or more ``Job`` objects sent to the scheduling infrastructure for placement.
 

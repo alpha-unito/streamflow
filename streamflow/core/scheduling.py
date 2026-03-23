@@ -297,7 +297,7 @@ class PolicyConfig(Config):
         return self.config
 
 
-class Policy(SchemaEntity):
+class SchedulingPolicy(SchemaEntity):
     @abstractmethod
     async def get_location(
         self,

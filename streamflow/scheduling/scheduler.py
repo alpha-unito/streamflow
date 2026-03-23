@@ -17,8 +17,8 @@ from streamflow.core.scheduling import (
     HardwareRequirement,
     JobAllocation,
     LocationAllocation,
-    Policy,
     Scheduler,
+    SchedulingPolicy,
     Storage,
 )
 from streamflow.core.utils import compare_tags, get_job_step_name, get_job_tag
@@ -27,7 +27,7 @@ from streamflow.data import remotepath, utils
 from streamflow.deployment.filter import binding_filter_classes
 from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
-from streamflow.scheduling.policy import policy_classes
+from streamflow.scheduling.policy import policy_classes as scheduling_policy_classes
 
 if TYPE_CHECKING:
     from streamflow.core.context import StreamFlowContext
@@ -61,7 +61,7 @@ class DefaultScheduler(Scheduler):
         self.binding_filter_map: MutableMapping[str, BindingFilter] = {}
         self.hardware_locations: MutableMapping[str, Hardware] = {}
         self.locks: MutableMapping[str, asyncio.Lock] = {}
-        self.policy_map: MutableMapping[str, Policy] = {}
+        self.policy_map: MutableMapping[str, SchedulingPolicy] = {}
         self.retry_interval: int | None = retry_delay if retry_delay != 0 else None
         self.wait_queues: MutableMapping[str, asyncio.Condition] = {}
 
@@ -199,13 +199,13 @@ class DefaultScheduler(Scheduler):
         job: Job,
         hardware_requirement: Hardware,
         locations: int,
-        scheduling_policy: Policy,
+        scheduling_policy: SchedulingPolicy,
         available_locations: MutableMapping[str, AvailableLocation],
     ) -> MutableSequence[AvailableLocation]:
         # If available locations are exactly the amount of required locations, simply use them
         if len(available_locations) == locations:
             return list(available_locations.values())
-        # Otherwise, use the `Policy` to select the best set of locations to allocate
+        # Otherwise, use the `SchedulingPolicy` to select the best set of locations to allocate
         else:
             selected_locations = []
             for _ in range(locations):
@@ -227,9 +227,11 @@ class DefaultScheduler(Scheduler):
                     return []
             return selected_locations
 
-    def _get_policy(self, config: Config) -> Policy:
+    def _get_policy(self, config: Config) -> SchedulingPolicy:
         if config.name not in self.policy_map:
-            self.policy_map[config.name] = policy_classes[config.type](**config.config)
+            self.policy_map[config.name] = scheduling_policy_classes[config.type](
+                **config.config
+            )
         return self.policy_map[config.name]
 
     def _get_running_jobs(

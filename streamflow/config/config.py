@@ -26,11 +26,11 @@ class WorkflowConfig(Config):
             name=name, type=workflow_config["type"], config=workflow_config["config"]
         )
         self.deployments = config.get("deployments", {})
-        self.policies = {
+        self.scheduling_policies = {
             k: Config(name=k, type=v["type"], config=v["config"])
             for k, v in config.get("scheduling", {}).get("policies", {}).items()
         }
-        self.policies["__DEFAULT__"] = Config(
+        self.scheduling_policies["__DEFAULT__"] = Config(
             name="__DEFAULT__", type="data_locality", config={}
         )
         self.binding_filters = {
@@ -46,10 +46,16 @@ class WorkflowConfig(Config):
                         "Use `deployments` instead."
                     )
         for deployment_config in self.deployments.values():
-            policy = deployment_config.get("scheduling_policy", "__DEFAULT__")
-            if policy not in self.policies:
-                raise WorkflowDefinitionException(f"Policy {policy} is not defined")
-            deployment_config["scheduling_policy"] = self.policies[policy]
+            scheduling_policy = deployment_config.get(
+                "scheduling_policy", "__DEFAULT__"
+            )
+            if scheduling_policy not in self.scheduling_policies:
+                raise WorkflowDefinitionException(
+                    f"SchedulingPolicy {scheduling_policy} is not defined"
+                )
+            deployment_config["scheduling_policy"] = self.scheduling_policies[
+                scheduling_policy
+            ]
         for name, deployment in self.deployments.items():
             deployment["name"] = name
         self.filesystem = {"children": {}}

@@ -276,7 +276,7 @@
         ]
       }
     },
-    "policy": {
+    "schedulingPolicy": {
       "type": "object",
       "title": "Scheduling policy",
       "$defs": {},
