@@ -7,7 +7,7 @@ from collections.abc import MutableSequence, MutableSet
 from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import RecoveryPolicy, RetryRequest
+from streamflow.core.recovery import RecoveryPolicy, RecoveryRequest
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Job, Port, Step, Token, Workflow
 from streamflow.log_handler import logger
@@ -147,7 +147,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         failed_job: str,
         job_tokens: MutableSequence[Token],
         mapper: GraphMapper,
-        retry_requests: MutableSequence[RetryRequest],
+        retry_requests: MutableSequence[RecoveryRequest],
         workflow: Workflow,
     ) -> None:
         for retry_request in retry_requests:
