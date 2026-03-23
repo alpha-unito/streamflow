@@ -5,6 +5,7 @@ import functools
 from abc import abstractmethod
 from typing import TYPE_CHECKING
 
+from streamflow.core.config import Config
 from streamflow.core.context import SchemaEntity
 from streamflow.core.exception import UnrecoverableWorkflowException
 from streamflow.core.workflow import Job, Step
@@ -74,8 +75,11 @@ class CheckpointManager(SchemaEntity):
 
 
 class FailureManager(SchemaEntity):
-    def __init__(self, context: StreamFlowContext):
+    def __init__(
+        self, context: StreamFlowContext, policy_config: Config | None
+    ) -> None:
         self.context: StreamFlowContext = context
+        self.policy_config: Config | None = policy_config
 
     @abstractmethod
     async def close(self) -> None: ...
@@ -101,7 +105,7 @@ class FailureManager(SchemaEntity):
     async def update_request(self, job_name: str) -> None: ...
 
 
-class RecoveryPolicy(ABC):
+class RecoveryPolicy(SchemaEntity):
     def __init__(self, context: StreamFlowContext):
         self.context: StreamFlowContext = context
 

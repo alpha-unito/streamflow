@@ -5,12 +5,18 @@ import logging
 from collections.abc import MutableMapping
 from importlib.resources import files
 
+from streamflow.core.config import Config
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import FailureManager, RecoveryRequest, recoverable
+from streamflow.core.recovery import (
+    FailureManager,
+    RecoveryPolicy,
+    RecoveryRequest,
+    recoverable,
+)
 from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
-from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
+from streamflow.recovery.policy import policy_classes
 from streamflow.workflow.token import JobToken
 
 
@@ -18,13 +24,21 @@ class DefaultFailureManager(FailureManager):
     def __init__(
         self,
         context: StreamFlowContext,
+        policy_config: Config | None = None,
         max_retries: int | None = None,
         retry_delay: int | None = None,
     ):
-        super().__init__(context)
+        super().__init__(
+            context,
+            policy_config
+            or Config(name="__DEFAULT__", type="rollback_recovery", config={}),
+        )
         self.max_retries: int | None = max_retries
         self.retry_delay: int | None = retry_delay
-        self._retry_requests: MutableMapping[str, RecoveryRequest] = {}
+        self._policy: RecoveryPolicy = policy_classes[self.policy_config.type](
+            context=context, **self.policy_config.config
+        )
+        self._requests: MutableMapping[str, RecoveryRequest] = {}
 
     @recoverable
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
@@ -32,7 +46,7 @@ class DefaultFailureManager(FailureManager):
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
         try:
-            await RollbackRecoveryPolicy(self.context).recover(job, step)
+            await self._policy.recover(job, step)
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
         except FailureHandlingException as e:
@@ -44,10 +58,10 @@ class DefaultFailureManager(FailureManager):
         pass
 
     def get_request(self, job_name: str) -> RecoveryRequest:
-        if job_name in self._retry_requests.keys():
-            return self._retry_requests[job_name]
+        if job_name in self._requests.keys():
+            return self._requests[job_name]
         else:
-            return self._retry_requests.setdefault(job_name, RecoveryRequest(job_name))
+            return self._requests.setdefault(job_name, RecoveryRequest(job_name))
 
     @classmethod
     def get_schema(cls) -> str:
@@ -82,7 +96,7 @@ class DefaultFailureManager(FailureManager):
         pass
 
     async def update_request(self, job_name: str) -> None:
-        retry_request = self._retry_requests[job_name]
+        retry_request = self._requests[job_name]
         if self.max_retries is None or retry_request.version < self.max_retries:
             retry_request.version += 1
             if logger.isEnabledFor(logging.DEBUG):

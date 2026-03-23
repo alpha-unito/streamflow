@@ -9,6 +9,7 @@ from streamflow.deployment.connector import connector_classes
 from streamflow.deployment.filter import binding_filter_classes
 from streamflow.persistence import database_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
+from streamflow.recovery.policy import policy_classes as recovery_policy_classes
 from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes as scheduling_policy_classes
 
@@ -36,7 +37,8 @@ class SfSchema(Schema):
         self.inject_ext(connector_classes, "deployment")
         self.inject_ext(deployment_manager_classes, "deploymentManager")
         self.inject_ext(failure_manager_classes, "failureManager")
-        self.inject_ext(scheduling_policy_classes, "scheduling_policy")
+        self.inject_ext(recovery_policy_classes, "recoveryPolicy")
+        self.inject_ext(scheduling_policy_classes, "schedulingPolicy")
         self.inject_ext(scheduler_classes, "scheduler")
         for schema in ext_schemas:
             self.add_schema(schema.read_text("utf-8"), embed=True)

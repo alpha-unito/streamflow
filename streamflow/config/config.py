@@ -33,6 +33,12 @@ class WorkflowConfig(Config):
         self.scheduling_policies["__DEFAULT__"] = Config(
             name="__DEFAULT__", type="data_locality", config={}
         )
+        self.recovery_policy = Config(
+            name="recovery_policy",
+            type=config.get("recoveryPolicy", {"type": "rollback_recovery"})["type"],
+            config=config.get("recoveryPolicy", {"config": {}})["config"],
+        )
+        config["failureManager"]["policy_config"] = self.recovery_policy
         self.binding_filters = {
             k: Config(name=k, type=v["type"], config=v["config"])
             for k, v in config.get("bindingFilters", {}).items()

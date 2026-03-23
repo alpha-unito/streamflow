@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import json
 import logging
 import os
 from collections.abc import MutableMapping, MutableSequence
@@ -17,9 +18,12 @@ import streamflow.data
 import streamflow.deployment
 import streamflow.deployment.connector
 import streamflow.deployment.filter
+import streamflow.recovery
+import streamflow.recovery.policy
 from streamflow.core.context import StreamFlowContext
+from streamflow.core.recovery import RecoveryPolicy
 from streamflow.core.utils import contains_persistent_id
-from streamflow.core.workflow import Port, Step, Token, Workflow
+from streamflow.core.workflow import Job, Port, Step, Token, Workflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import (
@@ -325,6 +329,29 @@ async def verify_dependency_tokens(
                 )
 
 
+class CustomRecoveryPolicy(RecoveryPolicy):
+    def __init__(self, context: StreamFlowContext, forward: int) -> None:
+        super().__init__(context)
+        self.forward: int = forward
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/recovery/custom_policy.json",
+                "type": "object",
+                "properties": {
+                    "forward": {"type": "integer", "description": "No description"}
+                },
+                "additionalProperties": False,
+            }
+        )
+
+    async def recover(self, failed_job: Job, failed_step: Step) -> None:
+        raise NotImplementedError
+
+
 class InjectPlugin(AbstractContextManager):
     def __init__(self, plugin_name: str) -> None:
         self.plugin_name: str = plugin_name
@@ -342,6 +369,10 @@ class InjectPlugin(AbstractContextManager):
             case "custom-deployment":
                 streamflow.deployment.deployment_manager_classes.update(
                     {"custom-deployment": CustomDeploymentManager}
+                )
+            case "custom-recovery-policy":
+                streamflow.recovery.policy.policy_classes.update(
+                    {"custom-recovery-policy": CustomRecoveryPolicy}
                 )
             case "failure-connector":
                 streamflow.deployment.connector.connector_classes.update(
@@ -373,6 +404,8 @@ class InjectPlugin(AbstractContextManager):
                 streamflow.deployment.deployment_manager_classes.pop(
                     "custom-deployment"
                 )
+            case "custom-recovery-policy":
+                streamflow.recovery.policy.policy_classes.pop("custom-recovery-policy")
             case "failure-connector":
                 streamflow.deployment.connector.connector_classes.pop(
                     "failure-connector"

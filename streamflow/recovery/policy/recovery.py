@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import MutableSequence, MutableSet
+from importlib.resources import files
 from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
@@ -186,6 +187,15 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     )
                 await self.context.failure_manager.update_request(job_name)
                 retry_request.workflow = workflow
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("rollback.json")
+            .read_text("utf-8")
+        )
 
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
         workflow = failed_step.workflow

@@ -13,7 +13,7 @@ from streamflow.recovery import DefaultCheckpointManager, DefaultFailureManager
 from streamflow.scheduling import DefaultScheduler
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager
-from tests.utils.utils import InjectPlugin
+from tests.utils.utils import InjectPlugin, CustomRecoveryPolicy
 
 
 def test_cwl_workflow() -> None:
@@ -288,6 +288,7 @@ def test_sf_context() -> None:
         "deployments",
         "failureManager",
         "models",
+        "recoveryPolicy",
         "scheduling",
         "version",
         "workflows",
@@ -308,11 +309,17 @@ def test_sf_context() -> None:
             "type": "default",
             "config": {"max_retries": 10, "retry_delay": 61},
         },
+        "recoveryPolicy": {"type": "custom-recovery-policy", "config": {"forward": 1}},
         "scheduling": {
-            "scheduler": {"type": "default", "config": {"retry_delay": 101}}
+            "scheduler": {"type": "default", "config": {"retry_delay": 101}},
+            # "policies": {"reduce_move": {"type": "data_locality", "config": {}}}
         },
     }
-    with InjectPlugin("custom-data"), InjectPlugin("custom-deployment"):
+    with (
+        InjectPlugin("custom-data"),
+        InjectPlugin("custom-deployment"),
+        InjectPlugin("custom-recovery-policy"),
+    ):
         assert SfValidator().validate(config)
         context = build_context(config)
     assert (
@@ -338,6 +345,13 @@ def test_sf_context() -> None:
     assert (
         cast(DefaultFailureManager, context.failure_manager).max_retries
         == config["failureManager"]["config"]["max_retries"]
+    )
+    assert (
+        cast(
+            CustomRecoveryPolicy,
+            cast(DefaultFailureManager, context.failure_manager)._policy,
+        ).forward
+        == config["custom-recovery"]["config"]["forward"]
     )
     assert (
         cast(DefaultScheduler, context.scheduler).retry_interval

@@ -276,6 +276,21 @@
         ]
       }
     },
+    "recoveryPolicy": {
+      "type": "object",
+      "title": "Recovery policy",
+      "$defs": {},
+      "properties": {
+        "type": {
+          "type": "string",
+          "title": "Type"
+        }
+      },
+      "required": [
+        "type",
+        "config"
+      ]
+    },
     "schedulingPolicy": {
       "type": "object",
       "title": "Scheduling policy",
@@ -500,6 +515,11 @@
       "type": "object",
       "title": "Failure manager",
       "$ref": "#/$defs/failureManager"
+    },
+    "recoveryPolicy": {
+      "type": "object",
+      "title": "Recovery policy use by the failure manager",
+      "$ref": "#/$defs/recoveryPolicy"
     },
     "scheduling": {
       "type": "object",

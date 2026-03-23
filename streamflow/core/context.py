@@ -46,7 +46,9 @@ class StreamFlowContext:
             context=self, **config.get("deploymentManager", {}).get("config", {})
         )
         self.failure_manager: FailureManager = failure_manager_class(
-            context=self, **config.get("failureManager", {}).get("config", {})
+            context=self,
+            **config.get("failureManager", {}).get("config", {}),
+            policy_config=config.get("failureManager", {}).get("policy_config", None),
         )
         self.scheduler: Scheduler = scheduler_class(
             context=self,
