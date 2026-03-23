@@ -36,9 +36,14 @@ class DefaultFailureManager(FailureManager):
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
-        await RollbackRecoveryPolicy(self.context).recover(job, step)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
+        try:
+            await RollbackRecoveryPolicy(self.context).recover(job, step)
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
+        except Exception as e:
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f"FAILED Recovery execution of failed job {job.name}")
+            raise e from None
 
     async def close(self) -> None:
         pass

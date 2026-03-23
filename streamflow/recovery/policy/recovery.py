@@ -257,6 +257,8 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 workflow=new_workflow,
                 workflow_builder=workflow_builder,
             )
+        except Exception as e:
+            raise e
         finally:
             for job_name in acquired_jobs:
                 if (

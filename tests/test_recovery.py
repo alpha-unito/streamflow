@@ -6,7 +6,7 @@ import os
 import posixpath
 import tempfile
 import uuid
-from collections.abc import AsyncGenerator, MutableMapping, MutableSequence
+from collections.abc import AsyncGenerator, MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,7 @@ import pytest_asyncio
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import ExecutionLocation
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.utils import compare_tags, get_job_tag
 from streamflow.core.workflow import Job, Status, Token
 from streamflow.data.remotepath import StreamFlowPath
@@ -35,17 +36,21 @@ from tests.utils.deployment import get_deployment_config, get_location
 from tests.utils.utils import duplicate_elements, inject_tokens
 from tests.utils.workflow import (
     BaseFileToken,
-    InjectorFailureCommand,
     RecoveryTranslator,
     create_workflow,
     random_job_name,
 )
 
-FAILURE_STEP = ["execute", "transfer", "schedule"]
+FAILURE_STEP = [
+    RecoveryTranslator.EXECUTE,
+    RecoveryTranslator.TRANSFER,
+    RecoveryTranslator.SCHEDULE,
+]
 NUM_STEPS = {"single_step": 1, "pipeline": 4}
 NUM_FAILURES = {"one_failure": 1, "two_failures_in_row": 2}
-ERROR_TYPE = [InjectorFailureCommand.SOFT_ERROR, InjectorFailureCommand.FAIL_STOP]
+ERROR_TYPE = [RecoveryTranslator.SOFT_ERROR, RecoveryTranslator.FAIL_STOP]
 TOKEN_TYPE = ["primitive", "file", "list", "object"]
+MAX_RETRY = 10
 
 
 async def _assert_token_result(
@@ -123,7 +128,7 @@ async def _get_token_value(
                     asyncio.create_task(
                         _create_file(context, location, f"StreamFlow Manager: test {i}")
                     )
-                    for i in range(int(kwargs.get("list_len", 3)))
+                    for i in range(int(kwargs.get("list_length", 3)))
                 )
             )
         case "object":
@@ -149,21 +154,19 @@ async def _get_token_value(
             raise RuntimeError(f"Unknown token type: {token_type}")
 
 
-@pytest_asyncio.fixture(scope="module")
-async def fault_tolerant_context(
-    chosen_deployment_types: MutableSequence[str],
-) -> AsyncGenerator[StreamFlowContext, Any]:
+@pytest_asyncio.fixture(scope="function")
+async def fault_tolerant_context() -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
             "failureManager": {
                 "type": "default",
-                "config": {"max_retries": 10, "retry_delay": 0},
+                "config": {"max_retries": MAX_RETRY, "retry_delay": 0},
             },
             "database": {"type": "default", "config": {"connection": ":memory:"}},
             "path": os.getcwd(),
         },
     )
-    config = await get_deployment_config(_context, "local-fs-volatile")
+    config = await get_deployment_config(_context, RecoveryTranslator.LOCAL_FS_VOLATILE)
     await _context.deployment_manager.deploy(config)
     yield _context
     await _context.deployment_manager.undeploy_all()
@@ -191,7 +194,7 @@ async def test_execute(
     num_of_steps: int,
     token_type: str,
 ) -> None:
-    deployment_t = "local-fs-volatile"
+    deployment_t = RecoveryTranslator.LOCAL_FS_VOLATILE
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
     deployment_config = await get_deployment_config(
@@ -212,8 +215,12 @@ async def test_execute(
         workflow,
     )
     input_ports[input_name] = injector_step.get_output_port(input_name)
-    injector_step.get_input_port(input_name).put(Token(token_value, recoverable=True))
-    injector_step.get_input_port(input_name).put(TerminationToken())
+    await inject_tokens(
+        token_list=[Token(token_value, recoverable=True)],
+        in_port=injector_step.get_input_port(input_name),
+        context=fault_tolerant_context,
+        save_input_token=False,
+    )
     execute_steps = []
     for i in range(num_of_steps):
         input_port = next(iter(input_ports.keys()))
@@ -255,7 +262,7 @@ async def test_execute(
             ),
         ):
             expected_failures = num_of_failures
-            if error_type == InjectorFailureCommand.FAIL_STOP:
+            if error_type == RecoveryTranslator.FAIL_STOP:
                 if token_type != "primitive":
                     if num_of_steps > 1 and num_of_failures > 1:
                         # Domino effect for each failure
@@ -283,6 +290,68 @@ async def test_execute(
             # Version starts from 1
             retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
             assert retry_request.version == expected_failures + 1
+
+
+@pytest.mark.asyncio
+async def test_exceed_max_retries_poison_pill(
+    fault_tolerant_context: StreamFlowContext,
+) -> None:
+    # max_retries is configured to 10 in the fixture.
+    # We enforce 11 failures to guarantee exhaustion.
+    num_of_failures = MAX_RETRY
+    deployment_t = RecoveryTranslator.LOCAL_FS_VOLATILE
+    token_type = "primitive"
+
+    workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
+    translator = RecoveryTranslator(workflow)
+    deployment_config = await get_deployment_config(
+        fault_tolerant_context, deployment_t
+    )
+    execution_location = await get_location(fault_tolerant_context, deployment_t)
+    translator.deployment_configs = {deployment_config.name: deployment_config}
+
+    input_name = f"test_in_{utils.random_name()}"
+    output_name = f"test_out_{utils.random_name()}"
+
+    injector_step = translator.get_base_injector_step(
+        [deployment_t], input_name, posixpath.join(posixpath.sep, input_name), workflow
+    )
+    token_value = await _get_token_value(
+        fault_tolerant_context, execution_location, token_type
+    )
+    await inject_tokens(
+        token_list=[Token(token_value, recoverable=True)],
+        in_port=injector_step.get_input_port(input_name),
+        context=fault_tolerant_context,
+        save_input_token=False,
+    )
+
+    step = translator.get_execute_pipeline(
+        command=f"lambda x : ('copy', '{token_type}', x['{input_name}'].value)",
+        deployment_names=[deployment_t],
+        input_ports={input_name: injector_step.get_output_port(input_name)},
+        outputs={output_name: token_type},
+        step_name=os.path.join(posixpath.sep, "poison", utils.random_name()),
+        workflow=workflow,
+        failure_step="execute",
+        failure_tags={"0": num_of_failures},
+        failure_type=RecoveryTranslator.FAIL_STOP,
+    )
+
+    await workflow.save(fault_tolerant_context)
+    executor = StreamFlowExecutor(workflow)
+    with pytest.raises(WorkflowExecutionException):
+        await executor.run()
+
+    assert step.status == Status.FAILED
+    for job_name in map(
+        lambda t: t.value.name,
+        filter(
+            lambda t: isinstance(t, JobToken), step.get_input_port("__job__").token_list
+        ),
+    ):
+        retry_request = fault_tolerant_context.failure_manager.get_request(job_name)
+        assert retry_request.version == num_of_failures
 
 
 @pytest.mark.asyncio
@@ -476,7 +545,7 @@ async def test_resume_scatter_step(context: StreamFlowContext) -> None:
 @pytest.mark.asyncio
 async def test_scatter(fault_tolerant_context: StreamFlowContext) -> None:
     num_of_failures = 1
-    deployment_t = "local-fs-volatile"
+    deployment_t = RecoveryTranslator.LOCAL_FS_VOLATILE
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)
     deployment_config = await get_deployment_config(
@@ -490,10 +559,14 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext) -> None:
         [deployment_t], input_name, posixpath.join(posixpath.sep, input_name), workflow
     )
     token_value = await _get_token_value(
-        fault_tolerant_context, execution_location, "list", list_len=4
+        fault_tolerant_context, execution_location, "list", list_length=4
     )
-    injector_step.get_input_port(input_name).put(Token(token_value, recoverable=True))
-    injector_step.get_input_port(input_name).put(TerminationToken())
+    await inject_tokens(
+        token_list=[Token(token_value, recoverable=True)],
+        in_port=injector_step.get_input_port(input_name),
+        context=fault_tolerant_context,
+        save_input_token=False,
+    )
     # ExecuteStep before the scatter
     step = translator.get_execute_pipeline(
         command=f"lambda x : ('copy', 'list', x['{input_name}'].value)",
@@ -516,9 +589,9 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext) -> None:
         input_ports={output_name: scatter_step.get_output_port(output_name)},
         outputs={output_name: "file"},
         step_name=scatter_step_name,
-        failure_step="execute",
+        failure_step=RecoveryTranslator.EXECUTE,
         failure_tags={"0.2": num_of_failures},
-        failure_type=InjectorFailureCommand.FAIL_STOP,
+        failure_type=RecoveryTranslator.FAIL_STOP,
         workflow=workflow,
     )
     gather_step = workflow.create_step(
@@ -568,9 +641,9 @@ async def test_loop(
     fault_tolerant_context: StreamFlowContext, failure_on_iteration: int
 ):
     num_of_failures = 1
-    task = "execute"
-    error_t = InjectorFailureCommand.FAIL_STOP
-    deployment_t = "local-fs-volatile"
+    task = RecoveryTranslator.EXECUTE
+    error_t = RecoveryTranslator.FAIL_STOP
+    deployment_t = RecoveryTranslator.LOCAL_FS_VOLATILE
     max_iterations = 4
     workflow = next(iter(await create_workflow(fault_tolerant_context, num_port=0)))
     translator = RecoveryTranslator(workflow)

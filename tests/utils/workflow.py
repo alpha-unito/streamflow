@@ -612,10 +612,6 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
 
 
 class InjectorFailureCommand(Command):
-    SOFT_ERROR = "soft_error"
-    FAIL_STOP = "fail_stop"
-    INJECT_TOKEN = "inject_error"
-
     def __init__(
         self,
         step: Step,
@@ -677,7 +673,7 @@ class InjectorFailureCommand(Command):
             max_failures := self.failure_tags.get(tag, None)
         ) is not None and num_executions < max_failures:
             match self.failure_type:
-                case InjectorFailureCommand.INJECT_TOKEN:
+                case RecoveryTranslator.INJECT_TOKEN:
                     output_tokens = {}
                     for k, t in job.inputs.items():
                         output_tokens[k] = t.update(t.value)
@@ -685,7 +681,7 @@ class InjectorFailureCommand(Command):
                     context.failure_manager.get_request(job.name).output_tokens = (
                         output_tokens
                     )
-                case InjectorFailureCommand.FAIL_STOP:
+                case RecoveryTranslator.FAIL_STOP:
                     await _delete_job_workdir(context, job)
             cmd_out = CommandOutput("Injected failure", Status.FAILED)
         else:
@@ -857,7 +853,7 @@ class InjectorFailureScheduleStep(ScheduleStep):
         if len(
             [w.steps[self.name] for w in workflows if self.name in w.steps]
         ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
-            if self.failure_type == InjectorFailureCommand.FAIL_STOP:
+            if self.failure_type == RecoveryTranslator.FAIL_STOP:
                 await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         await super()._set_job_directories(connector, locations, job)
@@ -955,7 +951,7 @@ class InjectorFailureTransferStep(TransferStep):
         if len(
             [w.steps[self.name] for w in workflows if self.name in w.steps]
         ) - 1 < self.failure_tags.get(get_tag(job.inputs.values()), 0):
-            if self.failure_type == InjectorFailureCommand.FAIL_STOP:
+            if self.failure_type == RecoveryTranslator.FAIL_STOP:
                 await _delete_job_workdir(self.workflow.context, job)
             raise WorkflowExecutionException(f"Injected error into {self.name} step")
         # Execute the transfer
@@ -997,6 +993,20 @@ class InjectorFailureTransferStep(TransferStep):
 
 
 class RecoveryTranslator:
+
+    # Error types
+    SOFT_ERROR = "soft_error"
+    FAIL_STOP = "fail_stop"
+    INJECT_TOKEN = "inject_error"
+
+    # Deployment type
+    LOCAL_FS_VOLATILE = "local-fs-volatile"
+
+    # Failure Phase
+    EXECUTE = "execute"
+    TRANSFER = "transfer"
+    SCHEDULE = "schedule"
+
     def __init__(self, workflow: Workflow):
         self.deployment_configs: MutableMapping[str, DeploymentConfig] = {}
         self.workflow: Workflow = workflow
@@ -1087,8 +1097,12 @@ class RecoveryTranslator:
         execute_step.command = InjectorFailureCommand(
             execute_step,
             command=command,
-            failure_tags=failure_tags if failure_step == "execute" else None,
-            failure_type=failure_type if failure_step == "execute" else None,
+            failure_tags=(
+                failure_tags if failure_step == RecoveryTranslator.EXECUTE else None
+            ),
+            failure_type=(
+                failure_type if failure_step == RecoveryTranslator.EXECUTE else None
+            ),
         )
         for key, port in input_ports.items():
             schedule_step.add_input_port(key, port)
@@ -1096,8 +1110,16 @@ class RecoveryTranslator:
                 cls=InjectorFailureTransferStep,
                 name=posixpath.join(step_name, "__transfer__", key),
                 job_port=schedule_step.get_output_port(),
-                failure_tags=failure_tags if failure_step == "transfer" else None,
-                failure_type=failure_type if failure_step == "transfer" else None,
+                failure_tags=(
+                    failure_tags
+                    if failure_step == RecoveryTranslator.TRANSFER
+                    else None
+                ),
+                failure_type=(
+                    failure_type
+                    if failure_step == RecoveryTranslator.TRANSFER
+                    else None
+                ),
             )
             transfer_step.add_input_port(key, port)
             transfer_step.add_output_port(key, workflow.create_port())
