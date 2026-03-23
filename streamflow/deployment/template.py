@@ -14,7 +14,7 @@ def _check_template(name: str, source: str, placeholders: MutableSequence[str]) 
         if placeholder not in referenced_vars:
             raise WorkflowDefinitionException(
                 f"Template '{name}' does not contain the "
-                f"placeholder '{placeholder}'."
+                f"mandatory placeholder '{placeholder}'."
             )
 
 
