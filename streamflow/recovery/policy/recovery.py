@@ -44,9 +44,7 @@ def _get_recovery_port(
         recovery_workflow.ports[port_name], InterWorkflowPort
     ):
         port = recovery_workflow.create_port(
-            cls=type(
-                original_workflow.ports[port_name]
-            ),  # retry_request.workflow.ports[port_name]),
+            cls=type(original_workflow.ports[port_name]),
             name=port_name,
         )
     else:

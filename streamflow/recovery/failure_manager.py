@@ -90,7 +90,6 @@ class DefaultFailureManager(FailureManager):
 
     async def update_request(self, job_name: str) -> None:
         retry_request = self._retry_requests[job_name]
-        retry_request.job_token = None
         if self.max_retries is None or retry_request.version < self.max_retries:
             retry_request.version += 1
             if logger.isEnabledFor(logging.DEBUG):

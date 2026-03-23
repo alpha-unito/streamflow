@@ -111,10 +111,9 @@ class RecoveryPolicy(ABC):
 
 
 class RetryRequest:
-    __slots__ = ("job_token", "lock", "name", "version", "workflow")
+    __slots__ = ("lock", "name", "version", "workflow")
 
     def __init__(self, name: str) -> None:
-        self.job_token: JobToken | None = None
         self.lock: asyncio.Lock = asyncio.Lock()
         self.name: str = name
         self.version: int = 1
