@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import functools
 from abc import ABC, abstractmethod
-from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
@@ -85,18 +84,18 @@ class FailureManager(SchemaEntity):
     def get_request(self, job_name: str) -> RetryRequest: ...
 
     @abstractmethod
-    async def recover(self, job: Job, step: Step, exception: BaseException) -> None: ...
-
-    @abstractmethod
-    async def is_recovered(self, job_name: str) -> TokenAvailability: ...
-
-    @abstractmethod
     async def notify(
         self,
         output_port: str,
         output_token: Token,
         job_token: JobToken | None = None,
     ) -> None: ...
+
+    @abstractmethod
+    async def recover(self, job: Job, step: Step, exception: BaseException) -> None: ...
+
+    @abstractmethod
+    async def is_recovering(self, job_name: str) -> bool: ...
 
     @abstractmethod
     async def update_request(self, job_name: str) -> None: ...
@@ -118,9 +117,3 @@ class RetryRequest:
         self.name: str = name
         self.version: int = 1
         self.workflow: Workflow | None = None
-
-
-class TokenAvailability(IntEnum):
-    Unavailable = 0
-    Available = 1
-    FutureAvailable = 2

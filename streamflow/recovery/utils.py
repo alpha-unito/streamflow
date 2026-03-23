@@ -8,7 +8,6 @@ from typing import TypeVar
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import TokenAvailability
 from streamflow.core.utils import contains_persistent_id, get_class_from_name
 from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
@@ -446,11 +445,9 @@ class ProvenanceGraph:
                 token.persistent_id
             )
             # The token is a `JobToken` and its job is running on another recovered workflow
-            if (
-                isinstance(token, JobToken)
-                and (await self.context.failure_manager.is_recovered(token.value.name))
-                == TokenAvailability.FutureAvailable
-            ):
+            if isinstance(
+                token, JobToken
+            ) and await self.context.failure_manager.is_recovering(token.value.name):
                 is_available = False
                 self.add(token)
             elif is_available := await token.is_available(context=self.context):

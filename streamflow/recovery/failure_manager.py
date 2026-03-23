@@ -7,12 +7,7 @@ from importlib.resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import (
-    FailureManager,
-    RetryRequest,
-    TokenAvailability,
-    recoverable,
-)
+from streamflow.core.recovery import FailureManager, RetryRequest, recoverable
 from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
@@ -71,14 +66,12 @@ class DefaultFailureManager(FailureManager):
         await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)
 
-    async def is_recovered(self, job_name: str) -> TokenAvailability:
-        if self.context.scheduler.get_allocation(job_name).status in (
+    async def is_recovering(self, job_name: str) -> bool:
+        return self.context.scheduler.get_allocation(job_name).status in (
             Status.ROLLBACK,
             Status.RUNNING,
             Status.FIREABLE,
-        ):
-            return TokenAvailability.FutureAvailable
-        return TokenAvailability.Unavailable
+        )
 
     async def notify(
         self,
@@ -129,8 +122,8 @@ class DummyFailureManager(FailureManager):
             )
         raise exception
 
-    async def is_recovered(self, job_name: str) -> TokenAvailability:
-        return TokenAvailability.Unavailable
+    async def is_recovering(self, job_name: str) -> bool:
+        return False
 
     async def notify(
         self,

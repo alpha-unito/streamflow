@@ -12,12 +12,7 @@ from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Job, Port, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
-from streamflow.recovery.utils import (
-    GraphMapper,
-    ProvenanceGraph,
-    TokenAvailability,
-    create_graph_mapper,
-)
+from streamflow.recovery.utils import GraphMapper, ProvenanceGraph, create_graph_mapper
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.port import (
     BoundaryAction,
@@ -157,10 +152,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
     ) -> None:
         for retry_request in retry_requests:
             job_name = retry_request.name
-            if (
-                await self.context.failure_manager.is_recovered(job_name)
-                == TokenAvailability.FutureAvailable
-            ):
+            if await self.context.failure_manager.is_recovering(job_name):
                 job_token = get_job_token(job_name, job_tokens)
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
@@ -246,10 +238,9 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     f"Impossible to recover {failed_job.name}: empty token graph"
                 )
             # Populate new workflow
-            step_ids = await mapper.get_step_ids(failed_step.output_ports.values())
             await _populate_workflow(
                 failed_step=failed_step,
-                step_ids=step_ids,
+                step_ids=await mapper.get_step_ids(failed_step.output_ports.values()),
                 workflow=new_workflow,
                 workflow_builder=workflow_builder,
             )
