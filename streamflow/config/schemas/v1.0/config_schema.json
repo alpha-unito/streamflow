@@ -517,7 +517,7 @@
           "description": "Implement specific placement strategies to map jobs onto available locations",
           "patternProperties": {
             "^[a-z][a-zA-Z0-9._-]*$": {
-              "$ref": "#/$defs/policy"
+              "$ref": "#/$defs/schedulingPolicy"
             }
           }
         }
