@@ -84,6 +84,9 @@ class FailureManager(SchemaEntity):
     def get_request(self, job_name: str) -> RetryRequest: ...
 
     @abstractmethod
+    async def is_recovering(self, job_name: str) -> bool: ...
+
+    @abstractmethod
     async def notify(
         self,
         output_port: str,
@@ -93,9 +96,6 @@ class FailureManager(SchemaEntity):
 
     @abstractmethod
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None: ...
-
-    @abstractmethod
-    async def is_recovering(self, job_name: str) -> bool: ...
 
     @abstractmethod
     async def update_request(self, job_name: str) -> None: ...

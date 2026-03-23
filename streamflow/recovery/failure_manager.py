@@ -35,7 +35,7 @@ class DefaultFailureManager(FailureManager):
             await RollbackRecoveryPolicy(self.context).recover(job, step)
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
-        except Exception as e:
+        except FailureHandlingException as e:
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f"FAILED Recovery execution of failed job {job.name}")
             raise e
@@ -58,6 +58,13 @@ class DefaultFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
+    async def is_recovering(self, job_name: str) -> bool:
+        return self.context.scheduler.get_allocation(job_name).status in (
+            Status.ROLLBACK,
+            Status.RUNNING,
+            Status.FIREABLE,
+        )
+
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None:
         if logger.isEnabledFor(logging.INFO):
             logger.info(
@@ -65,13 +72,6 @@ class DefaultFailureManager(FailureManager):
             )
         await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)
-
-    async def is_recovering(self, job_name: str) -> bool:
-        return self.context.scheduler.get_allocation(job_name).status in (
-            Status.ROLLBACK,
-            Status.RUNNING,
-            Status.FIREABLE,
-        )
 
     async def notify(
         self,
@@ -115,15 +115,15 @@ class DummyFailureManager(FailureManager):
     def get_request(self, job_name: str) -> RetryRequest:
         pass
 
+    async def is_recovering(self, job_name: str) -> bool:
+        return False
+
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
                 f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
             )
         raise exception
-
-    async def is_recovering(self, job_name: str) -> bool:
-        return False
 
     async def notify(
         self,

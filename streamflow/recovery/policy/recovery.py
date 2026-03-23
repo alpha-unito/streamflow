@@ -184,8 +184,8 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                     logger.debug(
                         f"Synchronizing rollbacks for failed job {failed_job}: Job {job_name} rollback"
                     )
-                retry_request.workflow = workflow
                 await self.context.failure_manager.update_request(job_name)
+                retry_request.workflow = workflow
 
     async def recover(self, failed_job: Job, failed_step: Step) -> None:
         workflow = failed_step.workflow

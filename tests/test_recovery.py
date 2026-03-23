@@ -154,7 +154,7 @@ async def _get_token_value(
             raise RuntimeError(f"Unknown token type: {token_type}")
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest_asyncio.fixture(scope="module")
 async def fault_tolerant_context() -> AsyncGenerator[StreamFlowContext, Any]:
     _context = build_context(
         {
@@ -296,8 +296,6 @@ async def test_execute(
 async def test_exceed_max_retries_poison_pill(
     fault_tolerant_context: StreamFlowContext,
 ) -> None:
-    # max_retries is configured to 10 in the fixture.
-    # We enforce 11 failures to guarantee exhaustion.
     num_of_failures = MAX_RETRY
     deployment_t = RecoveryTranslator.LOCAL_FS_VOLATILE
     token_type = "primitive"
