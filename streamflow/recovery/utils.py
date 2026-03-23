@@ -356,13 +356,9 @@ class GraphMapper:
             self.token_availability.pop(removed_token_id, None)
             self.token_instances.pop(removed_token_id, None)
             # Remove ports
-            to_delete = {}
             for port_name, token_list in self.port_tokens.items():
                 if removed_token_id in token_list:
-                    to_delete.setdefault(port_name, []).append(removed_token_id)
-            for port_name, token_list in to_delete.items():
-                for token_id in token_list:
-                    self.port_tokens[port_name].remove(token_id)
+                    self.port_tokens[port_name].remove(removed_token_id)
                 if len(self.port_tokens[port_name]) == 0:
                     empty_ports.add(port_name)
         for port_name in empty_ports:

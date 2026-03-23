@@ -43,7 +43,7 @@ class DefaultFailureManager(FailureManager):
         except Exception as e:
             if logger.isEnabledFor(logging.INFO):
                 logger.info(f"FAILED Recovery execution of failed job {job.name}")
-            raise e from None
+            raise e
 
     async def close(self) -> None:
         pass

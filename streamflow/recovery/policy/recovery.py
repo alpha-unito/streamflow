@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import MutableSequence, MutableSet
 from typing import cast
 
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import RecoveryPolicy
+from streamflow.core.recovery import RecoveryPolicy, RetryRequest
 from streamflow.core.utils import get_tag
-from streamflow.core.workflow import Job, Step, Token, Workflow
+from streamflow.core.workflow import Job, Port, Step, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import WorkflowBuilder
 from streamflow.recovery.utils import (
@@ -34,7 +35,7 @@ def _get_recovery_port(
     mapper: GraphMapper,
     original_workflow: Workflow,
     recovery_workflow: Workflow,
-) -> InterWorkflowPort:
+) -> Port:
     port_name = next(
         curr_port
         for curr_port, curr_tokens in mapper.port_tokens.items()
@@ -43,13 +44,12 @@ def _get_recovery_port(
     if port_name not in recovery_workflow.ports.keys() or not isinstance(
         recovery_workflow.ports[port_name], InterWorkflowPort
     ):
-        port = recovery_workflow.create_port(
+        return recovery_workflow.create_port(
             cls=type(original_workflow.ports[port_name]),
             name=port_name,
         )
     else:
-        port = recovery_workflow.ports[port_name]
-    return cast(InterWorkflowPort, port)
+        return recovery_workflow.ports[port_name]
 
 
 async def _inject_tokens(
@@ -147,45 +147,35 @@ async def _populate_workflow(
 
 
 class RollbackRecoveryPolicy(RecoveryPolicy):
-    async def _sync_workflows(
+    async def _synchronize_workflows(
         self,
-        acquired_jobs: MutableSequence[str],
         failed_job: str,
-        job_names: MutableSet[str],
         job_tokens: MutableSequence[Token],
         mapper: GraphMapper,
+        retry_requests: MutableSequence[RetryRequest],
         workflow: Workflow,
     ) -> None:
-        for job_name in job_names:
-            retry_request = self.context.failure_manager.get_request(job_name)
+        for retry_request in retry_requests:
             job_name = retry_request.name
-            await retry_request.lock.acquire()
-            acquired_jobs.append(job_name)
             if (
                 await self.context.failure_manager.is_recovered(job_name)
                 == TokenAvailability.FutureAvailable
             ):
-                retry_request.lock.release()
-                acquired_jobs.remove(job_name)
                 job_token = get_job_token(job_name, job_tokens)
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Aligning rollbacks for failed job {failed_job}: Job {job_name} is currently executing."
+                        f"Synchronizing rollbacks for failed job {failed_job}: Job {job_name} is currently executing."
                     )
-                available_tokens = []
+                available_tokens = set()
                 for token_id in (
                     mapper.dag_tokens.successors(job_token.persistent_id)
                     if mapper.dag_tokens.contains(job_token.persistent_id)
                     else []
                 ):
                     mapper.move_token_to_root(token_id)
-                    available_tokens.append(token_id)
-                for token_id in (
-                    # Some tokens could be discarded by the `move_token_to_root` method
-                    curr_token
-                    for curr_token in available_tokens
-                    if curr_token in mapper.token_instances.keys()
-                ):
+                    available_tokens.add(token_id)
+                # Some tokens could be discarded by the `move_token_to_root` method
+                for token_id in available_tokens & mapper.token_instances.keys():
                     new_port = _get_recovery_port(
                         token_id, mapper, retry_request.workflow, workflow
                     )
@@ -200,7 +190,7 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
             else:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        f"Aligning rollbacks for failed job {failed_job}: Job {job_name} rollback"
+                        f"Synchronizing rollbacks for failed job {failed_job}: Job {job_name} rollback"
                     )
                 retry_request.workflow = workflow
                 await self.context.failure_manager.update_request(job_name)
@@ -233,14 +223,22 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
         job_tokens = list(
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
-        acquired_jobs = []
-        try:
-            await self._sync_workflows(
-                acquired_jobs=acquired_jobs,
+        retry_requests = [
+            self.context.failure_manager.get_request(job_name)
+            for job_name in {*(t.value.name for t in job_tokens), failed_job.name}
+        ]
+        async with contextlib.AsyncExitStack() as exit_stack:
+            await asyncio.gather(
+                *(
+                    asyncio.create_task(exit_stack.enter_async_context(request.lock))
+                    for request in retry_requests
+                )
+            )
+            await self._synchronize_workflows(
                 failed_job=failed_job.name,
-                job_names={*(t.value.name for t in job_tokens), failed_job.name},
                 job_tokens=job_tokens,
                 mapper=mapper,
+                retry_requests=retry_requests,
                 workflow=new_workflow,
             )
             if mapper.dag_tokens.empty():
@@ -255,14 +253,6 @@ class RollbackRecoveryPolicy(RecoveryPolicy):
                 workflow=new_workflow,
                 workflow_builder=workflow_builder,
             )
-        except Exception as e:
-            raise e
-        finally:
-            for job_name in acquired_jobs:
-                if (
-                    job_lock := self.context.failure_manager.get_request(job_name).lock
-                ).locked():
-                    job_lock.release()
         await _inject_tokens(
             failed_job=failed_job,
             failed_step=failed_step,
