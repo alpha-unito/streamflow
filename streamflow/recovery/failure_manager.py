@@ -7,12 +7,7 @@ from importlib.resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import (
-    FailureManager,
-    RetryRequest,
-    TokenAvailability,
-    recoverable,
-)
+from streamflow.core.recovery import FailureManager, RetryRequest, recoverable
 from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
@@ -36,9 +31,14 @@ class DefaultFailureManager(FailureManager):
         # Delay rescheduling to manage temporary failures (e.g. connection lost)
         if self.retry_delay is not None:
             await asyncio.sleep(self.retry_delay)
-        await RollbackRecoveryPolicy(self.context).recover(job, step)
-        if logger.isEnabledFor(logging.INFO):
-            logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
+        try:
+            await RollbackRecoveryPolicy(self.context).recover(job, step)
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f"COMPLETED Recovery execution of failed job {job.name}")
+        except FailureHandlingException as e:
+            if logger.isEnabledFor(logging.INFO):
+                logger.info(f"FAILED Recovery execution of failed job {job.name}")
+            raise e
 
     async def close(self) -> None:
         pass
@@ -47,7 +47,7 @@ class DefaultFailureManager(FailureManager):
         if job_name in self._retry_requests.keys():
             return self._retry_requests[job_name]
         else:
-            return self._retry_requests.setdefault(job_name, RetryRequest())
+            return self._retry_requests.setdefault(job_name, RetryRequest(job_name))
 
     @classmethod
     def get_schema(cls) -> str:
@@ -58,6 +58,13 @@ class DefaultFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
+    async def is_recovering(self, job_name: str) -> bool:
+        return self.context.scheduler.get_allocation(job_name).status in (
+            Status.ROLLBACK,
+            Status.RUNNING,
+            Status.FIREABLE,
+        )
+
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None:
         if logger.isEnabledFor(logging.INFO):
             logger.info(
@@ -66,46 +73,16 @@ class DefaultFailureManager(FailureManager):
         await self.context.scheduler.notify_status(job.name, Status.RECOVERY)
         await self._do_handle_failure(job, step)
 
-    async def is_recovered(self, job_name: str) -> TokenAvailability:
-        if request := self._retry_requests.get(job_name):
-            async with request.lock:
-                if self.context.scheduler.get_allocation(job_name).status in (
-                    Status.ROLLBACK,
-                    Status.RUNNING,
-                    Status.FIREABLE,
-                ):
-                    return TokenAvailability.FutureAvailable
-                elif len(request.output_tokens) > 0 and all(
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(t.is_available(self.context))
-                            for t in request.output_tokens.values()
-                        )
-                    )
-                ):
-                    return TokenAvailability.Available
-        return TokenAvailability.Unavailable
-
     async def notify(
         self,
         output_port: str,
         output_token: Token,
         job_token: JobToken | None = None,
     ) -> None:
-        if job_token is not None:
-            job_name = job_token.value.name
-            if job_name in self._retry_requests.keys():
-                async with self._retry_requests[job_name].lock:
-                    self._retry_requests[job_name].job_token = job_token
-                    self._retry_requests[job_name].output_tokens.setdefault(
-                        output_port, output_token
-                    )
+        pass
 
     async def update_request(self, job_name: str) -> None:
         retry_request = self._retry_requests[job_name]
-        async with retry_request.lock:
-            retry_request.job_token = None
-            retry_request.output_tokens = {}
         if self.max_retries is None or retry_request.version < self.max_retries:
             retry_request.version += 1
             if logger.isEnabledFor(logging.DEBUG):
@@ -138,15 +115,15 @@ class DummyFailureManager(FailureManager):
     def get_request(self, job_name: str) -> RetryRequest:
         pass
 
+    async def is_recovering(self, job_name: str) -> bool:
+        return False
+
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None:
         if logger.isEnabledFor(logging.WARNING):
             logger.warning(
                 f"Job {job.name} failure can not be recovered. Failure manager is not enabled."
             )
         raise exception
-
-    async def is_recovered(self, job_name: str) -> TokenAvailability:
-        return TokenAvailability.Unavailable
 
     async def notify(
         self,

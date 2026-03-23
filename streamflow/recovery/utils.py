@@ -8,7 +8,6 @@ from typing import TypeVar
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import TokenAvailability
 from streamflow.core.utils import contains_persistent_id, get_class_from_name
 from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
@@ -337,22 +336,12 @@ class GraphMapper:
             step_ids.remove(step_id)
         return step_ids
 
-    def remove_port(self, port_name: str) -> MutableSequence[str]:
+    def remove_port(self, port_name: str) -> None:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Removing port {port_name}")
-        orphan_tokens = set()
-        removed_ports = self.dcg_ports.remove_node(port_name)
-        for next_port_name in removed_ports:
-            if logger.isEnabledFor(logging.DEBUG) and next_port_name != port_name:
-                logger.debug(
-                    f"Removed port {next_port_name} by deleting port {port_name}"
-                )
-            for token_id in self.port_tokens.pop(next_port_name, []):
-                orphan_tokens.add(token_id)
-            self.port_name_ids.pop(next_port_name, None)
-        for token_id in orphan_tokens:
-            self.remove_token(token_id)
-        return removed_ports
+        self.dcg_ports.remove_node(port_name, prune_dead_end=False)
+        self.port_name_ids.pop(port_name, None)
+        self.port_tokens.pop(port_name, None)
 
     def move_token_to_root(self, token_id: int) -> None:
         if logger.isEnabledFor(logging.DEBUG):
@@ -371,10 +360,8 @@ class GraphMapper:
                     self.port_tokens[port_name].remove(removed_token_id)
                 if len(self.port_tokens[port_name]) == 0:
                     empty_ports.add(port_name)
-        removed_ports: list[str] = []
         for port_name in empty_ports:
-            if port_name not in removed_ports:
-                removed_ports.extend(self.remove_port(port_name))
+            self.remove_port(port_name)
 
     def remove_token(self, token_id: int) -> None:
         if logger.isEnabledFor(logging.DEBUG):
@@ -458,11 +445,9 @@ class ProvenanceGraph:
                 token.persistent_id
             )
             # The token is a `JobToken` and its job is running on another recovered workflow
-            if (
-                isinstance(token, JobToken)
-                and (await self.context.failure_manager.is_recovered(token.value.name))
-                == TokenAvailability.FutureAvailable
-            ):
+            if isinstance(
+                token, JobToken
+            ) and await self.context.failure_manager.is_recovering(token.value.name):
                 is_available = False
                 self.add(token)
             elif is_available := await token.is_available(context=self.context):
