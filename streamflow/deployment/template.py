@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 
-from jinja2 import Template
+from jinja2 import Environment, Template, meta
+
+from streamflow.core.exception import WorkflowDefinitionException
+
+
+def _check_template(name: str, source: str) -> None:
+    ast = Environment(autoescape=True).parse(source)
+    referenced_vars = meta.find_undeclared_variables(ast)
+    if "streamflow_command" not in referenced_vars:
+        raise WorkflowDefinitionException(
+            f"Template '{name}' does not contain the "
+            f"mandatory placeholder 'streamflow_command'."
+        )
 
 
 class CommandTemplateMap:
@@ -14,9 +26,11 @@ class CommandTemplateMap:
         self.templates: MutableMapping[str, Template] = {
             "__DEFAULT__": Template(default)
         }
+        _check_template("default", default)
         if template_map:
             for name, template in template_map.items():
                 self.templates[name] = Template(template)
+                _check_template(name, template)
 
     def get_command(
         self,
