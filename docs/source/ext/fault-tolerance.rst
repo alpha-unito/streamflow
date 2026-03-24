@@ -29,9 +29,9 @@ default    streamflow.recovery.checkpoint_manager.DefaultCheckpointManager
 dummy      streamflow.recovery.checkpoint_manager.DummyCheckpointManager
 =======    ===============================================================
 
-If the user does not specify a checkpoint manager in the StreamFlow file, the ``dummy`` implementation is used by default. This manager has no effect and performs no operations.
+If the user does not specify a checkpoint manager in the StreamFlow file, the ``dummy`` implementation is used. This manager has no effect and performs no operations.
 
-If the user defines the ``DefaultCheckpointManager``, the standard behavior is to save all intermediate files to a local persistent location.
+If the user defines the ``DefaultCheckpointManager``, the behavior is to save all intermediate files to a local persistent location.
 
 .. jsonschema:: https://streamflow.di.unito.it/schemas/recovery/default_checkpoint_manager.json
 
@@ -71,13 +71,13 @@ The ``is_recovering`` method returns ``True`` if the ``job_name`` is already und
 
 The ``notify`` method is called when a ``job`` terminates and generates the output data.
 
-The ``recover`` method is called to recover from a ``job`` failure.
+The ``recover`` method is called to recover a ``job`` failure.
 
-The ``update_request`` method is called when a ``job`` is involved in a recovery process.
+The ``update_request`` method is called when a ``job`` must be involved in a recovery process.
 
 Several entities are provided to support the development of other ``FailureManager`` extensions.
-The ``recoverable`` decorator can be used on a class method; it implements the try-catch block and the call to the appropriate ``recover`` function of the manager.
-The ``RecoveryRequest`` class contains information helpful for recovering a ``job``. Its lifecycle is completely handled by the ``FailureManager`` subclasses.
+The ``recoverable`` decorator can be used on a class method; it implements the try-catch block and it calls the ``recover`` method with the opportune parameters.
+The ``RecoveryRequest`` class contains information helpful for recovering a ``job`` and its lifecycle is completely handled by the ``FailureManager`` subclasses.
 
 Implementations
 ---------------
