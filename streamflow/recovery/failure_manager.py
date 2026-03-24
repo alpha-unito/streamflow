@@ -247,12 +247,8 @@ class RollbackFailureManager(FailureManager):
             for job_name in {*(t.value.name for t in job_tokens), failed_job.name}
         ]
         async with contextlib.AsyncExitStack() as exit_stack:
-            await asyncio.gather(
-                *(
-                    asyncio.create_task(exit_stack.enter_async_context(request.lock))
-                    for request in retry_requests
-                )
-            )
+            for request in sorted(retry_requests, key=id):
+                await exit_stack.enter_async_context(request.lock)
             await self._synchronize_workflows(
                 failed_job=failed_job.name,
                 job_tokens=job_tokens,
@@ -311,7 +307,7 @@ class RollbackFailureManager(FailureManager):
         return (
             files(__package__)
             .joinpath("schemas")
-            .joinpath("default_failure_manager.json")
+            .joinpath("rollback_failure_manager.json")
             .read_text("utf-8")
         )
 

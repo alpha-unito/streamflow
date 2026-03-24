@@ -20,4 +20,5 @@ checkpoint_manager_classes: MutableMapping[str, type[CheckpointManager]] = {
 failure_manager_classes: MutableMapping[str, type[FailureManager]] = {
     "default": RollbackFailureManager,
     "dummy": DummyFailureManager,
+    "rollback": RollbackFailureManager,
 }

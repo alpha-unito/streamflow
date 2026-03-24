@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://streamflow.di.unito.it/schemas/recovery/default_failure_manager.json",
+  "$id": "https://streamflow.di.unito.it/schemas/recovery/rollback_failure_manager.json",
   "type": "object",
   "properties": {
     "max_retries": {
