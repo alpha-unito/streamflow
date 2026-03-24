@@ -101,14 +101,6 @@ class FailureManager(SchemaEntity):
     async def update_request(self, job_name: str) -> None: ...
 
 
-class RecoveryPolicy(ABC):
-    def __init__(self, context: StreamFlowContext):
-        self.context: StreamFlowContext = context
-
-    @abstractmethod
-    async def recover(self, failed_job: Job, failed_step: Step) -> None: ...
-
-
 class RecoveryRequest:
     __slots__ = ("lock", "name", "version", "workflow")
 

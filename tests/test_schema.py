@@ -9,7 +9,7 @@ from streamflow.config.validator import SfValidator
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.main import build_context
 from streamflow.persistence import SqliteDatabase
-from streamflow.recovery import DefaultCheckpointManager, DefaultFailureManager
+from streamflow.recovery import DefaultCheckpointManager, RollbackFailureManager
 from streamflow.scheduling import DefaultScheduler
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager
@@ -332,11 +332,11 @@ def test_sf_context() -> None:
         == config["deploymentManager"]["config"]["my_arg"]
     )
     assert (
-        cast(DefaultFailureManager, context.failure_manager).retry_delay
+        cast(RollbackFailureManager, context.failure_manager).retry_delay
         == config["failureManager"]["config"]["retry_delay"]
     )
     assert (
-        cast(DefaultFailureManager, context.failure_manager).max_retries
+        cast(RollbackFailureManager, context.failure_manager).max_retries
         == config["failureManager"]["config"]["max_retries"]
     )
     assert (

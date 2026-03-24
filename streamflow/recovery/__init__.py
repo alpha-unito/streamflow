@@ -8,8 +8,8 @@ from streamflow.recovery.checkpoint_manager import (
     DummyCheckpointManager,
 )
 from streamflow.recovery.failure_manager import (
-    DefaultFailureManager,
     DummyFailureManager,
+    RollbackFailureManager,
 )
 
 checkpoint_manager_classes: MutableMapping[str, type[CheckpointManager]] = {
@@ -18,6 +18,6 @@ checkpoint_manager_classes: MutableMapping[str, type[CheckpointManager]] = {
 }
 
 failure_manager_classes: MutableMapping[str, type[FailureManager]] = {
-    "default": DefaultFailureManager,
+    "default": RollbackFailureManager,
     "dummy": DummyFailureManager,
 }
