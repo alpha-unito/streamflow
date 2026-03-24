@@ -89,7 +89,7 @@ default    streamflow.recovery.failure_manager.RollbackFailureManager
 dummy      streamflow.recovery.failure_manager.DummyFailureManager
 =======    ==========================================================
 
-If the user does not specify a failure manager in the StreamFlow file, the ``dummy`` implementation is used by default. This manager simply propagates the error.
+If the user does not specify a failure manager in the StreamFlow file, the ``dummy`` implementation is used. This manager simply propagates the error.
 
 The ``default`` failure manager implements a retry-rollback strategy.
 When a job fails, it is verified that all its inputs are available. Data loss may occur if a location with a volatile filesystem fails.
