@@ -7,7 +7,7 @@ from importlib.resources import files
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.recovery import FailureManager, RetryRequest, recoverable
+from streamflow.core.recovery import FailureManager, RecoveryRequest, recoverable
 from streamflow.core.workflow import Job, Status, Step, Token
 from streamflow.log_handler import logger
 from streamflow.recovery.policy.recovery import RollbackRecoveryPolicy
@@ -24,7 +24,7 @@ class DefaultFailureManager(FailureManager):
         super().__init__(context)
         self.max_retries: int | None = max_retries
         self.retry_delay: int | None = retry_delay
-        self._retry_requests: MutableMapping[str, RetryRequest] = {}
+        self._retry_requests: MutableMapping[str, RecoveryRequest] = {}
 
     @recoverable
     async def _do_handle_failure(self, job: Job, step: Step) -> None:
@@ -43,11 +43,11 @@ class DefaultFailureManager(FailureManager):
     async def close(self) -> None:
         pass
 
-    def get_request(self, job_name: str) -> RetryRequest:
+    def get_request(self, job_name: str) -> RecoveryRequest:
         if job_name in self._retry_requests.keys():
             return self._retry_requests[job_name]
         else:
-            return self._retry_requests.setdefault(job_name, RetryRequest(job_name))
+            return self._retry_requests.setdefault(job_name, RecoveryRequest(job_name))
 
     @classmethod
     def get_schema(cls) -> str:
@@ -112,7 +112,7 @@ class DummyFailureManager(FailureManager):
             .read_text("utf-8")
         )
 
-    def get_request(self, job_name: str) -> RetryRequest:
+    def get_request(self, job_name: str) -> RecoveryRequest:
         pass
 
     async def is_recovering(self, job_name: str) -> bool:
