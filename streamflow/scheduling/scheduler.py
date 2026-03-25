@@ -329,6 +329,14 @@ class DefaultScheduler(Scheduler):
                     available_locations = dict(
                         await connector.get_available_locations(service=target.service)
                     )
+                    deployments = set()
+                    locations = available_locations.values()
+                    while locations:
+                        for loc in locations:
+                            deployments.add(loc.deployment)
+                            if loc.deployment not in self.wait_queues:
+                                self.wait_queues[loc.deployment] = asyncio.Condition()
+                        locations = [loc.wraps for loc in locations if loc.stacked]
                     job_hardware = (
                         hardware_requirement.eval(job)
                         if hardware_requirement
@@ -411,21 +419,33 @@ class DefaultScheduler(Scheduler):
                                     f"on deployment {deployment_name}, "
                                     f"but only {len(valid_locations)} are available."
                                 )
-                try:
-                    await asyncio.wait_for(
-                        self.wait_queues[deployment].wait(), timeout=self.retry_interval
+                finished, unfinished = await asyncio.wait(
+                    [
+                        asyncio.create_task(
+                            self.wait_queues[deployment].wait(), name=deployment
+                        )
+                        for deployment in deployments
+                    ],
+                    timeout=self.retry_interval,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if (
+                    deployment in (task.get_name() for task in unfinished)
+                    and self.wait_queues[deployment].locked()
+                ):
+                    self.wait_queues[deployment].notify_all()
+                for t in unfinished:
+                    t.cancel()
+                if not finished and logger.isEnabledFor(logging.DEBUG):
+                    target_name = (
+                        "/".join([target.deployment.name, target.service])
+                        if target.service is not None
+                        else target.deployment.name
                     )
-                except (TimeoutError, asyncio.exceptions.TimeoutError):
-                    if logger.isEnabledFor(logging.DEBUG):
-                        target_name = (
-                            "/".join([target.deployment.name, target.service])
-                            if target.service is not None
-                            else target.deployment.name
-                        )
-                        logger.debug(
-                            f"No locations available for job {job_context.job.name} "
-                            f"in target {target_name}. Waiting {self.retry_interval} seconds."
-                        )
+                    logger.debug(
+                        f"No locations available for job {job_context.job.name} "
+                        f"in target {target_name}. Waiting {self.retry_interval} seconds."
+                    )
 
     async def _resolve_hardware_requirement(
         self,
@@ -522,6 +542,16 @@ class DefaultScheduler(Scheduler):
                                 ].jobs.remove(job_name)
                         job_allocation.locations.clear()
                     self.wait_queues[connector.deployment_name].notify_all()
+            if locations := [
+                loc.wraps for loc in job_allocation.locations if loc.stacked
+            ]:
+                conn = cast(ConnectorWrapper, connector).connector
+                while locations:
+                    async with (cond := self.wait_queues[conn.deployment_name]):
+                        cond.notify_all()
+                    # If AvailableLocation is stacked, notify also the inner location
+                    if locations := [loc.wraps for loc in locations if loc.stacked]:
+                        conn = cast(ConnectorWrapper, conn).connector
 
     async def schedule(
         self,
