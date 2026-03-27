@@ -4,7 +4,7 @@ Fault tolerance
 
 StreamFlow allows users to handle execution failures through two main extension points: :ref:`CheckpointManager <CheckpointManager>` and :ref:`FailureManager <FailureManager>`. These components can be used independently or in combination to provide robust execution.
 
-A key challenge in handling failures within hybrid workflows, which these two components must address, is the potential for data loss caused by the heterogeneity of execution locations.
+A key challenge in handling failures within hybrid workflows, which these two components must address, is how to recover from a data loss within the potentially high heterogeneity of StreamFlow execution locations.
 
 CheckpointManager
 =================
@@ -46,9 +46,6 @@ The ``FailureManager`` interface manages the recovery logic for failed workflow 
     async def close(self) -> None:
         ...
 
-    def get_request(self, job_name: str) -> RecoveryRequest:
-        ...
-
     async def is_recovering(self, job_name: str) -> bool:
         ...
 
@@ -63,34 +60,25 @@ The ``FailureManager`` interface manages the recovery logic for failed workflow 
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None:
         ...
 
-    async def update_request(self, job_name: str) -> None:
-        ...
-
-The ``get_request`` method returns the instance of ``RecoveryRequest`` related to the ``job`` identified by the ``job_name``.
-
 The ``is_recovering`` method returns ``True`` if the ``job_name`` is already undergoing recovery; otherwise, it returns ``False``.
 
-The ``notify`` method is called when a ``job`` terminates and generates output data.
+The ``notify`` method is called whenever a ``Job`` terminates execution correctly. The method receives three input parameters: the output ``Token`` object generated, the output ``Port`` object where the token is placed, and finally, the ``JobToken`` object which contains the ``Job``.
 
-The ``recover`` method is called to perform recovery actions following a ``job`` failure.
-
-The ``update_request`` method is called when a ``job`` is involved in a recovery process.
-
-Several entities are provided to support the development of other ``FailureManager`` extensions. The ``recoverable`` decorator can be used on class methods to implement try-catch blocks and trigger the manager's ``recover`` method. Additionally, the ``RecoveryRequest`` class contains metadata for recovering a ``job``, with its lifecycle fully managed by ``FailureManager`` subclasses.
+The ``recover`` method serves as the primary entry point for handling job failures. The method receives three input parameters: the failed ``Job`` object, the ``Step`` object related to the ``job``, and the ``Exception`` that triggered the failure.
 
 Implementations
 ---------------
 
-=======    ==========================================================
+========   ==========================================================
 Type       Class
-=======    ==========================================================
-default    streamflow.recovery.failure_manager.RollbackFailureManager
+========   ==========================================================
 dummy      streamflow.recovery.failure_manager.DummyFailureManager
-=======    ==========================================================
+rollback   streamflow.recovery.failure_manager.RollbackFailureManager
+========   ==========================================================
 
 If the user does not specify a failure manager in the StreamFlow file, the ``dummy`` implementation is used by default. This manager simply propagates the error.
 
-The ``default`` failure manager implements a retry-rollback strategy. When a job fails, the manager verifies the availability of all required inputs. Data loss may occur if a location with a volatile filesystem fails; in such cases, the jobs responsible for generating that data are rolled back to facilitate recovery.
+The ``rollback`` failure manager implements a retry-rollback strategy. When a job fails, the manager verifies the availability of all required inputs. Data loss may occur if a location with a volatile filesystem fails; in such cases, the jobs responsible for generating that data are rolled back to facilitate recovery.
 
 .. jsonschema:: https://streamflow.di.unito.it/schemas/recovery/rollback_failure_manager.json
     :lift_description: true

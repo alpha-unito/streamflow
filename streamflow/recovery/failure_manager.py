@@ -179,7 +179,7 @@ class RollbackFailureManager(FailureManager):
     ) -> None:
         for retry_request in retry_requests:
             job_name = retry_request.name
-            if await self.context.failure_manager.is_recovering(job_name):
+            if await self.is_recovering(job_name):
                 job_token = get_job_token(job_name, job_tokens)
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
@@ -211,7 +211,7 @@ class RollbackFailureManager(FailureManager):
                     logger.debug(
                         f"Synchronizing rollbacks for failed job {failed_job}: Job {job_name} rollback"
                     )
-                await self.context.failure_manager.update_request(job_name)
+                await self._update_request(job_name)
                 retry_request.workflow = workflow
 
     async def _recover(self, failed_job: Job, failed_step: Step) -> None:
@@ -243,7 +243,7 @@ class RollbackFailureManager(FailureManager):
             filter(lambda t: isinstance(t, JobToken), mapper.token_instances.values())
         )
         retry_requests = [
-            self.context.failure_manager.get_request(job_name)
+            self.get_request(job_name)
             for job_name in {*(t.value.name for t in job_tokens), failed_job.name}
         ]
         async with contextlib.AsyncExitStack() as exit_stack:
@@ -293,6 +293,23 @@ class RollbackFailureManager(FailureManager):
         executor = StreamFlowExecutor(new_workflow)
         await executor.run()
 
+    async def _update_request(self, job_name: str) -> None:
+        retry_request = self._retry_requests[job_name]
+        if self.max_retries is None or retry_request.version < self.max_retries:
+            retry_request.version += 1
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    f"Updated Job {job_name} after {retry_request.version} retries (max retries {self.max_retries})"
+                )
+            await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
+        else:
+            logger.error(
+                f"FAILED Job {job_name} {retry_request.version} times. Execution aborted"
+            )
+            raise FailureHandlingException(
+                f"FAILED Job {job_name} {retry_request.version} times. Execution aborted"
+            )
+
     async def close(self) -> None:
         pass
 
@@ -334,23 +351,6 @@ class RollbackFailureManager(FailureManager):
     ) -> None:
         pass
 
-    async def update_request(self, job_name: str) -> None:
-        retry_request = self._retry_requests[job_name]
-        if self.max_retries is None or retry_request.version < self.max_retries:
-            retry_request.version += 1
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    f"Updated Job {job_name} after {retry_request.version} retries (max retries {self.max_retries})"
-                )
-            await self.context.scheduler.notify_status(job_name, Status.ROLLBACK)
-        else:
-            logger.error(
-                f"FAILED Job {job_name} {retry_request.version} times. Execution aborted"
-            )
-            raise FailureHandlingException(
-                f"FAILED Job {job_name} {retry_request.version} times. Execution aborted"
-            )
-
 
 class DummyFailureManager(FailureManager):
     async def close(self) -> None:
@@ -364,9 +364,6 @@ class DummyFailureManager(FailureManager):
             .joinpath("dummy_failure_manager.json")
             .read_text("utf-8")
         )
-
-    def get_request(self, job_name: str) -> RecoveryRequest:
-        pass
 
     async def is_recovering(self, job_name: str) -> bool:
         return False
@@ -384,7 +381,4 @@ class DummyFailureManager(FailureManager):
         output_token: Token,
         job_token: JobToken | None = None,
     ) -> None:
-        pass
-
-    async def update_request(self, job_name: str) -> None:
         pass

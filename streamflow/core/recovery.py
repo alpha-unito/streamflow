@@ -81,9 +81,6 @@ class FailureManager(SchemaEntity):
     async def close(self) -> None: ...
 
     @abstractmethod
-    def get_request(self, job_name: str) -> RecoveryRequest: ...
-
-    @abstractmethod
     async def is_recovering(self, job_name: str) -> bool: ...
 
     @abstractmethod
@@ -96,9 +93,6 @@ class FailureManager(SchemaEntity):
 
     @abstractmethod
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None: ...
-
-    @abstractmethod
-    async def update_request(self, job_name: str) -> None: ...
 
 
 class RecoveryRequest:
