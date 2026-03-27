@@ -80,7 +80,7 @@ async def test_data_locations(
         location=src_location,
     )
     dst_path = StreamFlowPath(
-        tempfile.gettempdir() if src_location.local else "/tmp",
+        tempfile.gettempdir() if dst_location.local else "/tmp",
         utils.random_name(),
         context=context,
         location=dst_location,
