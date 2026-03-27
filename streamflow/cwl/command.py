@@ -796,7 +796,6 @@ class CWLCommand(TokenizedCommand):
                                     inputs=job.inputs,
                                     streamflow_context=self.step.workflow.context,
                                     token_value=context["inputs"][key],
-                                    job=job,
                                 )
                             )
                             for key in job.inputs.keys()
