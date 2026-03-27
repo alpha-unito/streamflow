@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import TYPE_CHECKING
 
 from streamflow.core.context import SchemaEntity
@@ -81,9 +81,6 @@ class FailureManager(SchemaEntity):
     async def close(self) -> None: ...
 
     @abstractmethod
-    def get_request(self, job_name: str) -> RetryRequest: ...
-
-    @abstractmethod
     async def is_recovering(self, job_name: str) -> bool: ...
 
     @abstractmethod
@@ -97,19 +94,8 @@ class FailureManager(SchemaEntity):
     @abstractmethod
     async def recover(self, job: Job, step: Step, exception: BaseException) -> None: ...
 
-    @abstractmethod
-    async def update_request(self, job_name: str) -> None: ...
 
-
-class RecoveryPolicy(ABC):
-    def __init__(self, context: StreamFlowContext):
-        self.context: StreamFlowContext = context
-
-    @abstractmethod
-    async def recover(self, failed_job: Job, failed_step: Step) -> None: ...
-
-
-class RetryRequest:
+class RecoveryRequest:
     __slots__ = ("lock", "name", "version", "workflow")
 
     def __init__(self, name: str) -> None:

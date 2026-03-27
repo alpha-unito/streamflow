@@ -20,6 +20,14 @@ if TYPE_CHECKING:
 class DefaultCheckpointManager(CheckpointManager):
     def __init__(self, context: StreamFlowContext, checkpoint_dir: str | None = None):
         super().__init__(context)
+        if checkpoint_dir:
+            checkpoint_dir = (
+                checkpoint_dir
+                if os.path.isabs(checkpoint_dir)
+                else os.path.join(
+                    os.path.dirname(self.context.config["path"]), checkpoint_dir
+                )
+            )
         self.checkpoint_dir = checkpoint_dir or os.path.join(
             os.path.realpath(tempfile.gettempdir()),
             "streamflow",

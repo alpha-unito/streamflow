@@ -8,12 +8,11 @@ from typing import TypeVar
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import FailureHandlingException
-from streamflow.core.utils import contains_persistent_id, get_class_from_name
+from streamflow.core.utils import contains_persistent_id
 from streamflow.core.workflow import Token
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
-from streamflow.workflow.step import ExecuteStep, TransferStep
 from streamflow.workflow.token import JobToken
 
 T = TypeVar("T")
@@ -254,42 +253,6 @@ class GraphMapper:
                 return token_id
         return None
 
-    async def get_output_tokens(self, job_token_id: int) -> Iterable[int]:
-        execute_step_out_token_ids = set()
-        for token_id in self.dag_tokens.successors(job_token_id):
-            port_row = await self.context.database.get_port_from_token(token_id)
-            for step_id_row in await self.context.database.get_input_steps(
-                port_row["id"]
-            ):
-                step_row = await self.context.database.get_step(step_id_row["step"])
-                if issubclass(get_class_from_name(step_row["type"]), ExecuteStep):
-                    execute_step_out_token_ids.add(token_id)
-        return execute_step_out_token_ids
-
-    async def get_output_ports(self, job_token: JobToken) -> MutableSequence[str]:
-        port_names = set()
-        for port_name in self.dcg_ports.successors(
-            next(
-                port
-                for port, token_ids in self.port_tokens.items()
-                if job_token.persistent_id in token_ids
-            )
-        ):
-            # Get newest port
-            port_id = max(self.port_name_ids[port_name])
-            step_rows = await self.context.database.get_input_steps(port_id)
-            for step_row in await asyncio.gather(
-                *(
-                    asyncio.create_task(self.context.database.get_step(row["step"]))
-                    for row in step_rows
-                )
-            ):
-                if issubclass(
-                    get_class_from_name(step_row["type"]), (ExecuteStep, TransferStep)
-                ):
-                    port_names.add(port_name)
-        return list(port_names)
-
     async def get_step_ids(self, output_port_names: Iterable[str]) -> MutableSet[int]:
         port_ids = {
             min(self.port_name_ids[port_name])
@@ -362,27 +325,6 @@ class GraphMapper:
                     empty_ports.add(port_name)
         for port_name in empty_ports:
             self.remove_port(port_name)
-
-    def remove_token(self, token_id: int) -> None:
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Removing token {token_id}")
-        removed = {token_id, *self.dag_tokens.remove_node(token_id)}
-        for removed_token_id in removed:
-            if logger.isEnabledFor(logging.DEBUG) and removed_token_id != token_id:
-                logger.debug(
-                    f"Removed token with id {removed_token_id} by deleting token with id {token_id}"
-                )
-            self.token_availability.pop(token_id, None)
-            self.token_instances.pop(token_id, None)
-            # Remove ports
-            empty_ports = set()
-            for port_name, token_list in self.port_tokens.items():
-                if token_id in token_list:
-                    self.port_tokens[port_name].remove(token_id)
-                if len(self.port_tokens[port_name]) == 0:
-                    empty_ports.add(port_name)
-            for port_name in empty_ports:
-                self.remove_port(port_name)
 
     def replace_token(self, port_name: str, token: Token, is_available: bool) -> None:
         if (old_token_id := self.get_equal_token(port_name, token)) is None:

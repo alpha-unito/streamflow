@@ -9,7 +9,7 @@ from streamflow.config.validator import SfValidator
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.main import build_context
 from streamflow.persistence import SqliteDatabase
-from streamflow.recovery import DefaultCheckpointManager, DefaultFailureManager
+from streamflow.recovery import DefaultCheckpointManager, RollbackFailureManager
 from streamflow.scheduling import DefaultScheduler
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager
@@ -190,11 +190,11 @@ def test_schema_generation() -> None:
     """Check that the `streamflow schema` command generates a correct JSON Schema."""
     assert (
         hashlib.sha256(SfSchema().dump("v1.0", False).encode()).hexdigest()
-        == "72e8e03b1f70c7749cecb401aeed9bc30b351569232b0130d0a7fb57d5e50b5c"
+        == "45bcc8e3fd24d652831a59086dd194e03c51d52e908c9024db2892dd049bf334"
     )
     assert (
         hashlib.sha256(SfSchema().dump("v1.0", True).encode()).hexdigest()
-        == "9e2eb7f7bbb9e15a346d021bfab85c0a82d09c7e043be1551fa2542954548b68"
+        == "0ea70dd1a00d5fbc260cff527527bbb3d9c5b36db5d428febb5a453b928dd7c9"
     )
 
 
@@ -332,11 +332,11 @@ def test_sf_context() -> None:
         == config["deploymentManager"]["config"]["my_arg"]
     )
     assert (
-        cast(DefaultFailureManager, context.failure_manager).retry_delay
+        cast(RollbackFailureManager, context.failure_manager).retry_delay
         == config["failureManager"]["config"]["retry_delay"]
     )
     assert (
-        cast(DefaultFailureManager, context.failure_manager).max_retries
+        cast(RollbackFailureManager, context.failure_manager).max_retries
         == config["failureManager"]["config"]["max_retries"]
     )
     assert (
