@@ -40,7 +40,7 @@ The ``MatchingBindingFilter`` allows to define a list of ``filters``, where each
 
 If the same ``deployment`` is part of multiple ``filters`` with different conditions, it will be selected if it satisfies at least one of such conditions.
 
-The following snippet reports an example of ``MatchingBindingFilter`` configuration
+The following snippet reports an example of ``MatchingBindingFilter`` configuration:
 
 .. code-block:: yaml
 
