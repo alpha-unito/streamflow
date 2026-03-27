@@ -35,8 +35,42 @@ For LaTeX users, the following BibTeX entry can be used:
     }
 
 .. toctree::
-   :caption: Getting Started
+   :caption: User Guide
+   :maxdepth: 2
+   :titlesonly:
+
+   user-guide/installation
+   user-guide/quickstart
+   user-guide/writing-workflows
+   user-guide/configuring-deployments
+   user-guide/binding-workflows
+   user-guide/running-workflows
+   user-guide/inspecting-results
+   user-guide/advanced-patterns/index
+   user-guide/troubleshooting
+
+.. toctree::
+   :caption: Developer Guide
+   :maxdepth: 2
+   :titlesonly:
+
+   developer-guide/index
+
+.. toctree::
+   :caption: Reference
+   :maxdepth: 2
+   :titlesonly:
+
+   reference/cli/index
+   reference/configuration/index
+   reference/connectors/index
+   reference/cwl-docker-translators/index
+   reference/glossary
+
+.. toctree::
+   :caption: Getting Started (Legacy)
    :hidden:
+   :titlesonly:
 
    guide/install.rst
    guide/architecture.rst
@@ -47,24 +81,27 @@ For LaTeX users, the following BibTeX entry can be used:
    guide/inspect.rst
 
 .. toctree::
-   :caption: Advanced Features
+   :caption: Advanced Features (Legacy)
    :hidden:
+   :titlesonly:
 
    advanced/multiple-targets.rst
    advanced/port-targets.rst
    advanced/stacked-locations.rst
 
 .. toctree::
-   :caption: CWL Standard
+   :caption: CWL Standard (Legacy)
    :hidden:
+   :titlesonly:
 
    cwl/cwl-conformance.rst
    cwl/cwl-runner.rst
    cwl/docker-requirement.rst
 
 .. toctree::
-   :caption: Extension Points
+   :caption: Extension Points (Legacy)
    :hidden:
+   :titlesonly:
 
    ext/plugins.rst
    ext/binding-filter.rst
@@ -77,8 +114,9 @@ For LaTeX users, the following BibTeX entry can be used:
    ext/scheduling.rst
 
 .. toctree::
-   :caption: Connectors
+   :caption: Connectors (Legacy)
    :hidden:
+   :titlesonly:
 
    connector/container.rst
    connector/docker.rst
@@ -94,8 +132,9 @@ For LaTeX users, the following BibTeX entry can be used:
    connector/ssh.rst
 
 .. toctree::
-   :caption: CWL Docker Translators
+   :caption: CWL Docker Translators (Legacy)
    :hidden:
+   :titlesonly:
 
    cwl/docker/docker.rst
    cwl/docker/kubernetes.rst
