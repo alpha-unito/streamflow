@@ -801,7 +801,9 @@ class SlurmConnector(QueueManagerConnector):
             "|",
         ]
         if environment:
-            batch_command.extend([f"{k}={v}" for k, v in environment.items()])
+            batch_command.extend(
+                [f"{k}={shlex.quote(v)}" for k, v in environment.items()]
+            )
         batch_command.extend(
             [
                 "sbatch",
@@ -1012,7 +1014,9 @@ class PBSConnector(QueueManagerConnector):
             ]
         )
         if environment:
-            batch_command.extend([f"{k}={v}" for k, v in environment.items()])
+            batch_command.extend(
+                [f"{k}={shlex.quote(v)}" for k, v in environment.items()]
+            )
         batch_command.extend(
             [
                 "qsub",
@@ -1211,7 +1215,9 @@ class FluxConnector(QueueManagerConnector):
             "|",
         ]
         if environment:
-            batch_command.extend([f"{k}={v}" for k, v in environment.items()])
+            batch_command.extend(
+                [f"{k}={shlex.quote(v)}" for k, v in environment.items()]
+            )
         batch_command.extend(
             [
                 "flux",
