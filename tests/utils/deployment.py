@@ -263,7 +263,7 @@ async def get_openpbs_deployment_config(_context: StreamFlowContext):
             "services": {
                 "test": {
                     "destination": "workq",
-                    "resources": {"nodes": "2:ppn=1"},
+                    "resources": {"nodes": "1"},
                 }
             }
         },
