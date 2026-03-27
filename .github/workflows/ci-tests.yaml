@@ -105,7 +105,7 @@ jobs:
         run: ./cwl-conformance-test.sh
       - name: "Upload test results"
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
           report_type: test_results
@@ -278,7 +278,7 @@ jobs:
         run: tox
       - name: "Upload test results"
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
           report_type: test_results
@@ -306,7 +306,7 @@ jobs:
         with:
           pattern: "*-unit-tests"
       - name: "Upload coverage to Codecov"
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
