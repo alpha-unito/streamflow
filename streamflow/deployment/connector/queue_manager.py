@@ -966,7 +966,7 @@ class PBSConnector(QueueManagerConnector):
             "-Fjson",
         ]
         if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(f"Running command {command}")
+            logger.debug(f"Running command {' '.join(command)}")
         stdout, _ = await super().run(
             location=location,
             command=command,
@@ -997,7 +997,7 @@ class PBSConnector(QueueManagerConnector):
         stderr: int | str = asyncio.subprocess.STDOUT,
         timeout: int | None = None,
     ) -> str:
-        batch_command = ["sh", "-c"]
+        batch_command = []
         if workdir is not None:
             batch_command.extend(["cd", workdir, "&&"])
         resources = (
