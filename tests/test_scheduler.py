@@ -15,6 +15,7 @@ from streamflow.core.deployment import (
     FilterConfig,
     LocalTarget,
     Target,
+    WrapsConfig,
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, Storage
@@ -621,3 +622,118 @@ async def test_single_env_few_resources(context: StreamFlowContext) -> None:
             )
         )
         await context.deployment_manager.undeploy(config.name)
+
+
+@pytest.mark.asyncio
+async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
+    """
+    Test scheduling two jobs on two different deployments but share the same stacked location.
+    The underlying location has enough resources for only one job at a time.
+    """
+    num_jobs = 2
+    with InjectPlugin(plugin_name="parameterizable-hardware"):
+        param_config = await get_deployment_config(context, "parameterizable-hardware")
+        await context.deployment_manager.deploy(param_config)
+        _prepare_connector(context, num_jobs=1)
+    hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
+
+    targets = []
+    for i in range(num_jobs):
+        docker_config = await get_deployment_config(context, "docker")
+        docker_config.name += f"-{i}"
+        docker_config.wraps = WrapsConfig(
+            deployment=param_config.name,
+            service=get_service(context, param_config.type),
+        )
+        targets.append(
+            Target(
+                deployment=docker_config,
+                service=get_service(context, docker_config.type),
+                workdir=docker_config.workdir,
+            )
+        )
+    jobs = [
+        Job(
+            name=random_job_name(),
+            workflow_id=0,
+            inputs={},
+            input_directory=None,
+            output_directory=None,
+            tmp_directory=None,
+        )
+        for _ in range(num_jobs)
+    ]
+    try:
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    context.deployment_manager.deploy(target.deployment)
+                )
+                for target in targets
+            )
+        )
+        task_pending = [
+            asyncio.create_task(
+                context.scheduler.schedule(
+                    job, BindingConfig(targets=[target]), hardware_requirement
+                )
+            )
+            for job, target in zip(jobs, targets, strict=True)
+        ]
+        task_completed, task_pending = await asyncio.wait(
+            task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
+        )
+        assert len(task_pending) == 1
+        # Test errors were raised
+        for t in task_completed:
+            assert t.result() is None
+        assert context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
+        with pytest.raises(
+            WorkflowExecutionException,
+            match=f"Could not retrieve allocation for job {jobs[1].name}",
+        ):
+            context.scheduler.get_allocation(jobs[1].name)
+
+        # First job changes status to RUNNING and continue to keep all resources
+        # Testing that second job is not scheduled (timeout parameter necessary)
+        await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
+        _, task_pending = await asyncio.wait(task_pending, timeout=2)
+
+        assert len(task_pending) == 1
+        assert context.scheduler.get_allocation(jobs[0].name).status == Status.RUNNING
+        with pytest.raises(
+            WorkflowExecutionException,
+            match=f"Could not retrieve allocation for job {jobs[1].name}",
+        ):
+            context.scheduler.get_allocation(jobs[1].name)
+
+        # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
+        await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
+        _, task_pending = await asyncio.wait(
+            task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
+        )
+        assert len(task_pending) == 0
+        assert context.scheduler.get_allocation(jobs[0].name).status == Status.COMPLETED
+        assert context.scheduler.get_allocation(jobs[1].name).status == Status.FIREABLE
+
+        # Second job completed
+        await _notify_status_and_test(context, jobs[1], Status.RUNNING)
+        await _notify_status_and_test(context, jobs[1], Status.COMPLETED)
+    finally:
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    context.scheduler.notify_status(j.name, Status.COMPLETED)
+                )
+                for j in jobs
+            )
+        )
+        await asyncio.gather(
+            *(
+                asyncio.create_task(
+                    context.deployment_manager.undeploy(target.deployment.name)
+                )
+                for target in targets
+            )
+        )
+        await context.deployment_manager.undeploy(param_config.name)

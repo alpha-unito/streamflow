@@ -351,9 +351,15 @@ class DefaultScheduler(Scheduler):
                             else:
                                 hardware_requirements[key] |= hardware
                     async with contextlib.AsyncExitStack() as exit_stack:
-                        for conn in _get_connector_stack(connector):
+                        for conn in (
+                            stacked_connectors := _get_connector_stack(connector)
+                        ):
                             if conn.deployment_name not in self.locks:
                                 self.locks[conn.deployment_name] = asyncio.Lock()
+                            if conn.deployment_name not in self.wait_queues:
+                                self.wait_queues[conn.deployment_name] = (
+                                    asyncio.Condition()
+                                )
                             await exit_stack.enter_async_context(
                                 self.locks[conn.deployment_name]
                             )
@@ -411,12 +417,26 @@ class DefaultScheduler(Scheduler):
                                     f"on deployment {deployment_name}, "
                                     f"but only {len(valid_locations)} are available."
                                 )
-                try:
-                    await asyncio.wait_for(
-                        self.wait_queues[deployment].wait(), timeout=self.retry_interval
+                async with contextlib.AsyncExitStack() as exit_stack:
+                    for conn in stacked_connectors:
+                        if conn is not connector:
+                            await exit_stack.enter_async_context(
+                                self.wait_queues[conn.deployment_name]
+                            )
+                    finished, unfinished = await asyncio.wait(
+                        [
+                            asyncio.create_task(
+                                self.wait_queues[conn.deployment_name].wait(),
+                                name=conn.deployment_name,
+                            )
+                            for conn in stacked_connectors
+                        ],
+                        timeout=self.retry_interval,
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
-                except (TimeoutError, asyncio.exceptions.TimeoutError):
-                    if logger.isEnabledFor(logging.DEBUG):
+                    for t in unfinished:
+                        t.cancel()
+                    if not finished and logger.isEnabledFor(logging.DEBUG):
                         target_name = (
                             "/".join([target.deployment.name, target.service])
                             if target.service is not None
@@ -522,6 +542,12 @@ class DefaultScheduler(Scheduler):
                                 ].jobs.remove(job_name)
                         job_allocation.locations.clear()
                     self.wait_queues[connector.deployment_name].notify_all()
+            locations = job_allocation.locations
+            conn = connector
+            while locations := [loc.wraps for loc in locations if loc.stacked]:
+                conn = cast(ConnectorWrapper, conn).connector
+                async with (cond := self.wait_queues[conn.deployment_name]):
+                    cond.notify_all()
 
     async def schedule(
         self,
