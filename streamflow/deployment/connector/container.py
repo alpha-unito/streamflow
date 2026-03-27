@@ -91,7 +91,34 @@ async def _get_storage_from_binds(
         )
 
 
+def _parse_bind(bind: str) -> tuple[str, str, str]:
+    """
+    Parses a bind specification in the format: src[:dest[:opts]]
+    If `dest` is not specified, the same value as `src` is used.
+    If `opts` is not specified, it defaults to `rw`.
+
+    :param bind: The bind specification string.
+    :returns: A tuple containing (src, dest, opts).
+    """
+    parts = bind.split(":")
+    src = parts[0]
+    dest = parts[1] if len(parts) > 1 and parts[1] else src
+    opts = parts[2] if len(parts) > 2 and parts[2] else "rw"
+    return src, dest, opts
+
+
 def _parse_mount(mount: str) -> tuple[str, str, str]:
+    """
+    Parses a mount specification in the following formats:
+    - type=<bind|volume|tmpfs|...>[,src=<host-path>],dst=<container-path>[,<key>=<value>...]
+
+    `src` can have equivalent keys: src, source
+    `dst` can have equivalent keys: destination, dst, target
+
+    The function parses only type, src, and dst, skipping additional keys.
+    :param mount: The mount specification string.
+    :returns: A tuple containing (type, source, destination).
+    """
     type_, source, destination = None, None, None
     for part in mount.split(","):
         for src_prefix in ("src=", "source="):
@@ -104,7 +131,7 @@ def _parse_mount(mount: str) -> tuple[str, str, str]:
                 break
         if part.startswith("type="):
             type_ = part[5:]
-    if type_ is None or source is None or destination is None:
+    if type_ is None or destination is None:
         raise WorkflowExecutionException(f"Mount definition is incomplete: {mount}")
     return type_, source, destination
 
@@ -534,7 +561,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
     async def _prepare_volumes(
         self, binds: MutableSequence[str] | None, mounts: MutableSequence[str] | None
     ) -> None:
-        sources = [b.split(":", 2)[0] for b in binds] if binds is not None else []
+        sources = [_parse_bind(b)[0] for b in binds] if binds is not None else []
         for m in mounts if mounts is not None else []:
             mount_type, mount_source, _ = _parse_mount(m)
             if mount_type == "bind":
@@ -1827,7 +1854,7 @@ class SingularityConnector(ContainerConnector):
         if returncode == 0:
             binds = {}
             for b in self.bind or ():
-                source, dest = b.split(":", 2)
+                source, dest, _ = _parse_bind(b)
                 binds[dest] = source
             for m in self.mount or ():
                 type_, source, dest = _parse_mount(m)
