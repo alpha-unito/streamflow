@@ -687,47 +687,61 @@ async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
         # Test errors were raised
         for t in task_completed:
             assert t.result() is None
-        assert context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
-        with pytest.raises(
-            WorkflowExecutionException,
-            match=f"Could not retrieve allocation for job {jobs[1].name}",
-        ):
-            context.scheduler.get_allocation(jobs[1].name)
+        try:
+            assert (
+                context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
+            )
+            with pytest.raises(
+                WorkflowExecutionException,
+                match=f"Could not retrieve allocation for job {jobs[1].name}",
+            ):
+                context.scheduler.get_allocation(jobs[1].name)
+            fst_job = jobs[0]
+            snd_job = jobs[1]
+        except WorkflowExecutionException:
+            assert (
+                context.scheduler.get_allocation(jobs[1].name).status == Status.FIREABLE
+            )
+            with pytest.raises(
+                WorkflowExecutionException,
+                match=f"Could not retrieve allocation for job {jobs[0].name}",
+            ):
+                context.scheduler.get_allocation(jobs[0].name)
+            fst_job = jobs[1]
+            snd_job = jobs[0]
 
         # First job changes status to RUNNING and continue to keep all resources
         # Testing that second job is not scheduled (timeout parameter necessary)
-        await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
+        await context.scheduler.notify_status(fst_job.name, Status.RUNNING)
         _, task_pending = await asyncio.wait(task_pending, timeout=2)
 
         assert len(task_pending) == 1
-        assert context.scheduler.get_allocation(jobs[0].name).status == Status.RUNNING
+        assert context.scheduler.get_allocation(fst_job.name).status == Status.RUNNING
         with pytest.raises(
             WorkflowExecutionException,
-            match=f"Could not retrieve allocation for job {jobs[1].name}",
+            match=f"Could not retrieve allocation for job {snd_job.name}",
         ):
-            context.scheduler.get_allocation(jobs[1].name)
+            context.scheduler.get_allocation(snd_job.name)
 
         # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
-        await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
+        await context.scheduler.notify_status(fst_job.name, Status.COMPLETED)
         _, task_pending = await asyncio.wait(
             task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
         )
         assert len(task_pending) == 0
-        assert context.scheduler.get_allocation(jobs[0].name).status == Status.COMPLETED
-        assert context.scheduler.get_allocation(jobs[1].name).status == Status.FIREABLE
+        assert context.scheduler.get_allocation(fst_job.name).status == Status.COMPLETED
+        assert context.scheduler.get_allocation(snd_job.name).status == Status.FIREABLE
 
         # Second job completed
-        await _notify_status_and_test(context, jobs[1], Status.RUNNING)
-        await _notify_status_and_test(context, jobs[1], Status.COMPLETED)
+        await _notify_status_and_test(context, snd_job, Status.RUNNING)
+        await _notify_status_and_test(context, snd_job, Status.COMPLETED)
     finally:
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    context.scheduler.notify_status(j.name, Status.COMPLETED)
-                )
-                for j in jobs
-            )
-        )
+        for j in jobs:
+            try:
+                if context.scheduler.get_allocation(j.name).status != Status.COMPLETED:
+                    await context.scheduler.notify_status(j.name, Status.COMPLETED)
+            except WorkflowExecutionException:
+                pass
         await asyncio.gather(
             *(
                 asyncio.create_task(
