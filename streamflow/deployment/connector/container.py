@@ -109,8 +109,8 @@ def _parse_bind(bind: str) -> tuple[str, str, str]:
 
 def _parse_mount(mount: str) -> tuple[str, str, str]:
     """
-    Parses a mount specification in the following formats:
-    - type=<bind|volume|tmpfs|...>[,src=<host-path>],dst=<container-path>[,<key>=<value>...]
+    Parses a mount specification in the following format:
+    type=<bind|volume|tmpfs|...>[,src=<host-path>],dst=<container-path>[,<key>=<value>...]
 
     `src` can have equivalent keys: src, source
     `dst` can have equivalent keys: destination, dst, target
