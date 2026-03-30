@@ -143,14 +143,24 @@ def get_docker_compose_deployment_config() -> DeploymentConfig:
 
 
 def get_docker_deployment_config() -> DeploymentConfig:
+    host_path = os.path.join(
+        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
+    )
     return DeploymentConfig(
         name="alpine-docker",
         type="docker",
         config={
             "image": "alpine:3.16.2",
             "volume": [
-                f"{get_local_deployment_config().workdir}:/tmp/streamflow",
-                f"{get_local_deployment_config().workdir}:/home/output",
+                f"{host_path}:/tmp/streamflow",
+                f"{host_path}:/home/output",
+                f"{host_path}:/home/mydata:ro",
+                f"{host_path}",
+            ],
+            "mount": [
+                f"type=bind,src={host_path},dst=/home/workdir",
+                f'type=bind,source="{host_path}",target="/home/workdir1"',
+                f"type=bind,source={host_path},destination=/home/workdir2",
             ],
         },
         external=False,
@@ -270,12 +280,29 @@ def get_service(_context: StreamFlowContext, deployment_t: str) -> str | None:
 
 
 def get_singularity_deployment_config() -> DeploymentConfig:
+    host_path = os.path.join(
+        os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
+    )
     return DeploymentConfig(
         name="alpine-singularity",
         type="singularity",
-        config={"image": "docker://alpine:3.16.2"},
+        config={
+            "image": "docker://alpine:3.16.2",
+            "bind": [
+                f"{host_path}:/tmp/streamflow",
+                f"{host_path}:/home/output",
+                f"{host_path}:/home/mydata:ro",
+                f"{host_path}",
+            ],
+            "mount": [
+                f"type=bind,src={host_path},dst=/home/workdir",
+                f'type=bind,source="{host_path}",target="/home/workdir1"',
+                f"type=bind,source={host_path},destination=/home/workdir2",
+            ],
+        },
         external=False,
         lazy=False,
+        workdir="/tmp/streamflow",
     )
 
 

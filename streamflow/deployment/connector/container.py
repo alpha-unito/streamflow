@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import csv
+import io
 import json
 import logging
 import os
@@ -101,13 +103,13 @@ def _parse_bind(bind: str) -> tuple[str, str, str]:
     :returns: A tuple containing (src, dest, opts).
     """
     parts = bind.split(":")
-    src = parts[0]
-    dest = parts[1] if len(parts) > 1 and parts[1] else src
+    src = shlex.join(shlex.split(parts[0]))
+    dest = shlex.join(shlex.split(parts[1])) if len(parts) > 1 and parts[1] else src
     opts = parts[2] if len(parts) > 2 and parts[2] else "rw"
     return src, dest, opts
 
 
-def _parse_mount(mount: str) -> tuple[str, str, str]:
+def _parse_mount(mount: str) -> tuple[str, str | None, str]:
     """
     Parses a mount specification in the following format:
     type=<bind|volume|tmpfs|...>[,src=<host-path>],dst=<container-path>[,<key>=<value>...]
@@ -120,19 +122,21 @@ def _parse_mount(mount: str) -> tuple[str, str, str]:
     :returns: A tuple containing (type, source, destination).
     """
     type_, source, destination = None, None, None
-    for part in mount.split(","):
-        for src_prefix in ("src=", "source="):
-            if part.startswith(src_prefix):
-                source = part[len(src_prefix) :]
-                break
-        for dst_prefix in ("dst=", "dest=", "destination=", "target="):
-            if part.startswith(dst_prefix):
-                destination = part[len(dst_prefix) :]
-                break
-        if part.startswith("type="):
-            type_ = part[5:]
+    for part in next(csv.reader(io.StringIO(mount))):
+        key, value = part.split("=", 1)
+        match key:
+            case "dst" | "dest" | "destination" | "target":
+                destination = shlex.join(shlex.split(value))
+            case "src" | "source":
+                source = shlex.join(shlex.split(value))
+            case "type":
+                type_ = value
+            case _:  # Additional keys ignored
+                pass
     if type_ is None or destination is None:
-        raise WorkflowExecutionException(f"Mount definition is incomplete: {mount}")
+        raise WorkflowDefinitionException(f"Mount definition is incomplete: {mount}")
+    if type_ == "bind" and source is None:
+        raise WorkflowDefinitionException(f"Mount bind must have source path: {mount}")
     return type_, source, destination
 
 
