@@ -532,17 +532,17 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
             )
         location = next(iter(locations.values()))
         name = f"{location.name}/slurmctld"
-        return {
-            name: AvailableLocation(
-                name=name,
-                deployment=self.deployment_name,
-                service=service,
-                hostname=location.hostname,
-                slots=self.maxConcurrentJobs,
-                stacked=False,
-                wraps=location,
-            )
-        }
+        loc = AvailableLocation(
+            name=name,
+            deployment=self.deployment_name,
+            service=service,
+            hostname=location.hostname,
+            slots=self.maxConcurrentJobs,
+            stacked=False,
+            wraps=location,
+        )
+        loc.location.mounts = {"/": "/"}
+        return {name: loc}
 
     async def get_stream_reader(
         self, command: MutableSequence[str], location: ExecutionLocation
