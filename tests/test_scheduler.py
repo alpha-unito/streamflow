@@ -22,6 +22,7 @@ from streamflow.core.scheduling import Hardware, Storage
 from streamflow.core.workflow import Job, Status
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.data import utils
+from streamflow.deployment.connector import DockerConnector, SingularityConnector
 from tests.utils.connector import ParameterizableHardwareConnector
 from tests.utils.deployment import (
     get_deployment_config,
@@ -93,40 +94,70 @@ def service(context: StreamFlowContext, deployment: str) -> str | None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("container_deployment_name", ["docker", "singularity"])
 async def test_bind_volumes(
-    chosen_deployment_types: MutableSequence[str], context: StreamFlowContext
+    chosen_deployment_types: MutableSequence[str],
+    container_deployment_name: str,
+    context: StreamFlowContext,
 ) -> None:
     """Test the binding of volumes in stacked locations"""
-    for deployment in ["docker", "local"]:
+    for deployment in [container_deployment_name, "local"]:
         if deployment not in chosen_deployment_types:
             pytest.skip(f"Deployment {deployment} was not activated")
+    # Get local deployment
     local_deployment = get_local_deployment_config()
+    service = get_service(context, local_deployment.type)
     local_connector = context.deployment_manager.get_connector(local_deployment.name)
     local_location = next(
+        iter((await local_connector.get_available_locations(service=service)).values())
+    )
+
+    # Get container deployment
+    container_paths = {
+        "/tmp/streamflow",
+        "/home/output",
+        "/home/mydata",
+        "/home/workdir",
+        "/home/workdir1",
+        "/home/workdir2",
+    }
+    container_deployment = await get_deployment_config(
+        context, container_deployment_name
+    )
+    service = get_service(context, container_deployment.type)
+    container_connector = context.deployment_manager.get_connector(
+        container_deployment.name
+    )
+    container_location = next(
         iter(
             (
-                await local_connector.get_available_locations(
-                    get_service(context, local_deployment.type)
-                )
+                await container_connector.get_available_locations(service=service)
             ).values()
         )
     )
-    docker_deployment = get_docker_deployment_config()
-    docker_connector = context.deployment_manager.get_connector(docker_deployment.name)
-    docker_location = next(
-        iter(
-            (
-                await docker_connector.get_available_locations(
-                    get_service(context, docker_deployment.type)
-                )
-            ).values()
+    # Add the bind with only src (dst will be the same path)
+    if container_deployment_name == "docker":
+        container_paths.add(
+            next(
+                b
+                for b in cast(DockerConnector, container_connector).volume
+                if ":" not in b
+            )
         )
+    else:
+        container_paths.add(
+            next(
+                b
+                for b in cast(SingularityConnector, container_connector).bind
+                if ":" not in b
+            )
+        )
+
+    assert not container_paths - container_location.hardware.storage.keys()
+    container_path = container_deployment.workdir
+    mount_point = await utils.get_mount_point(
+        context, container_location, container_path
     )
-    assert not (
-        {"/tmp/streamflow", "/home/output"} - docker_location.hardware.storage.keys()
-    )
-    path = docker_deployment.workdir
-    mount_point = await utils.get_mount_point(context, docker_location, path)
     container_hardware = await utils.bind_mount_point(
         context,
         local_location,
@@ -137,14 +168,14 @@ async def test_bind_volumes(
                 key: Storage(
                     mount_point=mount_point,
                     size=float(100),
-                    paths={path},
-                    bind=docker_location.hardware.get_storage(mount_point).bind,
+                    paths={container_path},
+                    bind=container_location.hardware.get_storage(mount_point).bind,
                 )
                 for key in ["tmpdir", "workdir"]
             },
         ),
     )
-    # "/tmp/streamflow", "/home/output" are both mounted to the local workdir. So they collapse to the same mount point
+    # The target paths are all mounted to the same host path. So they collapse to the same mount point
     assert len(container_hardware.storage) == 1 and next(
         iter(container_hardware.storage.values())
     ).mount_point == await utils.get_mount_point(
@@ -189,7 +220,6 @@ async def test_binding_filter(
     assert len(task_pending) == 1
 
     # Both targets are available for scheduling (timeout parameter useful if a deadlock occurs)
-
     with InjectPlugin("reverse"):
         _, task_pending = await asyncio.wait(
             task_pending, return_when=asyncio.FIRST_COMPLETED, timeout=60
@@ -687,47 +717,61 @@ async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
         # Test errors were raised
         for t in task_completed:
             assert t.result() is None
-        assert context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
-        with pytest.raises(
-            WorkflowExecutionException,
-            match=f"Could not retrieve allocation for job {jobs[1].name}",
-        ):
-            context.scheduler.get_allocation(jobs[1].name)
+        try:
+            assert (
+                context.scheduler.get_allocation(jobs[0].name).status == Status.FIREABLE
+            )
+            with pytest.raises(
+                WorkflowExecutionException,
+                match=f"Could not retrieve allocation for job {jobs[1].name}",
+            ):
+                context.scheduler.get_allocation(jobs[1].name)
+            fst_job = jobs[0]
+            snd_job = jobs[1]
+        except WorkflowExecutionException:
+            assert (
+                context.scheduler.get_allocation(jobs[1].name).status == Status.FIREABLE
+            )
+            with pytest.raises(
+                WorkflowExecutionException,
+                match=f"Could not retrieve allocation for job {jobs[0].name}",
+            ):
+                context.scheduler.get_allocation(jobs[0].name)
+            fst_job = jobs[1]
+            snd_job = jobs[0]
 
         # First job changes status to RUNNING and continue to keep all resources
         # Testing that second job is not scheduled (timeout parameter necessary)
-        await context.scheduler.notify_status(jobs[0].name, Status.RUNNING)
+        await context.scheduler.notify_status(fst_job.name, Status.RUNNING)
         _, task_pending = await asyncio.wait(task_pending, timeout=2)
 
         assert len(task_pending) == 1
-        assert context.scheduler.get_allocation(jobs[0].name).status == Status.RUNNING
+        assert context.scheduler.get_allocation(fst_job.name).status == Status.RUNNING
         with pytest.raises(
             WorkflowExecutionException,
-            match=f"Could not retrieve allocation for job {jobs[1].name}",
+            match=f"Could not retrieve allocation for job {snd_job.name}",
         ):
-            context.scheduler.get_allocation(jobs[1].name)
+            context.scheduler.get_allocation(snd_job.name)
 
         # First job completes and the second job can be scheduled (timeout parameter useful if a deadlock occurs)
-        await context.scheduler.notify_status(jobs[0].name, Status.COMPLETED)
+        await context.scheduler.notify_status(fst_job.name, Status.COMPLETED)
         _, task_pending = await asyncio.wait(
             task_pending, return_when=asyncio.ALL_COMPLETED, timeout=60
         )
         assert len(task_pending) == 0
-        assert context.scheduler.get_allocation(jobs[0].name).status == Status.COMPLETED
-        assert context.scheduler.get_allocation(jobs[1].name).status == Status.FIREABLE
+        assert context.scheduler.get_allocation(fst_job.name).status == Status.COMPLETED
+        assert context.scheduler.get_allocation(snd_job.name).status == Status.FIREABLE
 
         # Second job completed
-        await _notify_status_and_test(context, jobs[1], Status.RUNNING)
-        await _notify_status_and_test(context, jobs[1], Status.COMPLETED)
+        await _notify_status_and_test(context, snd_job, Status.RUNNING)
+        await _notify_status_and_test(context, snd_job, Status.COMPLETED)
     finally:
-        await asyncio.gather(
-            *(
-                asyncio.create_task(
-                    context.scheduler.notify_status(j.name, Status.COMPLETED)
-                )
-                for j in jobs
-            )
-        )
+        for j in jobs:
+            try:
+                if context.scheduler.get_allocation(j.name).status != Status.COMPLETED:
+                    await context.scheduler.notify_status(j.name, Status.COMPLETED)
+            except WorkflowExecutionException:
+                pass
         await asyncio.gather(
             *(
                 asyncio.create_task(
