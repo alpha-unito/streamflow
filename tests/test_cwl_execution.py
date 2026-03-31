@@ -113,7 +113,7 @@ async def test_initial_workdir(
             port_target=None,
             port_type="string",
             cwl_element=get_cwl_parser(CWL_VERSION).CommandOutputParameter(
-                type_="string"
+                id=utils.random_name(), type_="string"
             ),
             context={"hints": {}, "requirements": {}, "version": CWL_VERSION},
         ),
