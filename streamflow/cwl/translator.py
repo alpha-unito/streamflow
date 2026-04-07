@@ -2919,17 +2919,26 @@ class CWLTranslator:
                     port_name, combinator_step.get_input_port(port_name)
                 )
         # Add skip ports if there is a condition without a loop
-        if cwl_condition and loop is None:
+        elif cwl_condition:
             for element_output in cwl_element.out:
                 global_name = utils.get_name(step_name, cwl_step_name, element_output)
                 port_name = posixpath.relpath(global_name, step_name)
-                skip_port = (
-                    external_output_ports[global_name]
-                    if loop is not None
-                    else internal_output_ports[global_name]
+                # Create cond forwarder to avoid propagating SKIPPED tokens
+                # within a subworkflow
+                cond_forwarder = workflow.create_step(
+                    cls=ForwardTransformer,
+                    name=global_name + "-output-forward-transformer",
                 )
+                cond_forwarder.add_output_port(
+                    port_name, internal_output_ports[global_name]
+                )
+                internal_output_ports[global_name] = workflow.create_port()
+                cond_forwarder.add_input_port(
+                    port_name, internal_output_ports[global_name]
+                )
+                # Point the skip port to the output port of the forwarder
                 cast(CWLConditionalStep, conditional_step).add_skip_port(
-                    port_name, skip_port
+                    port_name, cond_forwarder.get_output_port()
                 )
         # Update output ports with the internal ones
         self.output_ports |= internal_output_ports
