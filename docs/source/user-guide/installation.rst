@@ -1,0 +1,299 @@
+============
+Installation
+============
+
+.. meta::
+   :keywords: StreamFlow, installation, pip, docker, kubernetes, helm, setup
+   :description: Complete guide for installing StreamFlow via pip, Docker, or Kubernetes with Helm
+
+Overview
+========
+
+StreamFlow can be installed in multiple ways depending on your environment and use case. This guide covers all installation methods with verification steps and troubleshooting guidance.
+
+Installation Methods
+====================
+
+.. note::
+
+   **Supported Platforms:** StreamFlow supports Linux and macOS only. Windows is not supported.
+
+========================  ===============================  =============================
+Method                    Best For                         Prerequisites
+========================  ===============================  =============================
+:ref:`install-pip`        Most users, development          Python 3.10-3.14
+:ref:`install-docker`     Containerized environments       Docker
+:ref:`install-k8s`        Production deployments           Kubernetes cluster, Helm
+========================  ===============================  =============================
+
+.. _install-pip:
+
+Method 1: Install with pip
+===========================
+
+The StreamFlow module is available on `PyPI <https://pypi.org/project/streamflow/>`_ and can be installed using pip. This is the recommended method for most users.
+
+Prerequisites
+-------------
+
+* Python 3.10, 3.11, 3.12, 3.13, or 3.14
+* pip (Python package installer)
+
+Installation Command
+--------------------
+
+.. code-block:: bash
+   :caption: Install StreamFlow from PyPI
+
+   pip install streamflow
+
+For the latest development version from GitHub:
+
+.. code-block:: bash
+   :caption: Install from GitHub main branch
+
+   pip install git+https://github.com/alpha-unito/streamflow.git
+
+Verify Installation
+-------------------
+
+Check that StreamFlow is installed correctly:
+
+.. code-block:: bash
+
+   $ streamflow version
+
+   StreamFlow version 0.2.0.dev14
+
+Check available commands:
+
+.. code-block:: bash
+
+   $ streamflow --help
+
+   usage: streamflow [-h] {ext,list,plugin,prov,report,run,schema,version} ...
+
+   StreamFlow Command Line
+
+   positional arguments:
+     {ext,list,plugin,prov,report,run,schema,version}
+       ext                 Retrieve information on the available StreamFlow extensions
+       list                List the executed workflows
+       plugin              Retrieve information on the installed StreamFlow plugins
+       prov                Generate a provenance archive for an executed workflow
+       report              Generate a report for an executed workflow
+       run                 Execute a workflow
+       schema              Dump StreamFlow JSON Schema and exit
+       version             Only print StreamFlow version and exit
+
+Run Your First Workflow
+-----------------------
+
+After installation, you can execute workflows using the StreamFlow CLI:
+
+.. code-block:: bash
+   :caption: Execute a workflow
+
+   streamflow run /path/to/streamflow.yml
+
+For a complete first workflow example, see the :doc:`quickstart` guide.
+
+Upgrading
+---------
+
+To upgrade to the latest version:
+
+.. code-block:: bash
+   :caption: Upgrade StreamFlow
+
+   pip install --upgrade streamflow
+
+Uninstalling
+------------
+
+To remove StreamFlow:
+
+.. code-block:: bash
+   :caption: Uninstall StreamFlow
+
+   pip uninstall streamflow
+
+.. _install-docker:
+
+Method 2: Run with Docker
+==========================
+
+StreamFlow Docker images are available on `Docker Hub <https://hub.docker.com/r/alphaunito/streamflow>`_. This method is ideal for containerized environments or testing StreamFlow without installing Python dependencies.
+
+Prerequisites
+-------------
+
+* Docker Engine (version 20.10 or later recommended)
+* Docker daemon running
+
+Pull the Image
+--------------
+
+Download the latest StreamFlow Docker image:
+
+.. code-block:: bash
+   :caption: Pull latest StreamFlow image
+
+   docker pull --platform linux/amd64 alphaunito/streamflow:latest
+
+For a specific development version:
+
+.. code-block:: bash
+   :caption: Pull specific development version
+
+   docker pull --platform linux/amd64 alphaunito/streamflow:0.2.0.dev14
+
+.. note::
+
+   **Platform Limitation:** The Docker images are built for ``linux/amd64`` platform only.
+   
+   * **Apple Silicon / ARM64:** Use ``docker pull --platform linux/amd64 alphaunito/streamflow:latest`` or install from source with :ref:`install-source`
+   * **Available tags:** See `Docker Hub tags <https://hub.docker.com/r/alphaunito/streamflow/tags>`_ for all versions (stable releases use version tags like ``latest``, development versions use ``0.2.0.devN``)
+
+Verify Image
+------------
+
+List downloaded images:
+
+.. code-block:: bash
+
+   $ docker images | grep streamflow
+
+   alphaunito/streamflow   latest    abc123def456   2 days ago   500MB
+
+Run StreamFlow in Container
+----------------------------
+
+Execute StreamFlow commands in a container:
+
+.. code-block:: bash
+   :caption: Run StreamFlow in Docker container
+
+   docker run --rm --platform linux/amd64 alphaunito/streamflow:latest streamflow version
+
+To run a workflow, mount your workflow directory:
+
+.. code-block:: bash
+   :caption: Execute workflow with Docker
+
+   docker run --rm --platform linux/amd64 \
+     --mount type=bind,source="$(pwd)"/my-project,target=/streamflow/project \
+     --mount type=bind,source="$(pwd)"/results,target=/streamflow/results \
+     alphaunito/streamflow:latest \
+     streamflow run /streamflow/project/streamflow.yml
+
+Docker Compose Example
+----------------------
+
+For persistent setups, use Docker Compose:
+
+.. code-block:: yaml
+   :caption: docker-compose.yml
+
+   version: '3.8'
+   services:
+     streamflow:
+       image: alphaunito/streamflow:latest
+       volumes:
+         - ./my-project:/streamflow/project
+         - ./results:/streamflow/results
+       command: streamflow run /streamflow/project/streamflow.yml
+
+Run with Docker Compose:
+
+.. code-block:: bash
+   :caption: Start with Docker Compose
+
+   docker-compose up
+
+.. _install-k8s:
+
+Method 3: Deploy on Kubernetes with Helm
+=========================================
+
+For production deployments, StreamFlow can be deployed on Kubernetes using Helm charts.
+
+Prerequisites
+-------------
+
+* Kubernetes cluster (1.19 or later)
+* kubectl configured to access your cluster
+* Helm 3.x installed
+
+Verify Prerequisites
+--------------------
+
+.. code-block:: bash
+   :caption: Check Kubernetes connection
+
+   kubectl cluster-info
+
+.. code-block:: bash
+   :caption: Check Helm installation
+
+   helm version
+
+Using the Helm Chart
+---------------------
+
+StreamFlow provides a Helm chart template in the ``helm/chart`` directory of the repository. You can use this template to deploy StreamFlow as a Kubernetes Job.
+
+Clone the repository to access the Helm chart:
+
+.. code-block:: bash
+   :caption: Clone StreamFlow repository
+
+   git clone https://github.com/alpha-unito/streamflow.git
+   cd streamflow/helm/chart
+
+Install StreamFlow using the local chart:
+
+.. code-block:: bash
+   :caption: Install StreamFlow with Helm
+
+   helm install my-streamflow .
+
+With custom values:
+
+.. code-block:: bash
+   :caption: Install with custom configuration
+
+   helm install my-streamflow . -f custom-values.yaml
+
+Verify Deployment
+-----------------
+
+Check that StreamFlow pods are running:
+
+.. code-block:: bash
+
+   $ kubectl get pods -l app=streamflow
+
+   NAME                         READY   STATUS    RESTARTS   AGE
+   my-streamflow-xxxxx          1/1     Running   0          2m
+
+Uninstall
+---------
+
+To remove the StreamFlow deployment:
+
+.. code-block:: bash
+   :caption: Uninstall StreamFlow from Kubernetes
+
+   helm uninstall my-streamflow
+
+Troubleshooting
+===============
+
+For installation issues, see :doc:`troubleshooting`.
+
+Next Steps
+==========
+
+* :doc:`quickstart` - Get started in 10 minutes
+* :doc:`troubleshooting` - Installation help
