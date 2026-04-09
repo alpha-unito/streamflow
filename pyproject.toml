@@ -101,7 +101,7 @@ test = [
 typing = [
     "mypy==1.20.0",
     "pandas-stubs==2.3.3.260113",
-    "types-antlr4-python3-runtime==4.13.0.20260402",
+    "types-antlr4-python3-runtime==4.13.0.20260408",
     "types-cachetools==6.2.0.20260408",
     "types-jsonschema==4.26.0.20260408",
     "types-psutil==7.2.2.20260408",
