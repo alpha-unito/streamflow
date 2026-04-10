@@ -34,7 +34,7 @@ dependencies = [
     "antlr4-python3-runtime==4.13.2",
     "asyncssh==2.22.0",
     "bcrypt==5.0.0",
-    "cachebox==5.2.2",
+    "cachebox==5.2.3",
     "cwl-utils==0.41",
     "importlib-metadata==9.0.0",
     "Jinja2==3.1.6",
