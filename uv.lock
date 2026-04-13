@@ -948,7 +948,7 @@ wheels = [
 
 [[package]]
 name = "cwltool"
-version = "3.1.20260315121657"
+version = "3.2.20260411152607"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "argcomplete" },
@@ -958,6 +958,7 @@ dependencies = [
     { name = "prov" },
     { name = "psutil" },
     { name = "pydot" },
+    { name = "pygments" },
     { name = "pyparsing" },
     { name = "rdflib" },
     { name = "requests" },
@@ -967,9 +968,9 @@ dependencies = [
     { name = "spython" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c0/c8/43c2d12eba692f5362954c4ec838d332368717bdc2066b48b75f5d49b6a4/cwltool-3.1.20260315121657.tar.gz", hash = "sha256:170ebb1e1fd0e40a75678829bc5a8a008242f5d720d45608d27f705150241a7d", size = 1466609, upload-time = "2026-03-15T15:43:57.823Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/40/60686844e06043f6508995dbbebf7828ae7af439fe06d17593a14ca2314d/cwltool-3.2.20260411152607.tar.gz", hash = "sha256:4edf0f86dfe37a814ac647a92ce88f1b60559bc4f4980d00e95f3082ffa5502c", size = 1467893, upload-time = "2026-04-11T16:19:26.206Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/7b/3ef10e78d59527aac9f392b5b504afed0aea02808ac09a2816070749a261/cwltool-3.1.20260315121657-py3-none-any.whl", hash = "sha256:74f38578b05ee574c78af917953623676faa5ddeeaed9f4c8cf3a23e78985c3f", size = 1697059, upload-time = "2026-03-15T15:43:53.579Z" },
+    { url = "https://files.pythonhosted.org/packages/04/0e/3ff292fed94aa0dda9ed6fae4ccc1ec3a64599760bb6b71025a7cb849be5/cwltool-3.2.20260411152607-py3-none-any.whl", hash = "sha256:7087c194211c33b16f0e415b36cd5577fbdd52d0ca6d58e767896c57a802b473", size = 1699603, upload-time = "2026-04-11T16:19:20.659Z" },
 ]
 
 [[package]]
@@ -3449,7 +3450,7 @@ dev = [
     { name = "black", specifier = "==26.3.1" },
     { name = "codespell", specifier = "==2.4.2" },
     { name = "cwltest", specifier = "==2.6.20251216093331" },
-    { name = "cwltool", specifier = "==3.1.20260315121657" },
+    { name = "cwltool", specifier = "==3.2.20260411152607" },
     { name = "flake8-bugbear", specifier = "==25.11.29" },
     { name = "isort", specifier = "==8.0.1" },
     { name = "mypy", specifier = "==1.20.0" },
@@ -3484,7 +3485,7 @@ lint = [
 ]
 test = [
     { name = "cwltest", specifier = "==2.6.20251216093331" },
-    { name = "cwltool", specifier = "==3.1.20260315121657" },
+    { name = "cwltool", specifier = "==3.2.20260411152607" },
     { name = "pytest", specifier = "==9.0.3" },
     { name = "pytest-asyncio", specifier = "==1.3.0" },
     { name = "pytest-cov", specifier = "==7.1.0" },
