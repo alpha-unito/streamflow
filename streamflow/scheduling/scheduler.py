@@ -417,35 +417,35 @@ class DefaultScheduler(Scheduler):
                                     f"on deployment {deployment_name}, "
                                     f"but only {len(valid_locations)} are available."
                                 )
-                async with contextlib.AsyncExitStack() as exit_stack:
-                    for conn in stacked_connectors:
-                        if conn is not connector:
-                            await exit_stack.enter_async_context(
-                                self.wait_queues[conn.deployment_name]
-                            )
-                    finished, unfinished = await asyncio.wait(
-                        [
-                            asyncio.create_task(
-                                self.wait_queues[conn.deployment_name].wait(),
-                                name=conn.deployment_name,
-                            )
-                            for conn in stacked_connectors
-                        ],
-                        timeout=self.retry_interval,
-                        return_when=asyncio.FIRST_COMPLETED,
+                for conn in stacked_connectors:
+                    if conn.deployment_name != connector.deployment_name:
+                        await self.wait_queues[conn.deployment_name].acquire()
+                finished, unfinished = await asyncio.wait(
+                    [
+                        asyncio.create_task(
+                            self.wait_queues[conn.deployment_name].wait(),
+                            name=conn.deployment_name,
+                        )
+                        for conn in stacked_connectors
+                    ],
+                    timeout=self.retry_interval,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for t in finished:
+                    if t.get_name() != connector.deployment_name:
+                        self.wait_queues[t.get_name()].release()
+                for t in unfinished:
+                    t.cancel()
+                if not finished and logger.isEnabledFor(logging.DEBUG):
+                    target_name = (
+                        "/".join([target.deployment.name, target.service])
+                        if target.service is not None
+                        else target.deployment.name
                     )
-                    for t in unfinished:
-                        t.cancel()
-                    if not finished and logger.isEnabledFor(logging.DEBUG):
-                        target_name = (
-                            "/".join([target.deployment.name, target.service])
-                            if target.service is not None
-                            else target.deployment.name
-                        )
-                        logger.debug(
-                            f"No locations available for job {job_context.job.name} "
-                            f"in target {target_name}. Waiting {self.retry_interval} seconds."
-                        )
+                    logger.debug(
+                        f"No locations available for job {job_context.job.name} "
+                        f"in target {target_name}. Waiting {self.retry_interval} seconds."
+                    )
 
     async def _resolve_hardware_requirement(
         self,
