@@ -123,16 +123,18 @@ def _parse_mount(mount: str) -> tuple[str, str | None, str]:
     """
     type_, source, destination = None, None, None
     for part in next(csv.reader(io.StringIO(mount))):
-        key, value = part.split("=", 1)
-        match key:
-            case "dst" | "dest" | "destination" | "target":
-                destination = shlex.join(shlex.split(value))
-            case "src" | "source":
-                source = shlex.join(shlex.split(value))
-            case "type":
-                type_ = value
-            case _:  # Additional keys ignored
-                pass
+        key, sep, value = part.partition("=")
+        # If sep is not found, it is an additional boolean param (e.g., readonly)
+        if sep:
+            match key:
+                case "dst" | "dest" | "destination" | "target":
+                    destination = shlex.join(shlex.split(value))
+                case "src" | "source":
+                    source = shlex.join(shlex.split(value))
+                case "type":
+                    type_ = value
+                case _:  # Additional keys ignored
+                    pass
     if type_ is None or destination is None:
         raise WorkflowDefinitionException(f"Mount definition is incomplete: {mount}")
     if type_ == "bind" and source is None:
