@@ -1,8 +1,8 @@
 codespell:
-	codespell -w $(shell git ls-files | grep -v streamflow/cwl/antlr)
+	codespell -w $(shell git ls-files ':!streamflow/cwl/antlr')
 
 codespell-check:
-	codespell $(shell git ls-files | grep -v streamflow/cwl/antlr)
+	codespell $(shell git ls-files ':!streamflow/cwl/antlr')
 
 coverage.xml: testcov
 	coverage xml
@@ -22,7 +22,7 @@ format-check:
 	black --target-version py310 --diff --check streamflow tests
 
 pyupgrade:
-	pyupgrade --py3-only --py310-plus $(shell git ls-files | grep .py | grep -v streamflow/cwl/antlr)
+	pyupgrade --py3-only --py310-plus $(shell git ls-files '*.py' ':!streamflow/cwl/antlr')
 
 test:
 	python -m pytest -rs ${PYTEST_EXTRA}
