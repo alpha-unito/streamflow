@@ -4,11 +4,14 @@ import argparse
 import asyncio
 import logging
 import os
+import platform
 import sys
 import uuid
 from collections.abc import MutableMapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import uvloop
 
 from streamflow import report
 from streamflow.config.config import WorkflowConfig
@@ -253,17 +256,22 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
 def main(args: Sequence[str]) -> int:
     try:
         parsed_args = parser.parse_args(args)
+        if sys.platform != "win32" and platform.python_implementation() == "CPython":
+            logger.info("CPython detected: using uvloop EventLoop implementation")
+            engine = uvloop
+        else:
+            engine = asyncio
         match parsed_args.context:
             case "ext":
-                asyncio.run(_async_ext(parsed_args))
+                engine.run(_async_ext(parsed_args))
             case "list":
-                asyncio.run(_async_list(parsed_args))
+                engine.run(_async_list(parsed_args))
             case "plugin":
-                asyncio.run(_async_plugin(parsed_args))
+                engine.run(_async_plugin(parsed_args))
             case "prov":
-                asyncio.run(_async_prov(parsed_args))
+                engine.run(_async_prov(parsed_args))
             case "report":
-                asyncio.run(_async_report(parsed_args))
+                engine.run(_async_report(parsed_args))
             case "run":
                 if parsed_args.quiet:
                     logger.setLevel(logging.WARNING)
@@ -279,7 +287,7 @@ def main(args: Sequence[str]) -> int:
                     logger.handlers = []
                     logger.addHandler(colored_stream_handler)
                     logger.addFilter(HighlitingFilter())
-                asyncio.run(_async_run(parsed_args))
+                engine.run(_async_run(parsed_args))
             case "schema":
                 load_extensions()
                 print(SfSchema().dump(parsed_args.version, parsed_args.pretty))
