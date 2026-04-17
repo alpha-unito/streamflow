@@ -149,6 +149,7 @@ async def _get_token_value(
                             for i in range(int(kwargs.get("obj_len", 3)))
                         )
                     ),
+                    strict=True,
                 )
             )
         case _:

@@ -105,7 +105,7 @@ class MatchingBindingFilter(BindingFilter):
     ) -> MutableSequence[Target]:
         if (
             logger.isEnabledFor(logging.WARNING)
-            and not (step_name := get_job_step_name(job.name)) in self._evaluated_steps
+            and (step_name := get_job_step_name(job.name)) not in self._evaluated_steps
         ):
             self._evaluated_steps.add(step_name)
             if (target_deployments := {t.deployment.name for t in targets}) - (

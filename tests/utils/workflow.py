@@ -497,6 +497,7 @@ class BaseLoopConditionalStep(ConditionalStep):
                     for port_id in row["params"]["skip_ports"].values()
                 )
             ),
+            strict=True,
         ):
             step.add_skip_port(k, port)
         return step
@@ -993,7 +994,6 @@ class InjectorFailureTransferStep(TransferStep):
 
 
 class RecoveryTranslator:
-
     # Error types
     SOFT_ERROR = "soft_error"
     FAIL_STOP = "fail_stop"

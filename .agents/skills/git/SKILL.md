@@ -42,6 +42,8 @@ Commit message conventions for StreamFlow. The approval rule (never commit witho
 - Blank line separating subject from body
 - Explain *what* and *why*, not *how*
 - Wrap at 72 characters
+- Use backticks around package names, rule/error codes, file names,
+  and Python identifiers (functions, classes, variables, methods)
 - Reference issues: `Fixes #123`, `Closes #456`
 
 ## Examples

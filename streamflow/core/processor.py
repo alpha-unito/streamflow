@@ -177,8 +177,7 @@ class MapCommandOutputProcessor(CommandOutputProcessor):
         values = result.value
         if not isinstance(values, MutableSequence):
             raise ProcessorTypeError(
-                f"Invalid value {values} "
-                f"for {self.name} command output: expected list"
+                f"Invalid value {values} for {self.name} command output: expected list"
             )
         return ListToken(
             value=await asyncio.gather(
@@ -421,6 +420,7 @@ class ObjectTokenProcessor(TokenProcessor):
                             for p in self.processors.values()
                         )
                     ),
+                    strict=True,
                 )
             },
         }

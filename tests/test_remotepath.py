@@ -51,7 +51,7 @@ async def test_directory(
         await (path / "dir2").mkdir(mode=0o777)
         await (path / "file1.txt").write_text("StreamFlow")
         await (path / "file2.csv").write_text("StreamFlow")
-        async for dirpath, dirnames, filenames in path.walk(follow_symlinks=True):
+        async for _, dirnames, filenames in path.walk(follow_symlinks=True):
             assert len(dirnames) == 2
             assert "dir1" in dirnames
             assert "dir2" in dirnames

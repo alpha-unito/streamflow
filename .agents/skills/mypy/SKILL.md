@@ -27,7 +27,7 @@ version: 0.1.0
    ```
 4. **Quality check** — must pass:
    ```bash
-   uv run make format-check flake8 codespell-check typing
+   uv run make format-check codespell-check typing
    ```
 5. **Commit:** See `.agents/skills/git/SKILL.md`
 

@@ -18,7 +18,7 @@ Exclude `streamflow/cwl/antlr` from all checks. Use American English in all code
 
 ## Imports: Two Manual Rules
 
-Everything else is handled by isort automatically. Two things isort never does for you:
+Everything else is handled by ruff automatically. Two things ruff never does for you:
 
 **1. Always add `from __future__ import annotations`** as the first import in every file:
 
