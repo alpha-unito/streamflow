@@ -61,7 +61,7 @@ StreamFlow supports Python 3.10 to 3.14, so use compatible code features.
 
 The StreamFlow code style complies with [PEP 8](https://peps.python.org/pep-0008/). You can verify that your PR respects the code style with the following command
 ```bash
-uv run make format-check flake8 codespell-check
+uv run make format-check codespell-check
 ```
 
 You can also apply the suggested changes in bulk with the following command 

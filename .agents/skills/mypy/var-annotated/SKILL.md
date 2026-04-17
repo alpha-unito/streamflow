@@ -14,11 +14,7 @@ version: 0.1.0
 2. **Determine the concrete type** from usage, signatures, or similar patterns nearby
 3. **Check:** does the type need `Any` or other forbidden types? If YES → skip
 4. **Apply:** `variable: ConcreteType = value`
-5. **Validate** — must return no output:
-   ```bash
-   git diff | grep -E "Any\b|dict\[.*Any"
-   uv run make format-check flake8 codespell-check typing
-   ```
+5. **Validate & commit:** See `../SKILL.md` — General Workflow steps 3–5
 
 ## Fix Patterns
 

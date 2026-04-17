@@ -66,7 +66,7 @@ class Command(ABC):
         return {}
 
 
-class CommandOptions(ABC):
+class CommandOptions:
     pass
 
 

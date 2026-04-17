@@ -86,9 +86,8 @@ docs = [
 lint = [
     "black==26.3.1",
     "codespell==2.4.2",
-    "flake8-bugbear==25.11.29",
-    "isort==8.0.1",
-    "pyupgrade==3.21.2"
+    "pyupgrade==3.21.2",
+    "ruff==0.15.11"
 ]
 test = [
     "cwltest==2.6.20251216093331",
@@ -173,9 +172,14 @@ omit = [
 [tool.black]
 exclude = "streamflow/cwl/antlr"
 
-[tool.isort]
-profile = "black"
-skip = "streamflow/cwl/antlr"
+[tool.ruff]
+exclude = ["streamflow/cwl/antlr"]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "B", "I"]
+ignore = ["E203", "E501", "B904"]
 
 [tool.mypy]
 strict = true

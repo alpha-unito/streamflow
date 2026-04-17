@@ -22,12 +22,7 @@ For each function: can all parameters and the return type use concrete types?
    ```
 2. **Classify** each function as FIXABLE or UNFIXABLE (see above)
 3. **Add annotations** to FIXABLE functions only
-4. **Validate** — must return no output:
-   ```bash
-   git diff | grep -E "Any\b|MutableMapping\[.*Any|MutableSequence\[.*Any|list\[Any|dict\[.*Any"
-   uv run make format-check flake8 codespell-check typing
-   ```
-5. **Commit:** See `../../git/SKILL.md`
+4. **Validate & commit:** See `../SKILL.md` — General Workflow steps 3–5
 
 ## Key Patterns
 

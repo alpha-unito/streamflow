@@ -10,15 +10,12 @@ coverage.xml: testcov
 coverage-report: testcov
 	coverage report
 
-flake8:
-	flake8 --exclude streamflow/cwl/antlr streamflow tests
-
 format:
-	isort streamflow tests
+	ruff check --fix streamflow tests
 	black --target-version py310 streamflow tests
 
 format-check:
-	isort --check-only streamflow tests
+	ruff check streamflow tests
 	black --target-version py310 --diff --check streamflow tests
 
 pyupgrade:

@@ -11,7 +11,7 @@ Obtain explicit user permission before installing or updating any packages or de
 ### Git Commits
 
 Never create git commits without explicit user approval. Required sequence:
-1. Run `uv run make format-check flake8 codespell-check typing` — all must pass
+1. Run `uv run make format-check codespell-check typing` — all must pass
 2. Present the full commit message + `git diff --stat` + full `git diff`
 3. Ask explicitly for approval and wait — do not commit until confirmed
 
