@@ -25,7 +25,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.processor import (
     CommandOutputProcessor,
     MapCommandOutputProcessor,
@@ -670,9 +670,9 @@ class CWLCommand(TokenizedCommand):
             return timeout
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
             "base_command": self.base_command,
             "environment": self.environment,
@@ -1153,12 +1153,12 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "expression": self.expression,
             "processor": (
-                await self.processor.save(context)
+                await self.processor.save(database)
                 if self.processor is not None
                 else None
             ),
@@ -1194,9 +1194,9 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "token_type": self.token_type
         }
 
@@ -1326,9 +1326,9 @@ class CWLExpressionCommand(Command):
         return CWLCommandOutput(value=result, status=Status.COMPLETED, exit_code=0)
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "absolute_initial_workdir_allowed": self.absolute_initial_workdir_allowed,
             "expression": self.expression,
             "expression_lib": self.expression_lib,

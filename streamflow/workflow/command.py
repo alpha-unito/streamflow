@@ -9,7 +9,7 @@ from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowDefinitionException
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.workflow import (
     Command,
     CommandOptions,
@@ -52,10 +52,10 @@ class MapCommandTokenProcessor(CommandTokenProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "processor": await self.processor.save(context)
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
+            "processor": await self.processor.save(database)
         }
 
     def _update_options(self, options: CommandOptions, token: Token) -> CommandOptions:
@@ -139,16 +139,16 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "processors": {
                 name: token
                 for name, token in zip(
                     self.processors.keys(),
                     await asyncio.gather(
                         *(
-                            asyncio.create_task(t.save(context))
+                            asyncio.create_task(t.save(database))
                             for t in self.processors.values()
                         )
                     ),
@@ -235,12 +235,12 @@ class TokenizedCommand(Command, ABC):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "processors": await asyncio.gather(
                 *(
-                    asyncio.create_task(processor.save(context))
+                    asyncio.create_task(processor.save(database))
                     for processor in self.processors
                 )
             )
@@ -283,11 +283,11 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "processors": await asyncio.gather(
-                *(asyncio.create_task(t.save(context)) for t in self.processors)
+                *(asyncio.create_task(t.save(database)) for t in self.processors)
             )
         }
 

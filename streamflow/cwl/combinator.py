@@ -6,7 +6,7 @@ from typing import Any, cast
 from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Token
 from streamflow.cwl.workflow import CWLWorkflow
@@ -57,9 +57,9 @@ class ListMergeCombinator(DotProductCombinator):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "input_names": self.input_names,
             "output_name": self.output_name,
             "flatten": self.flatten,

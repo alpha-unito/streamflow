@@ -404,7 +404,7 @@ async def test_gather_order(context: StreamFlowContext) -> None:
     gather_step.add_input_port(output_name, step.get_output_port(output_name))
     gather_step.add_output_port(output_name, output_port)
     # Execute the workflow
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
     # Check results

@@ -15,7 +15,7 @@ from streamflow.core.deployment import (
     Target,
     WrapsConfig,
 )
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.workflow.port import ConnectorPort, JobPort
@@ -50,7 +50,7 @@ class DummyHardwareRequirement(HardwareRequirement):
         return DummyHardwareRequirement()
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {}
 
@@ -74,7 +74,7 @@ async def test_workflow(context: StreamFlowContext) -> None:
 async def test_port(context: StreamFlowContext) -> None:
     """Test saving and loading Port from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
-    await workflow.save(context)
+    await workflow.save(context.database)
     port = get_full_instantiation(cls_=Port, workflow=workflow, name="my_port")
     workflow.ports[port.name] = port
     await save_load_and_test(port, context)
@@ -84,7 +84,7 @@ async def test_port(context: StreamFlowContext) -> None:
 async def test_job_port(context: StreamFlowContext) -> None:
     """Test saving and loading JobPort from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
-    await workflow.save(context)
+    await workflow.save(context.database)
     port = get_full_instantiation(cls_=JobPort, workflow=workflow, name="my_port")
     workflow.ports[port.name] = port
     await save_load_and_test(port, context)
@@ -94,7 +94,7 @@ async def test_job_port(context: StreamFlowContext) -> None:
 async def test_connector_port(context: StreamFlowContext) -> None:
     """Test saving and loading ConnectorPort from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
-    await workflow.save(context)
+    await workflow.save(context.database)
     port = get_full_instantiation(cls_=ConnectorPort, workflow=workflow, name="my_port")
     workflow.ports[port.name] = port
     await save_load_and_test(port, context)
@@ -105,7 +105,7 @@ async def test_deploy_step(context: StreamFlowContext) -> None:
     """Test saving and loading DeployStep from database"""
     workflow = Workflow(context=context, name=utils.random_name(), config={})
     connector_port = workflow.create_port(cls=ConnectorPort)
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     deployment_config = get_docker_deployment_config()
     step = get_full_instantiation(
@@ -145,7 +145,7 @@ async def test_schedule_step(context: StreamFlowContext) -> None:
         target.deployment.name: workflow.create_port(ConnectorPort)
         for target in binding_config.targets
     }
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     step = get_full_instantiation(
         cls_=ScheduleStep,
@@ -168,7 +168,7 @@ async def test_schedule_step(context: StreamFlowContext) -> None:
 async def test_execute_step(context: StreamFlowContext) -> None:
     """Test saving and loading ExecuteStep from database"""
     workflow, (job_port,) = await create_workflow(context, type_="default", num_port=1)
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     step = get_full_instantiation(
         cls_=ExecuteStep,
@@ -184,7 +184,7 @@ async def test_execute_step(context: StreamFlowContext) -> None:
 async def test_gather_step(context: StreamFlowContext) -> None:
     """Test saving and loading GatherStep from database"""
     workflow, (port,) = await create_workflow(context, type_="default", num_port=1)
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     step = get_full_instantiation(
         cls_=GatherStep,
@@ -201,7 +201,7 @@ async def test_gather_step(context: StreamFlowContext) -> None:
 async def test_scatter_step(context: StreamFlowContext) -> None:
     """Test saving and loading ScatterStep from database"""
     workflow, (port,) = await create_workflow(context, type_="default", num_port=1)
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     step = get_full_instantiation(
         cls_=ScatterStep,
@@ -229,7 +229,7 @@ async def test_combinator_step(context: StreamFlowContext, combinator_t: str) ->
     with appropriate Combinator classes from database
     """
     workflow = Workflow(context=context, name=utils.random_name(), config={})
-    await workflow.save(context)
+    await workflow.save(context.database)
     step = get_combinator_step(workflow, combinator_t, inner_combinator=True)
     await save_load_and_test(step, context)
 

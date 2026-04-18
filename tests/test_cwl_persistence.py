@@ -213,7 +213,7 @@ async def test_cwl_command(context: StreamFlowContext, processor_t: str) -> None
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     job_port = workflow.create_port(JobPort)
-    await workflow.save(context)
+    await workflow.save(context.database)
     match processor_t:
         case "none":
             processors = None
@@ -278,7 +278,7 @@ async def test_cwl_expression_command(context: StreamFlowContext) -> None:
         context=context, name=utils.random_name(), config={}, cwl_version=CWL_VERSION
     )
     job_port = workflow.create_port(JobPort)
-    await workflow.save(context)
+    await workflow.save(context.database)
     step = workflow.create_step(
         cls=ExecuteStep, name=utils.random_name(), job_port=job_port
     )
@@ -309,7 +309,7 @@ async def test_cwl_execute_step(context: StreamFlowContext, output_type: str) ->
     job_port = workflow.create_port(JobPort)
     if output_type != "no_output":
         port = workflow.create_port()
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     step = get_full_instantiation(
         cls_=CWLExecuteStep,
@@ -461,7 +461,7 @@ async def test_cwl_token_transformer(
     port = workflow.create_port()
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
-    await workflow.save(context)
+    await workflow.save(context.database)
     processor = None
     match processor_t:
         case "primitive":
@@ -521,7 +521,7 @@ async def test_value_from_transformer(context: StreamFlowContext) -> None:
     port = workflow.create_port()
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     step = get_full_instantiation(
         cls_=ValueFromTransformer,
@@ -547,7 +547,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext) -> None:
     port_name = utils.random_name()
     if workflow.format_graph is None:
         workflow.format_graph = Graph()
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     step = get_full_instantiation(
         cls_=LoopValueFromTransformer,
@@ -700,7 +700,7 @@ async def test_cwl_loop_conditional_step(context: StreamFlowContext) -> None:
 async def test_cwl_transfer_step(context: StreamFlowContext) -> None:
     """Test saving and loading CWLTransferStep from database"""
     workflow, (job_port,) = await create_workflow(context=context, num_port=1)
-    await workflow.save(context)
+    await workflow.save(context.database)
     step = get_full_instantiation(
         cls_=CWLTransferStep,
         name=posixpath.join(utils.random_name(), "__transfer__", "test"),
@@ -717,7 +717,7 @@ async def test_cwl_transfer_step(context: StreamFlowContext) -> None:
 async def test_cwl_input_injector_step(context: StreamFlowContext) -> None:
     """Test saving and loading CWLInputInjectorStep from database"""
     workflow, (job_port,) = await create_workflow(context=context, num_port=1)
-    await workflow.save(context)
+    await workflow.save(context.database)
     step = get_full_instantiation(
         cls_=CWLInputInjectorStep,
         name=posixpath.join(utils.random_name(), "-injector"),
@@ -763,7 +763,7 @@ async def test_cwl_schedule_step(context: StreamFlowContext) -> None:
         target.deployment.name: workflow.create_port(ConnectorPort)
         for target in binding_config.targets
     }
-    await workflow.save(context)
+    await workflow.save(context.database)
     step = get_full_instantiation(
         cls_=CWLScheduleStep,
         name=posixpath.join(utils.random_name(), "__schedule__"),

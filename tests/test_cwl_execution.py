@@ -182,7 +182,7 @@ async def test_initial_workdir(
                 raise ValueError(f"Invalid token_type: {token_type}")
         await inject_tokens([token_value], in_port, context)
         # Execute workflow
-        await workflow.save(context)
+        await workflow.save(context.database)
         executor = StreamFlowExecutor(workflow)
         await executor.run()
         token = next(iter(execute_step.get_output_port(out_port_name).token_list))

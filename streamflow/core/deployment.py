@@ -13,7 +13,11 @@ from typing_extensions import Self
 from streamflow.core import utils
 from streamflow.core.config import Config
 from streamflow.core.context import SchemaEntity
-from streamflow.core.persistence import DatabaseLoadingContext, PersistableEntity
+from streamflow.core.persistence import (
+    Database,
+    DatabaseLoadingContext,
+    PersistableEntity,
+)
 
 if TYPE_CHECKING:
     from typing import Any
@@ -273,19 +277,19 @@ class DeploymentConfig(PersistableEntity):
         loading_context.add_deployment(persistent_id, obj)
         return obj
 
-    async def save(self, context: StreamFlowContext) -> None:
+    async def save(self, database: Database) -> None:
         async with self.persistence_lock:
             if not self.persistent_id:
-                self.persistent_id = await context.database.add_deployment(
+                self.persistent_id = await database.add_deployment(
                     name=self.name,
                     type=self.type,
                     config=self.config,
                     external=self.external,
                     lazy=self.lazy,
-                    scheduling_policy=await self.scheduling_policy.save(context),
+                    scheduling_policy=await self.scheduling_policy.save(database),
                     workdir=self.workdir,
                     wraps=(
-                        await self.wraps.save(context)
+                        await self.wraps.save(database)
                         if self.wraps is not None
                         else None
                     ),
@@ -317,10 +321,10 @@ class FilterConfig(PersistableEntity):
         loading_context.add_filter(persistent_id, obj)
         return obj
 
-    async def save(self, context: StreamFlowContext) -> None:
+    async def save(self, database: Database) -> None:
         async with self.persistence_lock:
             if not self.persistent_id:
-                self.persistent_id = await context.database.add_filter(
+                self.persistent_id = await database.add_filter(
                     name=self.name,
                     type=self.type,
                     config=self.config,
@@ -350,7 +354,7 @@ class Target(PersistableEntity):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {}
 
@@ -383,14 +387,14 @@ class Target(PersistableEntity):
         loading_context.add_target(persistent_id, obj)
         return obj
 
-    async def save(self, context: StreamFlowContext) -> None:
-        await self.deployment.save(context)
+    async def save(self, database: Database) -> None:
+        await self.deployment.save(database)
         async with self.persistence_lock:
             if not self.persistent_id:
-                self.persistent_id = await context.database.add_target(
+                self.persistent_id = await database.add_target(
                     deployment=self.deployment.persistent_id,
                     type=type(self),
-                    params=await self._save_additional_params(context),
+                    params=await self._save_additional_params(database),
                     locations=self.locations,
                     service=self.service,
                     workdir=self.workdir,
@@ -470,7 +474,7 @@ class WrapsConfig:
     ) -> Self:
         return cls(deployment=row["deployment"], service=row.get("service"))
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, database: Database):
         row = {"deployment": self.deployment}
         if self.service is not None:
             row["service"] = self.service

@@ -289,7 +289,7 @@ class RollbackFailureManager(FailureManager):
         # Execute
         if len(new_workflow.steps) == 0:
             raise FailureHandlingException("Empty recovery workflow")
-        await new_workflow.save(new_workflow.context)
+        await new_workflow.save(new_workflow.context.database)
         executor = StreamFlowExecutor(new_workflow)
         await executor.run()
 

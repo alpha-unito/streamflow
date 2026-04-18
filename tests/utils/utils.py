@@ -167,7 +167,7 @@ async def create_and_run_step(
     # Inject inputs
     await inject_tokens(token_list, in_port, context, save_input_token)
     # Save the workflow in the database and execute
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
     return step
@@ -202,7 +202,7 @@ async def duplicate_and_test(
     test_are_eq: bool = True,
 ) -> tuple[S, W, S] | tuple[None, None, None]:
     step = workflow.create_step(cls=step_cls, **kwargs_step)
-    await workflow.save(context)
+    await workflow.save(context.database)
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
     check_persistent_id(workflow, new_workflow, step, new_step)
     if test_are_eq:
@@ -236,7 +236,7 @@ async def duplicate_elements(
     for port in workflow.ports.values():
         new_port = await loading_context.load_port(context, port.persistent_id)
         new_workflow.ports[new_port.name] = new_port
-    await new_workflow.save(context)
+    await new_workflow.save(context.database)
     return new_workflow, new_step
 
 
@@ -248,7 +248,7 @@ async def inject_tokens(
 ) -> None:
     for t in token_list:
         if save_input_token and not isinstance(t, TerminationToken):
-            await t.save(context, in_port.persistent_id)
+            await t.save(context.database, in_port.persistent_id)
         in_port.put(t)
     in_port.put(TerminationToken())
 

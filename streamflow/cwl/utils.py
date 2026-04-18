@@ -25,6 +25,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
+from streamflow.core.persistence import Database
 from streamflow.core.scheduling import Hardware
 from streamflow.core.utils import get_tag, random_name
 from streamflow.core.workflow import Job, Token, Workflow
@@ -1393,7 +1394,7 @@ class SecondaryFile:
     def __hash__(self) -> int:
         return hash(self.pattern)
 
-    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+    async def save(self, database: Database) -> MutableMapping[str, Any]:
         return {"pattern": self.pattern, "required": self.required}
 
 

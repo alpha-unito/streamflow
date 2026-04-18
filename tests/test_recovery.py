@@ -240,7 +240,7 @@ async def test_execute(
             )
         )
         input_ports = execute_steps[-1].get_output_ports()
-    await workflow.save(fault_tolerant_context)
+    await workflow.save(fault_tolerant_context.database)
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
     # Check workflow output token
@@ -342,7 +342,7 @@ async def test_exceed_max_retries_poison_pill(
         failure_type=RecoveryTranslator.FAIL_STOP,
     )
 
-    await workflow.save(fault_tolerant_context)
+    await workflow.save(fault_tolerant_context.database)
     executor = StreamFlowExecutor(workflow)
     with pytest.raises(WorkflowExecutionException):
         await executor.run()
@@ -406,7 +406,7 @@ async def test_resume_loop_combinator_step(
             context=context,
         )
         combinator_step.add_output_port(port_name, workflow.create_port())
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
     # Duplicate the combinator and resume it
@@ -453,7 +453,7 @@ async def test_resume_loop_combinator_step(
             for name, port in combinator_step.get_output_ports().items()
         }
     )
-    await new_workflow.save(context)
+    await new_workflow.save(context.database)
     executor = StreamFlowExecutor(new_workflow)
     await executor.run()
     # Test input values                            -  New_combinator_step port tags
@@ -496,7 +496,7 @@ async def test_resume_scatter_step(context: StreamFlowContext) -> None:
         in_port=scatter_step.get_input_port(input_name),
         context=context,
     )
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
     # Duplicate the step and resume it
@@ -523,7 +523,7 @@ async def test_resume_scatter_step(context: StreamFlowContext) -> None:
         in_port=new_scatter_step.get_input_port(input_name),
         context=context,
     )
-    await new_workflow.save(context)
+    await new_workflow.save(context.database)
     executor = StreamFlowExecutor(new_workflow)
     await executor.run()
     # Check size_port
@@ -619,7 +619,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext) -> None:
         workflow=workflow,
     )
     # Run
-    await workflow.save(fault_tolerant_context)
+    await workflow.save(fault_tolerant_context.database)
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
     result_token = step.get_output_port(output_name).token_list
@@ -720,7 +720,7 @@ async def test_loop(
         },
         {"test"},
     )
-    await workflow.save(fault_tolerant_context)
+    await workflow.save(fault_tolerant_context.database)
     executor = StreamFlowExecutor(workflow)
     _ = await executor.run()
     assert len(output_ports) == 1

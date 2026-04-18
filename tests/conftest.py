@@ -243,7 +243,7 @@ async def save_load_and_test(
     elem: PersistableEntity, context: StreamFlowContext
 ) -> None:
     assert elem.persistent_id is None
-    await elem.save(context)
+    await elem.save(context.database)
     assert elem.persistent_id is not None
 
     # Created a new DefaultDatabaseLoadingContext to have the objects fetched from the database

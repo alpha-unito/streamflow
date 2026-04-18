@@ -32,7 +32,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
@@ -152,7 +152,7 @@ class BaseStep(Step, ABC):
             raise WorkflowDefinitionException(
                 f"Token already has an id: {token.persistent_id}"
             )
-        await token.save(self.workflow.context, port_id=port.persistent_id)
+        await token.save(self.workflow.context.database, port_id=port.persistent_id)
         if input_token_ids:
             await self.workflow.context.database.add_provenance(
                 inputs=input_token_ids, token=token.persistent_id
@@ -206,7 +206,7 @@ class Combinator(ABC):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {
             "name": self.name,
@@ -216,7 +216,7 @@ class Combinator(ABC):
                     self.combinators.keys(),
                     await asyncio.gather(
                         *(
-                            asyncio.create_task(comb.save(context))
+                            asyncio.create_task(comb.save(database))
                             for comb in self.combinators.values()
                         )
                     ),
@@ -286,10 +286,10 @@ class Combinator(ABC):
         """
         return
 
-    async def save(self, context: StreamFlowContext) -> MutableMapping[str, Any]:
+    async def save(self, database: Database) -> MutableMapping[str, Any]:
         return {
             "type": utils.get_class_fullname(type(self)),
-            "params": await self._save_additional_params(context),
+            "params": await self._save_additional_params(database),
         }
 
     def _add_to_list(
@@ -352,10 +352,10 @@ class CombinatorStep(BaseStep):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
-            "combinator": await self.combinator.save(context)
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
+            "combinator": await self.combinator.save(database)
         }
 
     async def run(self) -> None:
@@ -533,10 +533,10 @@ class DeployStep(BaseStep):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        await self.deployment_config.save(context)
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        await self.deployment_config.save(database)
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "deployment_config": self.deployment_config.persistent_id,
             "connector_port": self.get_output_port(
                 self.deployment_config.name
@@ -807,9 +807,9 @@ class ExecuteStep(BaseStep):
         return job_status
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "job_port": self.get_input_port("__job__").persistent_id,
             "output_connectors": self.output_connectors,
             "output_processors": {
@@ -818,14 +818,14 @@ class ExecuteStep(BaseStep):
                     self.output_processors.keys(),
                     await asyncio.gather(
                         *(
-                            asyncio.create_task(p.save(context))
+                            asyncio.create_task(p.save(database))
                             for p in self.output_processors.values()
                         )
                     ),
                     strict=True,
                 )
             },
-            "command": await self.command.save(context) if self.command else None,
+            "command": await self.command.save(database) if self.command else None,
         }
 
     def add_output_port(
@@ -978,10 +978,10 @@ class GatherStep(BaseStep):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        await self.get_size_port().save(context)
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        await self.get_size_port().save(database)
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "depth": self.depth,
             "size_port": self.get_size_port().persistent_id,
         }
@@ -1084,7 +1084,7 @@ class GatherStep(BaseStep):
                     value=len(self.token_map[key]), tag=key, recoverable=True
                 )
                 await self.size_map[key].save(
-                    self.workflow.context, size_port.persistent_id
+                    self.workflow.context.database, size_port.persistent_id
                 )
 
                 await self._gather(key)
@@ -1114,9 +1114,9 @@ class InputInjectorStep(BaseStep, ABC):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "job_port": self.get_input_port("__job__").persistent_id
         }
 
@@ -1153,7 +1153,7 @@ class InputInjectorStep(BaseStep, ABC):
                 # Save workflow input
                 if not token.persistent_id:
                     await token.save(
-                        self.workflow.context,
+                        self.workflow.context.database,
                         port_id=self.get_input_port(key_port).persistent_id,
                     )
                 # Retrieve job
@@ -1477,11 +1477,11 @@ class ScheduleStep(BaseStep):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        await self.get_output_port("__job__").save(context)
+        await self.get_output_port("__job__").save(database)
         params = cast(
-            dict[str, Any], await super()._save_additional_params(context)
+            dict[str, Any], await super()._save_additional_params(database)
         ) | {
             "connector_ports": {
                 name: self.get_input_port(name).persistent_id
@@ -1489,7 +1489,7 @@ class ScheduleStep(BaseStep):
                 if name.startswith("__connector__")
             },
             "job_port": self.get_output_port("__job__").persistent_id,
-            "binding_config": await self.binding_config.save(context),
+            "binding_config": await self.binding_config.save(database),
             "job_prefix": self.job_prefix,
             "input_directory": self.input_directory,
             "output_directory": self.output_directory,
@@ -1497,7 +1497,7 @@ class ScheduleStep(BaseStep):
         }
         if self.hardware_requirement:
             params["hardware_requirement"] = await self.hardware_requirement.save(
-                context
+                database
             )
         return params
 
@@ -1730,10 +1730,10 @@ class ScatterStep(BaseStep):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        await self.get_size_port().save(context)
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        await self.get_size_port().save(database)
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "size_port": self.get_size_port().persistent_id
         }
 
@@ -1861,9 +1861,9 @@ class TransferStep(BaseStep, ABC):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "job_port": self.get_input_port("__job__").persistent_id
         }
 

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
     from streamflow.core.context import SchemaEntity, StreamFlowContext
     from streamflow.core.deployment import FilterConfig, Target
-    from streamflow.core.persistence import DatabaseLoadingContext
+    from streamflow.core.persistence import Database, DatabaseLoadingContext
 
     SchemaEntityType = TypeVar("SchemaEntityType", bound=SchemaEntity)
 
@@ -38,7 +38,7 @@ class Config:
     ) -> Self:
         return cls(name=row["name"], type=row["type"], config=row["config"])
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, database: Database):
         return {"name": self.name, "type": self.type, "config": self.config}
 
 
@@ -75,10 +75,10 @@ class BindingConfig:
             ),
         )
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, database: Database):
         await asyncio.gather(
-            *(asyncio.create_task(t.save(context)) for t in self.targets),
-            *(asyncio.create_task(f.save(context)) for f in self.filters),
+            *(asyncio.create_task(t.save(database)) for t in self.targets),
+            *(asyncio.create_task(f.save(database)) for f in self.filters),
         )
         return {
             "targets": [t.persistent_id for t in self.targets],

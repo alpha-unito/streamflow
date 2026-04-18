@@ -58,7 +58,7 @@ async def test_combinator_step(context: StreamFlowContext, combinator_t: str) ->
     step.add_input_port(port_name_2, in_port_2)
     step.add_output_port(port_name_2, out_port_2)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
     check_persistent_id(workflow, new_workflow, step, new_step)
 
@@ -75,7 +75,7 @@ async def test_deploy_step(context: StreamFlowContext) -> None:
     """Test saving DeployStep on database and re-load it in a new Workflow"""
     workflow, _ = await create_workflow(context, num_port=0)
     step = create_deploy_step(workflow)
-    await workflow.save(context)
+    await workflow.save(context.database)
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
     check_persistent_id(workflow, new_workflow, step, new_step)
 
@@ -110,7 +110,7 @@ async def test_execute_step(context: StreamFlowContext) -> None:
         ),
     )
     step.add_input_port(in_port_name, in_port)
-    await workflow.save(context)
+    await workflow.save(context.database)
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
     check_persistent_id(workflow, new_workflow, step, new_step)
 
@@ -171,7 +171,7 @@ async def test_schedule_step(context: StreamFlowContext) -> None:
             ],
         ),
     )
-    await workflow.save(context)
+    await workflow.save(context.database)
     new_workflow, new_step = await duplicate_elements(step, workflow, context)
     check_persistent_id(workflow, new_workflow, step, new_step)
 
@@ -193,14 +193,14 @@ async def test_port(context: StreamFlowContext, port_cls: type[Port]) -> None:
     """Test saving Port on database and re-load it in a new Workflow"""
     workflow, ports = await create_workflow(context)
     port = workflow.create_port(port_cls)
-    await workflow.save(context)
+    await workflow.save(context.database)
     assert workflow.persistent_id
     assert port.persistent_id
 
     loading_context = WorkflowBuilder(deep_copy=False)
     new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
     new_port = await loading_context.load_port(context, port.persistent_id)
-    await new_workflow.save(context)
+    await new_workflow.save(context.database)
     assert len(new_workflow.ports) == 1
     check_persistent_id(workflow, new_workflow, port, new_port)
     set_attributes_to_none(port, set_id=True, set_wf=True)
@@ -239,7 +239,7 @@ async def test_workflow(context: StreamFlowContext, copy_strategy: str) -> None:
         ),
     )
     exec_step.add_input_port(in_port_name, in_port)
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     builder = WorkflowBuilder(copy_strategy == "deep_copy")
     new_workflow = await builder.load_workflow(context, workflow.persistent_id)

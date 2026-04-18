@@ -16,7 +16,7 @@ from streamflow.core.exception import (
     ProcessorTypeError,
     WorkflowExecutionException,
 )
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.processor import (
     CommandOutputProcessor,
     ObjectCommandOutputProcessor,
@@ -318,9 +318,9 @@ class CWLTokenProcessor(TokenProcessor):
         return token_value
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "token_type": self.token_type,
             "enum_symbols": self.enum_symbols,
             "expression_lib": self.expression_lib,
@@ -330,7 +330,7 @@ class CWLTokenProcessor(TokenProcessor):
             "load_listing": self.load_listing.value if self.load_listing else None,
             "only_propagate_secondary_files": self.only_propagate_secondary_files,
             "secondary_files": await asyncio.gather(
-                *(asyncio.create_task(s.save(context)) for s in self.secondary_files)
+                *(asyncio.create_task(s.save(database)) for s in self.secondary_files)
             ),
             "streamable": self.streamable,
         }
@@ -694,9 +694,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "token_type": self.token_type,
             "enum_symbols": self.enum_symbols,
             "expression_lib": self.expression_lib,
@@ -708,7 +708,7 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             "optional": self.optional,
             "output_eval": self.output_eval,
             "secondary_files": await asyncio.gather(
-                *(asyncio.create_task(s.save(context)) for s in self.secondary_files)
+                *(asyncio.create_task(s.save(database)) for s in self.secondary_files)
             ),
             "single": self.single,
             "streamable": self.streamable,
@@ -925,9 +925,9 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,
             "output_eval": self.output_eval,
@@ -1037,9 +1037,9 @@ class CWLExpressionToolOutputProcessor(CommandOutputProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "token_type": self.token_type,
             "enum_symbols": self.enum_symbols,
             "file_format": self.file_format,

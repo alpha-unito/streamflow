@@ -84,7 +84,7 @@ async def main(
     workflow = translator.translate()
     if args.validate:
         return
-    await workflow.save(context)
+    await workflow.save(context.database)
     if logger.isEnabledFor(logging.INFO):
         logger.info("COMPLETED building of workflow execution plan")
     executor = StreamFlowExecutor(workflow)

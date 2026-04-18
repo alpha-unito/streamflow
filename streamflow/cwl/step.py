@@ -17,7 +17,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.utils import get_entity_ids, get_tag, random_name
 from streamflow.core.workflow import (
@@ -77,9 +77,9 @@ class CWLBaseConditionalStep(ConditionalStep, ABC):
         self.skip_ports: MutableMapping[str, str] = {}
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "skip_ports": {k: p.persistent_id for k, p in self.get_skip_ports().items()}
         }
 
@@ -144,9 +144,9 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "expression": self.expression,
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,
@@ -283,9 +283,9 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
             )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "scatter_method": self.scatter_method
         }
 
@@ -351,9 +351,9 @@ class CWLExecuteStep(ExecuteStep):
             )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "recoverable": self.recoverable,
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,
@@ -485,9 +485,9 @@ class CWLTransferStep(TransferStep):
         return step
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "prefix_path": self.prefix_path,
             "writable": self.writable,
         }

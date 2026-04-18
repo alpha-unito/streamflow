@@ -19,7 +19,7 @@ from streamflow.core.config import BindingConfig, Config
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 
 if TYPE_CHECKING:
     from typing import Any
@@ -173,7 +173,7 @@ class HardwareRequirement(ABC):
 
     @abstractmethod
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]: ...
 
     @abstractmethod
@@ -189,10 +189,10 @@ class HardwareRequirement(ABC):
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context)
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, database: Database):
         return {
             "type": utils.get_class_fullname(type(self)),
-            "params": await self._save_additional_params(context),
+            "params": await self._save_additional_params(database),
         }
 
 
@@ -292,7 +292,7 @@ class LocationAllocation:
 
 
 class PolicyConfig(Config):
-    async def save(self, context: StreamFlowContext):
+    async def save(self, database: Database):
         # TODO
         return self.config
 
