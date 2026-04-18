@@ -98,13 +98,12 @@ class CWLWorkflow(Workflow):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         params = row["params"]
         return cls(
-            context=context,
+            context=loading_context.database.context,
             config=params["config"],
             cwl_version=params["cwl_version"],
             name=row["name"],

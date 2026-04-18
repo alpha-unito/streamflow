@@ -19,7 +19,6 @@ from typing_extensions import Self
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataType
 from streamflow.core.deployment import (
     Connector,
@@ -196,13 +195,12 @@ class Combinator(ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
         )
 
     async def _save_additional_params(
@@ -254,12 +252,11 @@ class Combinator(ABC):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        combinator = await type_._load(context, row["params"], loading_context)
+        combinator = await type_._load(row["params"], loading_context)
         combinator.items = row["params"]["items"]
         combinator.combinators_map = row["params"]["combinators_map"]
         combinator.combinators = dict(
@@ -267,9 +264,7 @@ class Combinator(ABC):
                 row["params"]["combinators"].keys(),
                 await asyncio.gather(
                     *(
-                        asyncio.create_task(
-                            Combinator.load(context, c, loading_context)
-                        )
+                        asyncio.create_task(Combinator.load(c, loading_context))
                         for c in row["params"]["combinators"].values()
                     )
                 ),
@@ -339,15 +334,14 @@ class CombinatorStep(BaseStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             combinator=await Combinator.load(
-                context, row["params"]["combinator"], loading_context
+                row["params"]["combinator"], loading_context
             ),
         )
 
@@ -515,20 +509,19 @@ class DeployStep(BaseStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         params = row["params"]
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             deployment_config=await loading_context.load_deployment(
-                context, params["deployment_config"]
+                params["deployment_config"]
             ),
             connector_port=cast(
                 ConnectorPort,
-                await loading_context.load_port(context, params["connector_port"]),
+                await loading_context.load_port(params["connector_port"]),
             ),
         )
 
@@ -664,17 +657,14 @@ class ExecuteStep(BaseStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         params = row["params"]
         step = cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
-            ),
+            workflow=await loading_context.load_workflow(row["workflow"]),
+            job_port=cast(JobPort, await loading_context.load_port(params["job_port"])),
         )
         step.output_connectors = params["output_connectors"]
         step.output_processors = {
@@ -684,7 +674,7 @@ class ExecuteStep(BaseStep):
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            CommandOutputProcessor.load(context, p, loading_context)
+                            CommandOutputProcessor.load(p, loading_context)
                         )
                         for p in params["output_processors"].values()
                     )
@@ -693,9 +683,7 @@ class ExecuteStep(BaseStep):
             )
         }
         if params["command"]:
-            step.command = await Command.load(
-                context, params["command"], loading_context, step
-            )
+            step.command = await Command.load(params["command"], loading_context, step)
         return step
 
     async def _retrieve_output(
@@ -965,16 +953,15 @@ class GatherStep(BaseStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         params = row["params"]
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             depth=params["depth"],
-            size_port=await loading_context.load_port(context, params["size_port"]),
+            size_port=await loading_context.load_port(params["size_port"]),
         )
 
     async def _save_additional_params(
@@ -1100,16 +1087,15 @@ class InputInjectorStep(BaseStep, ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             job_port=cast(
                 JobPort,
-                await loading_context.load_port(context, row["params"]["job_port"]),
+                await loading_context.load_port(row["params"]["job_port"]),
             ),
         )
 
@@ -1207,7 +1193,9 @@ class LoopCombinatorStep(CombinatorStep):
         # either `0.2` or `0.1.0`. To make this distinction, we use the provenance by retrieving
         # all the tokens from the previous iteration.
         from_tags = {}
-        loading_context = DefaultDatabaseLoadingContext()
+        loading_context = DefaultDatabaseLoadingContext(
+            database=self.workflow.context.database
+        )
         for name, tokens in on_tokens.items():
             if tokens:
                 tags = set()
@@ -1220,7 +1208,6 @@ class LoopCombinatorStep(CombinatorStep):
                             t.tag
                             for t in await load_dependee_tokens(
                                 persistent_id=token.persistent_id,
-                                context=self.workflow.context,
                                 loading_context=loading_context,
                             )
                         }
@@ -1447,28 +1434,25 @@ class ScheduleStep(BaseStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         params = row["params"]
         if hardware_requirement := params.get("hardware_requirement"):
             hardware_requirement = await HardwareRequirement.load(
-                context, hardware_requirement, loading_context
+                hardware_requirement, loading_context
             )
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             binding_config=await BindingConfig.load(
-                context, params["binding_config"], loading_context
+                params["binding_config"], loading_context
             ),
             connector_ports={
-                k: cast(ConnectorPort, await loading_context.load_port(context, v))
+                k: cast(ConnectorPort, await loading_context.load_port(v))
                 for k, v in params["connector_ports"].items()
             },
-            job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
-            ),
+            job_port=cast(JobPort, await loading_context.load_port(params["job_port"])),
             job_prefix=params["job_prefix"],
             hardware_requirement=hardware_requirement,
             input_directory=params["input_directory"],
@@ -1717,16 +1701,13 @@ class ScatterStep(BaseStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            size_port=await loading_context.load_port(
-                context, row["params"]["size_port"]
-            ),
+            workflow=await loading_context.load_workflow(row["workflow"]),
+            size_port=await loading_context.load_port(row["params"]["size_port"]),
         )
 
     async def _save_additional_params(
@@ -1827,16 +1808,15 @@ class TransferStep(BaseStep, ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             job_port=cast(
                 JobPort,
-                await loading_context.load_port(context, row["params"]["job_port"]),
+                await loading_context.load_port(row["params"]["job_port"]),
             ),
         )
 

@@ -5,7 +5,6 @@ from typing import Any, cast
 
 from typing_extensions import Self
 
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Token
@@ -41,7 +40,6 @@ class ListMergeCombinator(DotProductCombinator):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -49,7 +47,7 @@ class ListMergeCombinator(DotProductCombinator):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             input_names=row["input_names"],
             output_name=row["output_name"],

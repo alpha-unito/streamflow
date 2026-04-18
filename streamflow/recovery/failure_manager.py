@@ -122,12 +122,12 @@ async def _populate_workflow(
 ) -> None:
     await asyncio.gather(
         *(
-            asyncio.create_task(workflow_builder.load_step(workflow.context, step_id))
+            asyncio.create_task(workflow_builder.load_step(step_id))
             for step_id in step_ids
         )
     )
     # Add the failed step to the new workflow
-    await workflow_builder.load_step(workflow.context, failed_step.persistent_id)
+    await workflow_builder.load_step(failed_step.persistent_id)
     # Instantiate ports that can transfer tokens between workflows
     for port in workflow.ports.values():
         if not isinstance(
@@ -216,10 +216,10 @@ class RollbackFailureManager(FailureManager):
 
     async def _recover(self, failed_job: Job, failed_step: Step) -> None:
         workflow = failed_step.workflow
-        workflow_builder = WorkflowBuilder(deep_copy=False)
-        new_workflow = await workflow_builder.load_workflow(
-            workflow.context, workflow.persistent_id
+        workflow_builder = WorkflowBuilder(
+            database=workflow.context.database, deep_copy=False
         )
+        new_workflow = await workflow_builder.load_workflow(workflow.persistent_id)
         # Retrieve tokens
         provenance = ProvenanceGraph(workflow.context)
         await provenance.build_graph(

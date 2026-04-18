@@ -37,13 +37,12 @@ class Command(ABC):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
     ) -> Self:
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context, step)
+        return await type_._load(row["params"], loading_context, step)
 
     async def save(self, database: Database):
         return {
@@ -54,7 +53,6 @@ class Command(ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
@@ -98,7 +96,6 @@ class CommandTokenProcessor(ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -123,12 +120,11 @@ class CommandTokenProcessor(ABC):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         type_ = cast(Self, get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context)
+        return await type_._load(row["params"], loading_context)
 
     async def save(self, database: Database):
         return {
@@ -174,7 +170,6 @@ class Job:
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -187,7 +182,7 @@ class Job:
                     row["inputs"].keys(),
                     await asyncio.gather(
                         *(
-                            asyncio.create_task(loading_context.load_token(context, t))
+                            asyncio.create_task(loading_context.load_token(t))
                             for t in row["inputs"].values()
                         )
                     ),
@@ -217,12 +212,11 @@ class Job:
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context)
+        return await type_._load(row["params"], loading_context)
 
     async def save(self, database: Database):
         return {
@@ -247,13 +241,12 @@ class Port(PersistableEntity):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
         )
 
     async def _save_additional_params(
@@ -294,13 +287,12 @@ class Port(PersistableEntity):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        row = await context.database.get_port(persistent_id)
+        row = await loading_context.database.get_port(persistent_id)
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        port = await type_._load(context, row, loading_context)
+        port = await type_._load(row, loading_context)
         loading_context.add_port(persistent_id, port)
         return port
 
@@ -354,13 +346,12 @@ class Step(PersistableEntity, ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
         )
 
     async def _save_additional_params(
@@ -422,34 +413,33 @@ class Step(PersistableEntity, ABC):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        row = await context.database.get_step(persistent_id)
+        row = await loading_context.database.get_step(persistent_id)
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        step = await type_._load(context, row, loading_context)
+        step = await type_._load(row, loading_context)
         step.status = Status(row["status"])
         step.terminated = step.status in [
             Status.COMPLETED,
             Status.FAILED,
             Status.SKIPPED,
         ]
-        input_deps = await context.database.get_input_ports(persistent_id)
+        input_deps = await loading_context.database.get_input_ports(persistent_id)
         loading_context.add_step(persistent_id, step)
         input_ports = await asyncio.gather(
             *(
-                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                asyncio.create_task(loading_context.load_port(d["port"]))
                 for d in input_deps
             )
         )
         step.input_ports = {
             d["name"]: p.name for d, p in zip(input_deps, input_ports, strict=True)
         }
-        output_deps = await context.database.get_output_ports(persistent_id)
+        output_deps = await loading_context.database.get_output_ports(persistent_id)
         output_ports = await asyncio.gather(
             *(
-                asyncio.create_task(loading_context.load_port(context, d["port"]))
+                asyncio.create_task(loading_context.load_port(d["port"]))
                 for d in output_deps
             )
         )
@@ -527,7 +517,6 @@ class Token(PersistableEntity):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -542,13 +531,12 @@ class Token(PersistableEntity):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        row = await context.database.get_token(persistent_id)
+        row = await loading_context.database.get_token(persistent_id)
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        token = await type_._load(context, row, loading_context)
+        token = await type_._load(row, loading_context)
         loading_context.add_token(persistent_id, token)
         return token
 
@@ -613,11 +601,14 @@ class Workflow(PersistableEntity):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        return cls(context=context, config=row["params"]["config"], name=row["name"])
+        return cls(
+            context=loading_context.database.context,
+            config=row["params"]["config"],
+            name=row["name"],
+        )
 
     async def _save_additional_params(
         self, database: Database
@@ -663,17 +654,16 @@ class Workflow(PersistableEntity):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        row = await context.database.get_workflow(persistent_id)
+        row = await loading_context.database.get_workflow(persistent_id)
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        workflow = await type_._load(context, row, loading_context)
+        workflow = await type_._load(row, loading_context)
         loading_context.add_workflow(persistent_id, workflow)
         if workflow.persistent_id is None:
             return workflow
-        rows = await context.database.get_workflow_ports(persistent_id)
+        rows = await loading_context.database.get_workflow_ports(persistent_id)
         params = row["params"]
         workflow.ports = {
             r["name"]: v
@@ -681,9 +671,7 @@ class Workflow(PersistableEntity):
                 rows,
                 await asyncio.gather(
                     *(
-                        asyncio.create_task(
-                            loading_context.load_port(context, row["id"])
-                        )
+                        asyncio.create_task(loading_context.load_port(row["id"]))
                         for row in rows
                     )
                 ),
@@ -691,16 +679,14 @@ class Workflow(PersistableEntity):
             )
         }
         workflow.output_ports = params["output_ports"]
-        rows = await context.database.get_workflow_steps(persistent_id)
+        rows = await loading_context.database.get_workflow_steps(persistent_id)
         workflow.steps = {
             r["name"]: v
             for r, v in zip(
                 rows,
                 await asyncio.gather(
                     *(
-                        asyncio.create_task(
-                            loading_context.load_step(context, row["id"])
-                        )
+                        asyncio.create_task(loading_context.load_step(row["id"]))
                         for row in rows
                     )
                 ),

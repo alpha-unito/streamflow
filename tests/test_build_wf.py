@@ -197,9 +197,9 @@ async def test_port(context: StreamFlowContext, port_cls: type[Port]) -> None:
     assert workflow.persistent_id
     assert port.persistent_id
 
-    loading_context = WorkflowBuilder(deep_copy=False)
-    new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
-    new_port = await loading_context.load_port(context, port.persistent_id)
+    loading_context = WorkflowBuilder(database=context.database, deep_copy=False)
+    new_workflow = await loading_context.load_workflow(workflow.persistent_id)
+    new_port = await loading_context.load_port(port.persistent_id)
     await new_workflow.save(context.database)
     assert len(new_workflow.ports) == 1
     check_persistent_id(workflow, new_workflow, port, new_port)
@@ -241,13 +241,15 @@ async def test_workflow(context: StreamFlowContext, copy_strategy: str) -> None:
     exec_step.add_input_port(in_port_name, in_port)
     await workflow.save(context.database)
 
-    builder = WorkflowBuilder(copy_strategy == "deep_copy")
-    new_workflow = await builder.load_workflow(context, workflow.persistent_id)
+    builder = WorkflowBuilder(
+        database=context.database, deep_copy=copy_strategy == "deep_copy"
+    )
+    new_workflow = await builder.load_workflow(workflow.persistent_id)
     assert new_workflow.name == workflow.name
 
     if copy_strategy == "manual_copy":
         assert len(new_workflow.steps) == len(new_workflow.ports) == 0
-        await builder.load_step(context, exec_step.persistent_id)
+        await builder.load_step(exec_step.persistent_id)
         assert len(new_workflow.steps) == 1 and exec_step.name in new_workflow.steps
         assert len(new_workflow.ports) == len(exec_step.input_ports) + len(
             exec_step.output_ports

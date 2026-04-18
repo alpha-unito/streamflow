@@ -18,7 +18,6 @@ from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
 from typing_extensions import Self
 
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation
 from streamflow.core.deployment import Connector
 from streamflow.core.exception import (
@@ -692,7 +691,6 @@ class CWLCommand(TokenizedCommand):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
@@ -702,7 +700,7 @@ class CWLCommand(TokenizedCommand):
             absolute_initial_workdir_allowed=row["absolute_initial_workdir_allowed"],
             base_command=row["base_command"],
             processors=await cls._load_command_token_processors(
-                context=context, row=row, loading_context=loading_context
+                row=row, loading_context=loading_context
             ),
             environment=row["environment"],
             expression_lib=row["expression_lib"],
@@ -1127,7 +1125,6 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -1136,7 +1133,6 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
             expression=row["expression"],
             processor=(
                 await CommandTokenProcessor.load(
-                    context=context,
                     row=row["processor"],
                     loading_context=loading_context,
                 )
@@ -1184,7 +1180,6 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -1341,7 +1336,6 @@ class CWLExpressionCommand(Command):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,

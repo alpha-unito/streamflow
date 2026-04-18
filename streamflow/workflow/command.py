@@ -7,7 +7,6 @@ from typing import Any, cast
 
 from typing_extensions import Self
 
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowDefinitionException
 from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.workflow import (
@@ -40,14 +39,13 @@ class MapCommandTokenProcessor(CommandTokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
             processor=await CommandTokenProcessor.load(
-                context=context, row=row["processor"], loading_context=loading_context
+                row=row["processor"], loading_context=loading_context
             ),
         )
 
@@ -111,7 +109,6 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -125,7 +122,6 @@ class ObjectCommandTokenProcessor(CommandTokenProcessor):
                         *(
                             asyncio.create_task(
                                 CommandTokenProcessor.load(
-                                    context=context,
                                     row=p,
                                     loading_context=loading_context,
                                 )
@@ -203,7 +199,6 @@ class TokenizedCommand(Command, ABC):
     @classmethod
     async def _load_command_token_processors(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> MutableSequence[CommandTokenProcessor]:
@@ -212,7 +207,7 @@ class TokenizedCommand(Command, ABC):
             await asyncio.gather(
                 *(
                     asyncio.create_task(
-                        CommandTokenProcessor.load(context, processor, loading_context)
+                        CommandTokenProcessor.load(processor, loading_context)
                     )
                     for processor in row["processors"]
                 )
@@ -222,7 +217,6 @@ class TokenizedCommand(Command, ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
@@ -230,7 +224,7 @@ class TokenizedCommand(Command, ABC):
         return cls(
             step=step,
             processors=await cls._load_command_token_processors(
-                context=context, row=row, loading_context=loading_context
+                row=row, loading_context=loading_context
             ),
         )
 
@@ -261,7 +255,6 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -273,7 +266,7 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
                     *(
                         asyncio.create_task(
                             CommandTokenProcessor.load(
-                                context=context, row=p, loading_context=loading_context
+                                row=p, loading_context=loading_context
                             )
                         )
                         for p in row["processors"]

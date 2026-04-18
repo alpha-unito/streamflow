@@ -377,7 +377,7 @@ class ProvenanceGraph:
         are available at a specific location, and the leaves correspond to the input tokens.
         """
         token_frontier = deque(inputs)
-        loading_context = DefaultDatabaseLoadingContext()
+        loading_context = DefaultDatabaseLoadingContext(database=self.context.database)
         for t in token_frontier:
             self.add(t)
 
@@ -397,7 +397,7 @@ class ProvenanceGraph:
             else:
                 # Token is not available, get previous tokens
                 if prev_tokens := await load_dependee_tokens(
-                    token.persistent_id, self.context, loading_context
+                    token.persistent_id, loading_context
                 ):
                     for prev_token in prev_tokens:
                         self.add(prev_token, token)

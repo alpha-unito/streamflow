@@ -227,14 +227,14 @@ async def duplicate_and_test(
 async def duplicate_elements(
     step: S, workflow: W, context: StreamFlowContext
 ) -> tuple[W, S]:
-    loading_context = WorkflowBuilder(deep_copy=False)
-    new_workflow = await loading_context.load_workflow(context, workflow.persistent_id)
-    new_step = await loading_context.load_step(context, step.persistent_id)
+    loading_context = WorkflowBuilder(database=context.database, deep_copy=False)
+    new_workflow = await loading_context.load_workflow(workflow.persistent_id)
+    new_step = await loading_context.load_step(step.persistent_id)
     new_workflow.steps[new_step.name] = new_step
 
     # Ports are not loaded in new_workflow. It is necessary to do it manually
     for port in workflow.ports.values():
-        new_port = await loading_context.load_port(context, port.persistent_id)
+        new_port = await loading_context.load_port(port.persistent_id)
         new_workflow.ports[new_port.name] = new_port
     await new_workflow.save(context.database)
     return new_workflow, new_step
@@ -279,16 +279,14 @@ async def verify_dependency_tokens(
     expected_dependee: MutableSequence[Token] | None = None,
     alternative_expected_dependee: MutableSequence[Token] | None = None,
 ) -> None:
-    loading_context = DefaultDatabaseLoadingContext()
+    loading_context = DefaultDatabaseLoadingContext(database=context.database)
     expected_depender = expected_depender or []
     expected_dependee = expected_dependee or []
 
     token_reloaded = await context.database.get_token(token_id=token.persistent_id)
     assert token_reloaded["port"] == port.persistent_id
 
-    depender_list = await load_depender_tokens(
-        token.persistent_id, context, loading_context
-    )
+    depender_list = await load_depender_tokens(token.persistent_id, loading_context)
     if logger.isEnabledFor(logging.DEBUG) and {
         t.persistent_id for t in depender_list
     } != {t.persistent_id for t in expected_depender}:
@@ -300,9 +298,7 @@ async def verify_dependency_tokens(
     for t1 in depender_list:
         assert contains_persistent_id(t1.persistent_id, expected_depender)
 
-    dependee_list = await load_dependee_tokens(
-        token.persistent_id, context, loading_context
-    )
+    dependee_list = await load_dependee_tokens(token.persistent_id, loading_context)
     if logger.isEnabledFor(logging.DEBUG) and {
         t.persistent_id for t in dependee_list
     } != {t.persistent_id for t in expected_dependee}:

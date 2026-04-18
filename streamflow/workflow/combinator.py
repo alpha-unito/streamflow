@@ -7,7 +7,6 @@ from typing import Any, cast
 from typing_extensions import Self
 
 from streamflow.core import utils
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.workflow import Token, Workflow
@@ -23,13 +22,12 @@ class CartesianProductCombinator(Combinator):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             depth=row["depth"],
         )
 
@@ -223,13 +221,12 @@ class LoopTerminationCombinator(DotProductCombinator):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         combinator = cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
         )
         for item in row["output_items"]:
             combinator.add_output_item(item)

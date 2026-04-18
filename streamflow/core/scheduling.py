@@ -166,7 +166,6 @@ class HardwareRequirement(ABC):
     @abstractmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self: ...
@@ -182,12 +181,11 @@ class HardwareRequirement(ABC):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context)
+        return await type_._load(row["params"], loading_context)
 
     async def save(self, database: Database):
         return {

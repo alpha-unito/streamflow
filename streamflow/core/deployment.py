@@ -247,11 +247,10 @@ class DeploymentConfig(PersistableEntity):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        row = await context.database.get_deployment(persistent_id)
+        row = await loading_context.database.get_deployment(persistent_id)
         obj = cls(
             name=row["name"],
             type=row["type"],
@@ -259,14 +258,12 @@ class DeploymentConfig(PersistableEntity):
             external=row["external"],
             lazy=row["lazy"],
             scheduling_policy=await Config.load(
-                context=context,
                 row=row["scheduling_policy"],
                 loading_context=loading_context,
             ),
             workdir=row["workdir"],
             wraps=(
                 await WrapsConfig.load(
-                    context=context,
                     row=row["wraps"],
                     loading_context=loading_context,
                 )
@@ -308,11 +305,10 @@ class FilterConfig(PersistableEntity):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        row = await context.database.get_filter(persistent_id)
+        row = await loading_context.database.get_filter(persistent_id)
         obj = cls(
             name=row["name"],
             type=row["type"],
@@ -361,14 +357,11 @@ class Target(PersistableEntity):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
-            deployment=await DeploymentConfig.load(
-                context, row["deployment"], loading_context
-            ),
+            deployment=await DeploymentConfig.load(row["deployment"], loading_context),
             locations=row["locations"],
             service=row["service"],
             workdir=row["workdir"],
@@ -377,13 +370,12 @@ class Target(PersistableEntity):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self:
-        row = await context.database.get_target(persistent_id)
+        row = await loading_context.database.get_target(persistent_id)
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        obj = await type_._load(context, row, loading_context)
+        obj = await type_._load(row, loading_context)
         loading_context.add_target(persistent_id, obj)
         return obj
 
@@ -425,7 +417,6 @@ class LocalTarget(Target):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -468,7 +459,6 @@ class WrapsConfig:
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
