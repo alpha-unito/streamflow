@@ -141,6 +141,12 @@ class Executor(ABC):
         self.workflow: Workflow = workflow
 
     @abstractmethod
+    async def close(self) -> None: ...
+
+    @abstractmethod
+    async def closed(self) -> bool: ...
+
+    @abstractmethod
     async def run(self) -> MutableMapping[str, Any]: ...
 
 
