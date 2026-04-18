@@ -155,7 +155,6 @@ class CWLConditionalStep(CWLBaseConditionalStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -164,7 +163,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             expression=params["expression"],
             expression_lib=params["expression_lib"],
@@ -174,7 +173,7 @@ class CWLConditionalStep(CWLBaseConditionalStep):
             params["skip_ports"].keys(),
             await asyncio.gather(
                 *(
-                    asyncio.create_task(loading_context.load_port(context, port_id))
+                    asyncio.create_task(loading_context.load_port(port_id))
                     for port_id in params["skip_ports"].values()
                 )
             ),
@@ -240,7 +239,6 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -248,7 +246,7 @@ class CWLEmptyScatterConditionalStep(CWLBaseConditionalStep):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             scatter_method=row["params"]["scatter_method"],
         )
@@ -362,7 +360,6 @@ class CWLExecuteStep(ExecuteStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -371,14 +368,12 @@ class CWLExecuteStep(ExecuteStep):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             recoverable=params["recoverable"],
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],
-            job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
-            ),
+            job_port=cast(JobPort, await loading_context.load_port(params["job_port"])),
         )
         step.output_connectors = params["output_connectors"]
         step.output_processors = {
@@ -388,7 +383,7 @@ class CWLExecuteStep(ExecuteStep):
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            CommandOutputProcessor.load(context, p, loading_context)
+                            CommandOutputProcessor.load(p, loading_context)
                         )
                         for p in params["output_processors"].values()
                     )
@@ -397,9 +392,7 @@ class CWLExecuteStep(ExecuteStep):
             )
         }
         if params["command"]:
-            step.command = await Command.load(
-                context, params["command"], loading_context, step
-            )
+            step.command = await Command.load(params["command"], loading_context, step)
         return step
 
 
@@ -465,7 +458,6 @@ class CWLTransferStep(TransferStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -474,11 +466,9 @@ class CWLTransferStep(TransferStep):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
-            job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
-            ),
+            job_port=cast(JobPort, await loading_context.load_port(params["job_port"])),
             prefix_path=params["prefix_path"],
             writable=params["writable"],
         )

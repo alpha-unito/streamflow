@@ -66,7 +66,6 @@ class IterationTerminationToken(Token):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -118,13 +117,12 @@ class JobToken(Token):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             tag=row["tag"],
-            value=await Job.load(context, row["value"]["job"], loading_context),
+            value=await Job.load(row["value"]["job"], loading_context),
             recoverable=row["recoverable"],
         )
 
@@ -142,7 +140,6 @@ class ListToken(Token):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -150,7 +147,7 @@ class ListToken(Token):
             tag=row["tag"],
             value=await asyncio.gather(
                 *(
-                    asyncio.create_task(loading_context.load_token(context, t))
+                    asyncio.create_task(loading_context.load_token(t))
                     for t in row["value"]
                 )
             ),
@@ -206,7 +203,6 @@ class ObjectToken(Token):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -217,7 +213,7 @@ class ObjectToken(Token):
                     row["value"].keys(),
                     await asyncio.gather(
                         *(
-                            asyncio.create_task(loading_context.load_token(context, v))
+                            asyncio.create_task(loading_context.load_token(v))
                             for v in row["value"].values()
                         )
                     ),
@@ -294,7 +290,6 @@ class TerminationToken(Token):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:

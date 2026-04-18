@@ -10,7 +10,6 @@ import cwl_utils.types
 from schema_salad.exceptions import ValidationException
 from typing_extensions import Self
 
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, LocalTarget, Target
 from streamflow.core.exception import (
     ProcessorTypeError,
@@ -163,7 +162,6 @@ class CWLTokenProcessor(TokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -171,7 +169,7 @@ class CWLTokenProcessor(TokenProcessor):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             token_type=row["token_type"],
             enum_symbols=row["enum_symbols"],
@@ -390,7 +388,6 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -398,10 +395,10 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                (await loading_context.load_target(row["target"]))
                 if row["target"]
                 else None
             ),
@@ -811,7 +808,6 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -819,10 +815,10 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                (await loading_context.load_target(row["target"]))
                 if row["target"]
                 else None
             ),
@@ -833,7 +829,7 @@ class CWLObjectCommandOutputProcessor(ObjectCommandOutputProcessor):
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
-                                CommandOutputProcessor.load(context, v, loading_context)
+                                CommandOutputProcessor.load(v, loading_context)
                             )
                             for v in row["processors"].values()
                         )
@@ -1014,7 +1010,6 @@ class CWLExpressionToolOutputProcessor(CommandOutputProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -1022,10 +1017,10 @@ class CWLExpressionToolOutputProcessor(CommandOutputProcessor):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                (await loading_context.load_target(row["target"]))
                 if row["target"]
                 else None
             ),

@@ -14,7 +14,7 @@ from streamflow.core.exception import WorkflowDefinitionException
 if TYPE_CHECKING:
     from typing import TypeVar
 
-    from streamflow.core.context import SchemaEntity, StreamFlowContext
+    from streamflow.core.context import SchemaEntity
     from streamflow.core.deployment import FilterConfig, Target
     from streamflow.core.persistence import Database, DatabaseLoadingContext
 
@@ -32,7 +32,6 @@ class Config:
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -56,20 +55,19 @@ class BindingConfig:
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             targets=await asyncio.gather(
                 *(
-                    asyncio.create_task(loading_context.load_target(context, t))
+                    asyncio.create_task(loading_context.load_target(t))
                     for t in row["targets"]
                 )
             ),
             filters=await asyncio.gather(
                 *(
-                    asyncio.create_task(loading_context.load_filter(context, f))
+                    asyncio.create_task(loading_context.load_filter(f))
                     for f in row["filters"]
                 )
             ),

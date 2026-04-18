@@ -12,7 +12,6 @@ StreamFlow relies on a persistent ``Database`` to store all the metadata regardi
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -25,7 +24,7 @@ StreamFlow relies on a persistent ``Database`` to store all the metadata regardi
 
 Each ``PersistableEntity`` is identified by a unique numerical ``persistent_id`` related to the corresponding ``Database`` record. Two methods, ``save`` and ``load``, allow persisting the entity in the ``Database`` and retrieving it from the persistent record. Note that ``load`` is a class method, as it must construct a new instance.
 
-The ``load`` method receives three input parameters: the current execution ``context``, the ``persistent_id`` of the instance that should be loaded, and a ``loading_context`` (see :ref:`DatabaseLoadingContext <DatabaseLoadingContext>`). Note that the ``load`` method should not directly assign the ``persistent_id`` to the new entity, as this operation is in charge to the :ref:`DatabaseLoadingContext <DatabaseLoadingContext>` class.
+The ``load`` method receives two input parameters: the ``persistent_id`` of the instance that should be loaded and a ``loading_context`` (see :ref:`DatabaseLoadingContext <DatabaseLoadingContext>`). Note that the ``load`` method should not directly assign the ``persistent_id`` to the new entity, as this operation is in charge to the :ref:`DatabaseLoadingContext <DatabaseLoadingContext>` class.
 
 The ``save`` method receives in input a ``Database`` instance and does not return anything. It is in charge of saving the entity in the database, populating the ``persistent_id`` if it is not already set.
 
@@ -302,46 +301,49 @@ The ``DatabaseLoadingContext`` interface allows to define classes in charge of m
 
 .. code-block:: python
 
-    def add_deployment(self, persistent_id: int, deployment: DeploymentConfig):
+    def __init__(self, database: Database) -> None:
+        self.database: Database = database
+
+    def add_deployment(self, persistent_id: int, deployment: DeploymentConfig) -> None:
         ...
 
-    def add_filter(self, persistent_id: int, filter_config: FilterConfig):
+    def add_filter(self, persistent_id: int, filter_config: FilterConfig) -> None:
         ...
 
-    def add_port(self, persistent_id: int, port: Port):
+    def add_port(self, persistent_id: int, port: Port) -> None:
         ...
 
-    def add_step(self, persistent_id: int, step: Step):
+    def add_step(self, persistent_id: int, step: Step) -> None:
         ...
 
-    def add_target(self, persistent_id: int, target: Target):
+    def add_target(self, persistent_id: int, target: Target) -> None:
         ...
 
-    def add_token(self, persistent_id: int, token: Token):
+    def add_token(self, persistent_id: int, token: Token) -> None:
         ...
 
-    def add_workflow(self, persistent_id: int, workflow: Workflow):
+    def add_workflow(self, persistent_id: int, workflow: Workflow) -> None:
         ...
 
-    async def load_deployment(self, context: StreamFlowContext, persistent_id: int):
+    async def load_deployment(self, persistent_id: int) -> DeploymentConfig:
         ...
 
-    async def load_filter(self, context: StreamFlowContext, persistent_id: int):
+    async def load_filter(self, persistent_id: int) -> FilterConfig:
         ...
 
-    async def load_port(self, context: StreamFlowContext, persistent_id: int):
+    async def load_port(self, persistent_id: int) -> Port:
         ...
 
-    async def load_step(self, context: StreamFlowContext, persistent_id: int):
+    async def load_step(self, persistent_id: int) -> Step:
         ...
 
-    async def load_target(self, context: StreamFlowContext, persistent_id: int):
+    async def load_target(self, persistent_id: int) -> Target:
         ...
 
-    async def load_token(self, context: StreamFlowContext, persistent_id: int):
+    async def load_token(self, persistent_id: int) -> Token:
         ...
 
-    async def load_workflow(self, context: StreamFlowContext, persistent_id: int):
+    async def load_workflow(self, persistent_id: int) -> Workflow:
         ...
 
 
@@ -362,7 +364,7 @@ Furthermore, it is in charge of assigning the ``persistent_id`` when an entity i
 
 WorkflowBuilder
 ^^^^^^^^^^^^^^^
-The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow from a ``Database`` and inserts them into a new workflow object. The ``WorkflowBuilder`` class extends the ``DefaultDatabaseLoadingContext`` class and overrides only the methods involving ``step``, ``port``, and ``workflow`` entities. In particular, the ``add_*`` methods of these entities must not set the ``persistent_id``, as they are dealing with a newly-created workflow, and the ``load_*`` methods should reset the internal state of their entities to the initial value (e.g., reset the status to `Status.WAITING` and clear the `terminated` flag).
+The ``WorkflowBuilder`` class loads the steps and ports of an existing workflow from a ``Database`` and inserts them into a new workflow object. The ``WorkflowBuilder`` class extends the ``DefaultDatabaseLoadingContext`` class and overrides only the methods involving ``step``, ``port``, and ``workflow`` entities. In particular, the ``add_*`` methods of these entities must not set the ``persistent_id``, as they are dealing with a newly-created workflow, and the ``load_*`` methods should reset the internal state of their entities to the initial value (e.g., reset the status to ``Status.WAITING`` and clear the ``terminated`` flag).
 If a ``WorkflowBuilder`` object is constructed with the ``deep_copy`` attribute equal to ``True``, the builder will return a new workflow duplicating all steps and ports instances. Otherwise, a new instance of the workflow is returned, but without loading the steps and ports.
 Each ``WorkflowBuilder`` instance can create only a single new workflow instance. If the workflow has been copied, the ``load_workflow`` method returns the same instance. As a consequence, if a different copy of the workflow instance is needed, another ``WorkflowBuilder`` object must be instantiated.
 

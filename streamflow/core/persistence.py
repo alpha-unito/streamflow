@@ -16,6 +16,9 @@ if TYPE_CHECKING:
 
 
 class DatabaseLoadingContext(ABC):
+    def __init__(self, database: Database) -> None:
+        self.database: Database = database
+
     @abstractmethod
     def add_deployment(
         self, persistent_id: int, deployment: DeploymentConfig
@@ -40,39 +43,25 @@ class DatabaseLoadingContext(ABC):
     def add_workflow(self, persistent_id: int, workflow: Workflow) -> None: ...
 
     @abstractmethod
-    async def load_deployment(
-        self, context: StreamFlowContext, persistent_id: int
-    ) -> DeploymentConfig: ...
+    async def load_deployment(self, persistent_id: int) -> DeploymentConfig: ...
 
     @abstractmethod
-    async def load_filter(
-        self, context: StreamFlowContext, persistent_id: int
-    ) -> FilterConfig: ...
+    async def load_filter(self, persistent_id: int) -> FilterConfig: ...
 
     @abstractmethod
-    async def load_port(
-        self, context: StreamFlowContext, persistent_id: int
-    ) -> Port: ...
+    async def load_port(self, persistent_id: int) -> Port: ...
 
     @abstractmethod
-    async def load_step(
-        self, context: StreamFlowContext, persistent_id: int
-    ) -> Step: ...
+    async def load_step(self, persistent_id: int) -> Step: ...
 
     @abstractmethod
-    async def load_target(
-        self, context: StreamFlowContext, persistent_id: int
-    ) -> Target: ...
+    async def load_target(self, persistent_id: int) -> Target: ...
 
     @abstractmethod
-    async def load_token(
-        self, context: StreamFlowContext, persistent_id: int
-    ) -> Token: ...
+    async def load_token(self, persistent_id: int) -> Token: ...
 
     @abstractmethod
-    async def load_workflow(
-        self, context: StreamFlowContext, persistent_id: int
-    ) -> Workflow: ...
+    async def load_workflow(self, persistent_id: int) -> Workflow: ...
 
 
 class PersistableEntity:
@@ -86,7 +75,6 @@ class PersistableEntity:
     @abstractmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         persistent_id: int,
         loading_context: DatabaseLoadingContext,
     ) -> Self: ...

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 import cwl_utils.types
 from typing_extensions import Self
 
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement, Storage
 from streamflow.cwl.utils import eval_expression
@@ -41,7 +40,6 @@ class CWLHardwareRequirement(HardwareRequirement):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:

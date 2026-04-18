@@ -6,7 +6,6 @@ from typing import Any, cast
 
 from typing_extensions import Self
 
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -62,7 +61,6 @@ class CloneTransformer(ManyToOneTransformer):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -70,10 +68,10 @@ class CloneTransformer(ManyToOneTransformer):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             replicas_port=await loading_context.load_port(
-                context, row["params"]["replicas_port"]
+                row["params"]["replicas_port"]
             ),
         )
 
@@ -138,7 +136,6 @@ class CWLTokenTransformer(ManyToOneTransformer):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -147,12 +144,10 @@ class CWLTokenTransformer(ManyToOneTransformer):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             port_name=params["port_name"],
-            processor=await TokenProcessor.load(
-                context, params["processor"], loading_context
-            ),
+            processor=await TokenProcessor.load(params["processor"], loading_context),
         )
 
     async def _save_additional_params(
@@ -182,7 +177,6 @@ class DefaultTransformer(ManyToOneTransformer):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -190,11 +184,9 @@ class DefaultTransformer(ManyToOneTransformer):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
-            default_port=await loading_context.load_port(
-                context, row["params"]["default_port"]
-            ),
+            default_port=await loading_context.load_port(row["params"]["default_port"]),
         )
 
     async def _save_additional_params(
@@ -285,7 +277,6 @@ class DefaultRetagTransformer(DefaultTransformer):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -293,11 +284,9 @@ class DefaultRetagTransformer(DefaultTransformer):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
-            default_port=await loading_context.load_port(
-                context, row["params"]["default_port"]
-            ),
+            default_port=await loading_context.load_port(row["params"]["default_port"]),
             primary_port=row["params"]["primary_port"],
         )
 
@@ -444,7 +433,6 @@ class ValueFromTransformer(ManyToOneTransformer):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -453,12 +441,10 @@ class ValueFromTransformer(ManyToOneTransformer):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             port_name=params["port_name"],
-            processor=await TokenProcessor.load(
-                context, params["processor"], loading_context
-            ),
+            processor=await TokenProcessor.load(params["processor"], loading_context),
             value_from=params["value_from"],
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],
@@ -529,7 +515,6 @@ class LoopValueFromTransformer(ValueFromTransformer):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -538,12 +523,10 @@ class LoopValueFromTransformer(ValueFromTransformer):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             port_name=params["port_name"],
-            processor=await TokenProcessor.load(
-                context, params["processor"], loading_context
-            ),
+            processor=await TokenProcessor.load(params["processor"], loading_context),
             value_from=params["value_from"],
             expression_lib=params["expression_lib"],
             full_js=params["full_js"],

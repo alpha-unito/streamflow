@@ -248,6 +248,6 @@ async def save_load_and_test(
 
     # Created a new DefaultDatabaseLoadingContext to have the objects fetched from the database
     # (and not take their reference saved in the attributes)
-    loading_context = DefaultDatabaseLoadingContext()
-    loaded = await type(elem).load(context, elem.persistent_id, loading_context)
+    loading_context = DefaultDatabaseLoadingContext(database=context.database)
+    loaded = await type(elem).load(elem.persistent_id, loading_context)
     assert are_equals(elem, loaded)

@@ -8,7 +8,6 @@ from typing import Any, cast
 from typing_extensions import Self
 
 from streamflow.core import utils
-from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Connector, ExecutionLocation, Target
 from streamflow.core.exception import ProcessorTypeError
 from streamflow.core.persistence import Database, DatabaseLoadingContext
@@ -40,15 +39,14 @@ class CommandOutputProcessor(ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                (await loading_context.load_target(row["target"]))
                 if row["target"]
                 else None
             ),
@@ -68,12 +66,11 @@ class CommandOutputProcessor(ABC):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context)
+        return await type_._load(row["params"], loading_context)
 
     @abstractmethod
     async def process(
@@ -99,13 +96,12 @@ class TokenProcessor(ABC):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
         )
 
     async def _save_additional_params(
@@ -116,12 +112,11 @@ class TokenProcessor(ABC):
     @classmethod
     async def load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        return await type_._load(context, row["params"], loading_context)
+        return await type_._load(row["params"], loading_context)
 
     @abstractmethod
     async def process(
@@ -149,18 +144,17 @@ class MapCommandOutputProcessor(CommandOutputProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             processor=await CommandOutputProcessor.load(
-                context, row["processor"], loading_context
+                row["processor"], loading_context
             ),
             target=(
-                await loading_context.load_target(context, row["target"])
+                await loading_context.load_target(row["target"])
                 if row["target"]
                 else None
             ),
@@ -217,16 +211,13 @@ class MapTokenProcessor(TokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            processor=await TokenProcessor.load(
-                context, row["processor"], loading_context
-            ),
+            workflow=await loading_context.load_workflow(row["workflow"]),
+            processor=await TokenProcessor.load(row["processor"], loading_context),
         )
 
     async def _save_additional_params(
@@ -277,15 +268,14 @@ class ObjectCommandOutputProcessor(CommandOutputProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                (await loading_context.load_target(row["target"]))
                 if row["target"]
                 else None
             ),
@@ -296,7 +286,7 @@ class ObjectCommandOutputProcessor(CommandOutputProcessor):
                     await asyncio.gather(
                         *(
                             asyncio.create_task(
-                                CommandOutputProcessor.load(context, v, loading_context)
+                                CommandOutputProcessor.load(v, loading_context)
                             )
                             for v in row["processors"].values()
                         )
@@ -382,22 +372,19 @@ class ObjectTokenProcessor(TokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             processors={
                 k: v
                 for k, v in zip(
                     row["processors"].keys(),
                     await asyncio.gather(
                         *(
-                            asyncio.create_task(
-                                TokenProcessor.load(context, v, loading_context)
-                            )
+                            asyncio.create_task(TokenProcessor.load(v, loading_context))
                             for v in row["processors"].values()
                         )
                     ),
@@ -466,20 +453,19 @@ class PopCommandOutputProcessor(CommandOutputProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                (await loading_context.load_target(row["target"]))
                 if row["target"]
                 else None
             ),
             processor=await CommandOutputProcessor.load(
-                context, row["processor"], loading_context
+                row["processor"], loading_context
             ),
         )
 
@@ -540,26 +526,25 @@ class UnionCommandOutputProcessor(CommandOutputProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             processors=cast(
                 MutableSequence[CommandOutputProcessor],
                 await asyncio.gather(
                     *(
                         asyncio.create_task(
-                            CommandOutputProcessor.load(context, p, loading_context)
+                            CommandOutputProcessor.load(p, loading_context)
                         )
                         for p in row["processors"]
                     )
                 ),
             ),
             target=(
-                (await loading_context.load_target(context, row["target"]))
+                (await loading_context.load_target(row["target"]))
                 if row["target"]
                 else None
             ),
@@ -600,20 +585,17 @@ class UnionTokenProcessor(TokenProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             processors=cast(
                 MutableSequence[TokenProcessor],
                 await asyncio.gather(
                     *(
-                        asyncio.create_task(
-                            TokenProcessor.load(context, p, loading_context)
-                        )
+                        asyncio.create_task(TokenProcessor.load(p, loading_context))
                         for p in row["processors"]
                     )
                 ),

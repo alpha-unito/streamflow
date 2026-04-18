@@ -431,7 +431,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
     ) -> MutableMapping[str, MutableMapping[str, Any]]:
         tokens = await asyncio.gather(
             *(
-                asyncio.create_task(Token.load(self.context, t, self.db_context))
+                asyncio.create_task(Token.load(t, self.db_context))
                 for t in await self.context.database.get_port_tokens(port.persistent_id)
             )
         )

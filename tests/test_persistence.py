@@ -43,7 +43,6 @@ class DummyHardwareRequirement(HardwareRequirement):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:

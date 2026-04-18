@@ -116,12 +116,11 @@ async def _async_plugin(args: argparse.Namespace) -> None:
 async def _async_prov(args: argparse.Namespace) -> None:
     context = _get_context_from_config(args.file)
     try:
-        db_context = DefaultDatabaseLoadingContext()
+        db_context = DefaultDatabaseLoadingContext(database=context.database)
         workflows = await asyncio.gather(
             *(
                 asyncio.create_task(
                     Workflow.load(
-                        context=context,
                         persistent_id=w["id"],
                         loading_context=db_context,
                     )

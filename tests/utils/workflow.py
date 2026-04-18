@@ -477,7 +477,6 @@ class BaseLoopConditionalStep(ConditionalStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
@@ -485,7 +484,7 @@ class BaseLoopConditionalStep(ConditionalStep):
             name=row["name"],
             workflow=cast(
                 CWLWorkflow,
-                await loading_context.load_workflow(context, row["workflow"]),
+                await loading_context.load_workflow(row["workflow"]),
             ),
             condition=row["params"]["condition"],
         )
@@ -493,7 +492,7 @@ class BaseLoopConditionalStep(ConditionalStep):
             row["params"]["skip_ports"].keys(),
             await asyncio.gather(
                 *(
-                    asyncio.create_task(loading_context.load_port(context, port_id))
+                    asyncio.create_task(loading_context.load_port(port_id))
                     for port_id in row["params"]["skip_ports"].values()
                 )
             ),
@@ -533,16 +532,15 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             value_type=row["value_type"],
             target=(
-                await loading_context.load_target(context, row["target"])
+                await loading_context.load_target(row["target"])
                 if row["target"]
                 else None
             ),
@@ -634,12 +632,11 @@ class InjectorFailureCommand(Command):
         logger.info(f"EXECUTING {job.name}")
         # Counts all the execution of the step in the different workflows
         context = self.step.workflow.context
-        loading_context = DefaultDatabaseLoadingContext()
+        loading_context = DefaultDatabaseLoadingContext(database=context.database)
         workflows = await asyncio.gather(
             *(
                 asyncio.create_task(
                     Workflow.load(
-                        context=context,
                         persistent_id=w["id"],
                         loading_context=loading_context,
                     )
@@ -738,7 +735,6 @@ class InjectorFailureCommand(Command):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
         step: Step,
@@ -790,28 +786,25 @@ class InjectorFailureScheduleStep(ScheduleStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         params = row["params"]
         if hardware_requirement := params.get("hardware_requirement"):
             hardware_requirement = await HardwareRequirement.load(
-                context, hardware_requirement, loading_context
+                hardware_requirement, loading_context
             )
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
+            workflow=await loading_context.load_workflow(row["workflow"]),
             binding_config=await BindingConfig.load(
-                context, params["binding_config"], loading_context
+                params["binding_config"], loading_context
             ),
             connector_ports={
-                k: cast(ConnectorPort, await loading_context.load_port(context, v))
+                k: cast(ConnectorPort, await loading_context.load_port(v))
                 for k, v in params["connector_ports"].items()
             },
-            job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
-            ),
+            job_port=cast(JobPort, await loading_context.load_port(params["job_port"])),
             job_prefix=params["job_prefix"],
             hardware_requirement=hardware_requirement,
             input_directory=params["input_directory"],
@@ -836,12 +829,13 @@ class InjectorFailureScheduleStep(ScheduleStep):
         job: Job,
     ) -> None:
         # Counts the number of step rollbacks
-        loading_context = DefaultDatabaseLoadingContext()
+        loading_context = DefaultDatabaseLoadingContext(
+            database=self.workflow.context.database
+        )
         workflows = await asyncio.gather(
             *(
                 asyncio.create_task(
                     Workflow.load(
-                        context=self.workflow.context,
                         persistent_id=w["id"],
                         loading_context=loading_context,
                     )
@@ -881,17 +875,14 @@ class InjectorFailureTransferStep(TransferStep):
     @classmethod
     async def _load(
         cls,
-        context: StreamFlowContext,
         row: MutableMapping[str, Any],
         loading_context: DatabaseLoadingContext,
     ) -> Self:
         params = row["params"]
         return cls(
             name=row["name"],
-            workflow=await loading_context.load_workflow(context, row["workflow"]),
-            job_port=cast(
-                JobPort, await loading_context.load_port(context, params["job_port"])
-            ),
+            workflow=await loading_context.load_workflow(row["workflow"]),
+            job_port=cast(JobPort, await loading_context.load_port(params["job_port"])),
             failure_tags=json.loads(params["failure_tags"]),
             failure_type=params["failure_type"],
         )
@@ -934,12 +925,13 @@ class InjectorFailureTransferStep(TransferStep):
 
     async def transfer(self, job: Job, token: Token) -> Token:
         # Counts the number of step rollbacks
-        loading_context = DefaultDatabaseLoadingContext()
+        loading_context = DefaultDatabaseLoadingContext(
+            database=self.workflow.context.database
+        )
         workflows = await asyncio.gather(
             *(
                 asyncio.create_task(
                     Workflow.load(
-                        context=self.workflow.context,
                         persistent_id=w["id"],
                         loading_context=loading_context,
                     )
