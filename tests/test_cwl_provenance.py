@@ -86,7 +86,7 @@ async def _run_many_to_one_transformer(
         await inject_tokens(token_list, input_port, context)
         step.add_input_port(f"param{i}", input_port)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -127,7 +127,7 @@ async def test_clone_transformer(context: StreamFlowContext) -> None:
     )
     token_list = [Token("a")]
     size_token = Token(3)
-    await size_token.save(context)
+    await size_token.save(context.database)
     replicas_port.put(size_token)
     replicas_port.put(TerminationToken())
     await create_and_run_step(
@@ -262,7 +262,7 @@ async def test_cwl_execute_step(context: StreamFlowContext) -> None:
     schedule_step.add_input_port(in_port_name, in_port_schedule)
     await inject_tokens(token_list, in_port_schedule, context)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -682,7 +682,7 @@ async def test_list_merge_combinator(context: StreamFlowContext) -> None:
     await inject_tokens(list_token, in_port, context)
 
     step.combinator.add_item(port_name)
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -722,7 +722,7 @@ async def test_loop_value_from_transformer(context: StreamFlowContext) -> None:
     await inject_tokens(token_list, in_port, context)
     await inject_tokens(token_list, loop_port, context)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -756,7 +756,7 @@ async def test_cwl_loop_output(
     ]
     await inject_tokens(token_list, in_port, context)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
     assert len(out_port.token_list) == 2
@@ -813,7 +813,7 @@ async def test_nested_crossproduct_combinator(context: StreamFlowContext) -> Non
     ]
     await inject_tokens(list_token_2, in_port_2, context)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 

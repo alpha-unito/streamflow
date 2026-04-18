@@ -11,7 +11,7 @@ from typing_extensions import Self
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.workflow import Job, Status, Token
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.log_handler import logger
@@ -112,8 +112,8 @@ class FileToken(Token, ABC):
 class JobToken(Token):
     __slots__ = ()
 
-    async def _save_value(self, context: StreamFlowContext):
-        return {"job": await self.value.save(context)}
+    async def _save_value(self, database: Database):
+        return {"job": await self.value.save(database)}
 
     @classmethod
     async def _load(
@@ -156,9 +156,9 @@ class ListToken(Token):
             ),
         )
 
-    async def _save_value(self, context: StreamFlowContext):
+    async def _save_value(self, database: Database):
         await asyncio.gather(
-            *(asyncio.create_task(t.save(context)) for t in self.value)
+            *(asyncio.create_task(t.save(database)) for t in self.value)
         )
         return [t.persistent_id for t in self.value]
 
@@ -226,9 +226,9 @@ class ObjectToken(Token):
             ),
         )
 
-    async def _save_value(self, context: StreamFlowContext):
+    async def _save_value(self, database: Database):
         await asyncio.gather(
-            *(asyncio.create_task(t.save(context)) for t in self.value.values())
+            *(asyncio.create_task(t.save(database)) for t in self.value.values())
         )
         return {k: t.persistent_id for k, t in self.value.items()}
 

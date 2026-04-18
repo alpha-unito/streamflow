@@ -11,7 +11,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.processor import TokenProcessor
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Port, Status, Token
@@ -78,7 +78,7 @@ class CloneTransformer(ManyToOneTransformer):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {"replicas_port": self.get_replicas_port().persistent_id}
 
@@ -156,11 +156,11 @@ class CWLTokenTransformer(ManyToOneTransformer):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "port_name": self.port_name,
-            "processor": await self.processor.save(context),
+            "processor": await self.processor.save(database),
         }
 
     async def transform(
@@ -198,9 +198,9 @@ class DefaultTransformer(ManyToOneTransformer):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "default_port": self.default_port.persistent_id
         }
 
@@ -302,9 +302,9 @@ class DefaultRetagTransformer(DefaultTransformer):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "primary_port": self.primary_port
         }
 
@@ -465,11 +465,11 @@ class ValueFromTransformer(ManyToOneTransformer):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "port_name": self.port_name,
-            "processor": await self.processor.save(context),
+            "processor": await self.processor.save(database),
             "value_from": self.value_from,
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,
@@ -553,11 +553,11 @@ class LoopValueFromTransformer(ValueFromTransformer):
         return loop_value
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "port_name": self.port_name,
-            "processor": await self.processor.save(context),
+            "processor": await self.processor.save(database),
             "value_from": self.value_from,
             "expression_lib": self.expression_lib,
             "full_js": self.full_js,

@@ -9,7 +9,7 @@ from typing_extensions import Self
 from streamflow.core import utils
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.exception import WorkflowExecutionException
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.workflow import Token, Workflow
 from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import IterationTerminationToken
@@ -65,9 +65,9 @@ class CartesianProductCombinator(Combinator):
                 }
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "depth": self.depth
         }
 
@@ -236,9 +236,9 @@ class LoopTerminationCombinator(DotProductCombinator):
         return combinator
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         # self._token_values is not saved because it is always empty at the beginning of execution
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "output_items": self.output_items
         }

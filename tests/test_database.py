@@ -22,7 +22,7 @@ async def test_get_steps_queries(context: StreamFlowContext) -> None:
     step.add_output_port("out", port_b)
     step_2.add_input_port("in2", port_b)
     step_2.add_output_port("out2", port_c)
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     input_steps_port_a = await context.database.get_input_steps(port_a.persistent_id)
     assert len(input_steps_port_a) == 0

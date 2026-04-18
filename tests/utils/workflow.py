@@ -24,7 +24,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.scheduling import HardwareRequirement
 from streamflow.core.utils import flatten_list, get_entity_ids, get_job_tag, get_tag
 from streamflow.core.workflow import (
@@ -247,7 +247,7 @@ async def create_workflow(
     for _ in range(num_port):
         ports.append(workflow.create_port())
     if save:
-        await workflow.save(context)
+        await workflow.save(context.database)
     return workflow, tuple(ports)
 
 
@@ -465,9 +465,9 @@ class BaseLoopConditionalStep(ConditionalStep):
             port.put(IterationTerminationToken(tag=get_tag(inputs.values())))
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "skip_ports": {
                 k: p.persistent_id for k, p in self.get_skip_ports().items()
             },
@@ -549,11 +549,11 @@ class EvalCommandOutputProcessor(DefaultCommandOutputProcessor):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         if self.target:
-            await self.target.save(context)
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+            await self.target.save(database)
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "value_type": self.value_type,
         }
 
@@ -727,9 +727,9 @@ class InjectorFailureCommand(Command):
         return cmd_out
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "command": self.command,
             "failure_tags": json.dumps(self.failure_tags),
             "failure_type": self.failure_type,
@@ -822,9 +822,9 @@ class InjectorFailureScheduleStep(ScheduleStep):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "failure_tags": json.dumps(self.failure_tags),
             "failure_type": self.failure_type,
         }
@@ -897,9 +897,9 @@ class InjectorFailureTransferStep(TransferStep):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "failure_tags": json.dumps(self.failure_tags),
             "failure_type": self.failure_type,
         }

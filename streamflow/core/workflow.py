@@ -13,6 +13,7 @@ from typing_extensions import Self
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import (
+    Database,
     DatabaseLoadingContext,
     DependencyType,
     PersistableEntity,
@@ -44,10 +45,10 @@ class Command(ABC):
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context, step)
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, database: Database):
         return {
             "type": utils.get_class_fullname(type(self)),
-            "params": await self._save_additional_params(context),
+            "params": await self._save_additional_params(database),
         }
 
     @classmethod
@@ -61,7 +62,7 @@ class Command(ABC):
         return cls(step=step)
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {}
 
@@ -104,7 +105,7 @@ class CommandTokenProcessor(ABC):
         return cls(name=row["name"])
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {"name": self.name}
 
@@ -129,10 +130,10 @@ class CommandTokenProcessor(ABC):
         type_ = cast(Self, get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context)
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, database: Database):
         return {
             "type": get_class_fullname(type(self)),
-            "params": await self._save_additional_params(context),
+            "params": await self._save_additional_params(database),
         }
 
 
@@ -199,10 +200,10 @@ class Job:
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         await asyncio.gather(
-            *(asyncio.create_task(t.save(context)) for t in self.inputs.values())
+            *(asyncio.create_task(t.save(database)) for t in self.inputs.values())
         )
         return {
             "name": self.name,
@@ -223,10 +224,10 @@ class Job:
         type_ = cast(Self, utils.get_class_from_name(row["type"]))
         return await type_._load(context, row["params"], loading_context)
 
-    async def save(self, context: StreamFlowContext):
+    async def save(self, database: Database):
         return {
             "type": utils.get_class_fullname(type(self)),
-            "params": await self._save_additional_params(context),
+            "params": await self._save_additional_params(database),
         }
 
 
@@ -256,7 +257,7 @@ class Port(PersistableEntity):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {}
 
@@ -308,14 +309,14 @@ class Port(PersistableEntity):
         for q in self.queues.values():
             q.put_nowait(token)
 
-    async def save(self, context: StreamFlowContext) -> None:
+    async def save(self, database: Database) -> None:
         async with self.persistence_lock:
             if not self.persistent_id:
-                self.persistent_id = await context.database.add_port(
+                self.persistent_id = await database.add_port(
                     name=self.name,
                     workflow_id=self.workflow.persistent_id,
                     type=type(self),
-                    params=await self._save_additional_params(context),
+                    params=await self._save_additional_params(database),
                 )
 
 
@@ -363,7 +364,7 @@ class Step(PersistableEntity, ABC):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {}
 
@@ -475,21 +476,21 @@ class Step(PersistableEntity, ABC):
     @abstractmethod
     async def run(self) -> None: ...
 
-    async def save(self, context: StreamFlowContext) -> None:
+    async def save(self, database: Database) -> None:
         async with self.persistence_lock:
             if not self.persistent_id:
-                self.persistent_id = await context.database.add_step(
+                self.persistent_id = await database.add_step(
                     name=self.name,
                     workflow_id=self.workflow.persistent_id,
                     status=self.status.value,
                     type=type(self),
-                    params=await self._save_additional_params(context),
+                    params=await self._save_additional_params(database),
                 )
         save_tasks = []
         for name, port in self.get_input_ports().items():
             save_tasks.append(
                 asyncio.create_task(
-                    self.workflow.context.database.add_dependency(
+                    database.add_dependency(
                         step=self.persistent_id,
                         port=port.persistent_id,
                         type=DependencyType.INPUT,
@@ -500,7 +501,7 @@ class Step(PersistableEntity, ABC):
         for name, port in self.get_output_ports().items():
             save_tasks.append(
                 asyncio.create_task(
-                    self.workflow.context.database.add_dependency(
+                    database.add_dependency(
                         step=self.persistent_id,
                         port=port.persistent_id,
                         type=DependencyType.OUTPUT,
@@ -569,18 +570,16 @@ class Token(PersistableEntity):
     def retag(self, tag: str) -> Token:
         return self.__class__(tag=tag, value=self.value, recoverable=self._recoverable)
 
-    async def save(
-        self, context: StreamFlowContext, port_id: int | None = None
-    ) -> None:
+    async def save(self, database: Database, port_id: int | None = None) -> None:
         async with self.persistence_lock:
             if not self.persistent_id:
                 try:
-                    self.persistent_id = await context.database.add_token(
+                    self.persistent_id = await database.add_token(
                         port=port_id,
                         recoverable=self._recoverable,
                         tag=self.tag,
                         type=type(self),
-                        value=await self._save_value(context),
+                        value=await self._save_value(database),
                     )
                 except TypeError as e:
                     raise WorkflowExecutionException from e
@@ -621,7 +620,7 @@ class Workflow(PersistableEntity):
         return cls(context=context, config=row["params"]["config"], name=row["name"])
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {"config": self.config, "output_ports": self.output_ports}
 
@@ -710,18 +709,18 @@ class Workflow(PersistableEntity):
         }
         return workflow
 
-    async def save(self, context: StreamFlowContext) -> None:
+    async def save(self, database: Database) -> None:
         async with self.persistence_lock:
             if not self.persistent_id:
                 self.persistent_id = await self.context.database.add_workflow(
                     name=self.name,
-                    params=await self._save_additional_params(context),
+                    params=await self._save_additional_params(database),
                     status=Status.WAITING.value,
                     type=type(self),
                 )
         await asyncio.gather(
-            *(asyncio.create_task(port.save(context)) for port in self.ports.values())
+            *(asyncio.create_task(port.save(database)) for port in self.ports.values())
         )
         await asyncio.gather(
-            *(asyncio.create_task(step.save(context)) for step in self.steps.values())
+            *(asyncio.create_task(step.save(database)) for step in self.steps.values())
         )

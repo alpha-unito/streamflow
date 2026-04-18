@@ -92,7 +92,7 @@ async def test_deploy_step(context: StreamFlowContext) -> None:
     workflow, _ = await create_workflow(context, num_port=0)
     step = create_deploy_step(workflow)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -113,7 +113,7 @@ async def test_schedule_step(context: StreamFlowContext) -> None:
         workflow, cls=ScheduleStep, deploy_steps=[deploy_step]
     )
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
     job_token = schedule_step.get_output_port("__job__").token_list[0]
@@ -142,7 +142,7 @@ async def test_gather_step(context: StreamFlowContext) -> None:
     base_tag = "0"
     token_list = [Token(i, tag=f"{base_tag}.{i}") for i in range(5)]
     size_token = Token(len(token_list), tag=base_tag)
-    await size_token.save(context)
+    await size_token.save(context.database)
     size_port.put(size_token)
     size_port.put(TerminationToken())
     await create_and_run_step(
@@ -212,7 +212,7 @@ async def test_combinator_step_dot_product(context: StreamFlowContext) -> None:
     step.add_input_port(port_name_2, in_port_2)
     step.add_output_port(port_name_2, out_port_2)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     list_token = ListToken([Token("fst"), Token("snd")])
     await inject_tokens([list_token], in_port, context)
     step.combinator.add_item(port_name)
@@ -221,7 +221,7 @@ async def test_combinator_step_dot_product(context: StreamFlowContext) -> None:
     await inject_tokens([tt], in_port_2, context)
     step.combinator.add_item(port_name_2)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -262,7 +262,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext) -> 
     step.add_input_port(port_name_2, in_port_2)
     step.add_output_port(port_name_2, out_port_2)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     token_list = [ListToken([Token("a"), Token("b")])]
     await inject_tokens(token_list, in_port, context)
     step.combinator.add_item(port_name)
@@ -271,7 +271,7 @@ async def test_combinator_step_cartesian_product(context: StreamFlowContext) -> 
     await inject_tokens(token_list_2, in_port_2, context)
     step.combinator.add_item(port_name_2)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -312,7 +312,7 @@ async def test_loop_combinator_step(context: StreamFlowContext) -> None:
     step.add_input_port(port_name_2, in_port_2)
     step.add_output_port(port_name_2, out_port_2)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     tag = "0.0"
     token_list = [
         ListToken([Token("a"), Token("b")], tag=tag),
@@ -325,7 +325,7 @@ async def test_loop_combinator_step(context: StreamFlowContext) -> None:
     await inject_tokens(token_list_2, in_port_2, context)
     step.combinator.add_item(port_name_2)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -363,7 +363,7 @@ async def test_loop_termination_combinator(context: StreamFlowContext) -> None:
     ]
     await inject_tokens(list_token, in_port, context)
 
-    await workflow.save(context)
+    await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
@@ -403,7 +403,7 @@ async def test_lazy_loop_combinator(context: StreamFlowContext) -> None:
         input_port = ports.pop()
         step.add_input_port(port_name, input_port)
         step.add_output_port(port_name, ports.pop())
-    await workflow.save(context)
+    await workflow.save(context.database)
 
     lazy_tokens = None
     for i, input_port in enumerate(step.get_input_ports().values()):

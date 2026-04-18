@@ -19,13 +19,15 @@ StreamFlow relies on a persistent ``Database`` to store all the metadata regardi
         ...
 
     async def save(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> None:
         ...
 
 Each ``PersistableEntity`` is identified by a unique numerical ``persistent_id`` related to the corresponding ``Database`` record. Two methods, ``save`` and ``load``, allow persisting the entity in the ``Database`` and retrieving it from the persistent record. Note that ``load`` is a class method, as it must construct a new instance.
 
 The ``load`` method receives three input parameters: the current execution ``context``, the ``persistent_id`` of the instance that should be loaded, and a ``loading_context`` (see :ref:`DatabaseLoadingContext <DatabaseLoadingContext>`). Note that the ``load`` method should not directly assign the ``persistent_id`` to the new entity, as this operation is in charge to the :ref:`DatabaseLoadingContext <DatabaseLoadingContext>` class.
+
+The ``save`` method receives in input a ``Database`` instance and does not return anything. It is in charge of saving the entity in the database, populating the ``persistent_id`` if it is not already set.
 
 Persistence
 ===========

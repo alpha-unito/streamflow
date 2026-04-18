@@ -9,7 +9,7 @@ from rdflib import Graph
 from typing_extensions import Self
 
 from streamflow.core.data import DataLocation
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.utils import random_name
 from streamflow.core.workflow import Workflow
 from streamflow.data.remotepath import StreamFlowPath
@@ -86,9 +86,9 @@ class CWLWorkflow(Workflow):
         self._output_lock: asyncio.Lock = asyncio.Lock()
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
-        return cast(dict[str, Any], await super()._save_additional_params(context)) | {
+        return cast(dict[str, Any], await super()._save_additional_params(database)) | {
             "cwl_version": self.cwl_version,
             "format_graph": (
                 self.format_graph.serialize() if self.format_graph is not None else None

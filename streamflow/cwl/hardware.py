@@ -9,7 +9,7 @@ import cwl_utils.types
 from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
-from streamflow.core.persistence import DatabaseLoadingContext
+from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement, Storage
 from streamflow.cwl.utils import eval_expression
 from streamflow.workflow.utils import get_token_value
@@ -56,7 +56,7 @@ class CWLHardwareRequirement(HardwareRequirement):
         )
 
     async def _save_additional_params(
-        self, context: StreamFlowContext
+        self, database: Database
     ) -> MutableMapping[str, Any]:
         return {
             "cores": self.cores,
