@@ -275,22 +275,25 @@ class DeploymentConfig(PersistableEntity):
         return obj
 
     async def save(self, database: Database) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                self.persistent_id = await database.add_deployment(
-                    name=self.name,
-                    type=self.type,
-                    config=self.config,
-                    external=self.external,
-                    lazy=self.lazy,
-                    scheduling_policy=await self.scheduling_policy.save(database),
-                    workdir=self.workdir,
-                    wraps=(
-                        await self.wraps.save(database)
-                        if self.wraps is not None
-                        else None
-                    ),
-                )
+        if self.persistent_id is not None:
+            return
+        if self._saving is not None:
+            await self._saving.wait()
+        else:
+            self._saving = asyncio.Event()
+            self.persistent_id = await database.add_deployment(
+                name=self.name,
+                type=self.type,
+                config=self.config,
+                external=self.external,
+                lazy=self.lazy,
+                scheduling_policy=await self.scheduling_policy.save(database),
+                workdir=self.workdir,
+                wraps=(
+                    await self.wraps.save(database) if self.wraps is not None else None
+                ),
+            )
+            self._saving.set()
 
 
 class FilterConfig(PersistableEntity):
@@ -318,13 +321,18 @@ class FilterConfig(PersistableEntity):
         return obj
 
     async def save(self, database: Database) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                self.persistent_id = await database.add_filter(
-                    name=self.name,
-                    type=self.type,
-                    config=self.config,
-                )
+        if self.persistent_id is not None:
+            return
+        if self._saving is not None:
+            await self._saving.wait()
+        else:
+            self._saving = asyncio.Event()
+            self.persistent_id = await database.add_filter(
+                name=self.name,
+                type=self.type,
+                config=self.config,
+            )
+            self._saving.set()
 
 
 class Target(PersistableEntity):
@@ -380,39 +388,37 @@ class Target(PersistableEntity):
         return obj
 
     async def save(self, database: Database) -> None:
-        await self.deployment.save(database)
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                self.persistent_id = await database.add_target(
-                    deployment=self.deployment.persistent_id,
-                    type=type(self),
-                    params=await self._save_additional_params(database),
-                    locations=self.locations,
-                    service=self.service,
-                    workdir=self.workdir,
-                )
+        if self.persistent_id is not None:
+            return
+        if self._saving is not None:
+            await self._saving.wait()
+        else:
+            self._saving = asyncio.Event()
+            await self.deployment.save(database)
+            self.persistent_id = await database.add_target(
+                deployment=self.deployment.persistent_id,
+                type=type(self),
+                params=await self._save_additional_params(database),
+                locations=self.locations,
+                service=self.service,
+                workdir=self.workdir,
+            )
+            self._saving.set()
 
 
 class LocalTarget(Target):
-    deployment_name = "__LOCAL__"
-    __deployment_config = None
-
     def __init__(self, workdir: str | None = None):
         super().__init__(
-            deployment=self._get_deployment_config(), locations=1, workdir=workdir
-        )
-
-    @classmethod
-    def _get_deployment_config(cls) -> DeploymentConfig:
-        if cls.__deployment_config is None:
-            cls.__deployment_config = DeploymentConfig(
-                name=cls.deployment_name,
+            deployment=DeploymentConfig(
+                name="__LOCAL__",
                 type="local",
                 config={},
                 external=True,
                 lazy=False,
-            )
-        return cls.__deployment_config
+            ),
+            locations=1,
+            workdir=workdir,
+        )
 
     @classmethod
     async def _load(

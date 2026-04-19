@@ -302,14 +302,19 @@ class Port(PersistableEntity):
             q.put_nowait(token)
 
     async def save(self, database: Database) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                self.persistent_id = await database.add_port(
-                    name=self.name,
-                    workflow_id=self.workflow.persistent_id,
-                    type=type(self),
-                    params=await self._save_additional_params(database),
-                )
+        if self.persistent_id is not None:
+            return
+        if self._saving is not None:
+            await self._saving.wait()
+        else:
+            self._saving = asyncio.Event()
+            self.persistent_id = await database.add_port(
+                name=self.name,
+                workflow_id=self.workflow.persistent_id,
+                type=type(self),
+                params=await self._save_additional_params(database),
+            )
+            self._saving.set()
 
 
 class Status(IntEnum):
@@ -467,8 +472,11 @@ class Step(PersistableEntity, ABC):
     async def run(self) -> None: ...
 
     async def save(self, database: Database) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
+        if self.persistent_id is None:
+            if self._saving is not None:
+                await self._saving.wait()
+            else:
+                self._saving = asyncio.Event()
                 self.persistent_id = await database.add_step(
                     name=self.name,
                     workflow_id=self.workflow.persistent_id,
@@ -476,9 +484,9 @@ class Step(PersistableEntity, ABC):
                     type=type(self),
                     params=await self._save_additional_params(database),
                 )
-        save_tasks = []
-        for name, port in self.get_input_ports().items():
-            save_tasks.append(
+                self._saving.set()
+        await asyncio.gather(
+            *(
                 asyncio.create_task(
                     database.add_dependency(
                         step=self.persistent_id,
@@ -487,9 +495,9 @@ class Step(PersistableEntity, ABC):
                         name=name,
                     )
                 )
-            )
-        for name, port in self.get_output_ports().items():
-            save_tasks.append(
+                for name, port in self.get_input_ports().items()
+            ),
+            *(
                 asyncio.create_task(
                     database.add_dependency(
                         step=self.persistent_id,
@@ -498,8 +506,9 @@ class Step(PersistableEntity, ABC):
                         name=name,
                     )
                 )
-            )
-        await asyncio.gather(*save_tasks)
+                for name, port in self.get_output_ports().items()
+            ),
+        )
 
     @abstractmethod
     async def terminate(self, status: Status) -> None: ...
@@ -559,18 +568,24 @@ class Token(PersistableEntity):
         return self.__class__(tag=tag, value=self.value, recoverable=self._recoverable)
 
     async def save(self, database: Database, port_id: int | None = None) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
-                try:
-                    self.persistent_id = await database.add_token(
-                        port=port_id,
-                        recoverable=self._recoverable,
-                        tag=self.tag,
-                        type=type(self),
-                        value=await self._save_value(database),
-                    )
-                except TypeError as e:
-                    raise WorkflowExecutionException from e
+        if self.persistent_id is not None:
+            return
+        if self._saving is not None:
+            await self._saving.wait()
+        else:
+            self._saving = asyncio.Event()
+            try:
+                self.persistent_id = await database.add_token(
+                    port=port_id,
+                    recoverable=self._recoverable,
+                    tag=self.tag,
+                    type=type(self),
+                    value=await self._save_value(database),
+                )
+            except TypeError as e:
+                raise WorkflowExecutionException from e
+            finally:
+                self._saving.set()
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value, recoverable=self._recoverable)
@@ -696,14 +711,18 @@ class Workflow(PersistableEntity):
         return workflow
 
     async def save(self, database: Database) -> None:
-        async with self.persistence_lock:
-            if not self.persistent_id:
+        if self.persistent_id is None:
+            if self._saving is not None:
+                await self._saving.wait()
+            else:
+                self._saving = asyncio.Event()
                 self.persistent_id = await self.context.database.add_workflow(
                     name=self.name,
                     params=await self._save_additional_params(database),
                     status=Status.WAITING.value,
                     type=type(self),
                 )
+                self._saving.set()
         await asyncio.gather(
             *(asyncio.create_task(port.save(database)) for port in self.ports.values())
         )

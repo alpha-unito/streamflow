@@ -8,6 +8,12 @@
       "title": "Connection",
       "description": "The path where the sqlite file resides"
     },
+    "mmap_size": {
+      "type": "integer",
+      "title": "SQLite MMAP size",
+      "description": "The maximum number of bytes of the database file that will be accessed using memory-mapped I/O. If zero, then memory mapped I/O is disabled.",
+      "default": 268435456
+    },
     "timeout": {
       "type": "integer",
       "title": "Timeout",

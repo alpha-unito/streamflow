@@ -35,8 +35,9 @@ def _load_keys(
 
 
 class SqliteConnection:
-    def __init__(self, connection: str, timeout: int, init_db: bool):
+    def __init__(self, connection: str, mmap_size: int, timeout: int, init_db: bool):
         self.connection: str = connection
+        self.mmap_size: int = mmap_size
         self.timeout: int = timeout
         self.init_db: bool = init_db
         self._connection: aiosqlite.Connection | None = None
@@ -53,7 +54,9 @@ class SqliteConnection:
                     async with self._connection.cursor() as cursor:
                         await cursor.execute("PRAGMA journal_mode = WAL")
                         await cursor.execute("PRAGMA synchronous = NORMAL")
-                        await cursor.execute("PRAGMA wal_autocheckpoint = 1000")
+                        await cursor.execute("PRAGMA temp_store = MEMORY")
+                        await cursor.execute("PRAGMA foreign_keys = ON")
+                        await cursor.execute(f"PRAGMA mmap_size = {self.mmap_size}")
                         await cursor.executescript(
                             files(__package__)
                             .joinpath("schemas")
@@ -87,6 +90,7 @@ class SqliteDatabase(CachedDatabase):
         self,
         context: StreamFlowContext,
         connection: str = DEFAULT_SQLITE_CONNECTION,
+        mmap_size: int = 256 * 1024 * 1024,
         timeout: int = 20,
     ):
         super().__init__(context)
@@ -102,6 +106,7 @@ class SqliteDatabase(CachedDatabase):
             os.makedirs(os.path.dirname(connection), exist_ok=True)
         self.connection: SqliteConnection = SqliteConnection(
             connection=connection,
+            mmap_size=mmap_size,
             timeout=timeout,
             init_db=connection == IN_MEMORY_SQLITE_CONNECTION
             or not os.path.exists(connection),

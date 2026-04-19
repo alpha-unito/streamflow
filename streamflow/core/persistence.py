@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from asyncio import Lock
+from asyncio import Event
 from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -65,11 +65,11 @@ class DatabaseLoadingContext(ABC):
 
 
 class PersistableEntity:
-    __slots__ = ("persistent_id", "persistence_lock")
+    __slots__ = ("persistent_id", "_saving")
 
     def __init__(self) -> None:
         self.persistent_id: int | None = None
-        self.persistence_lock: Lock = Lock()
+        self._saving: Event | None = None
 
     @classmethod
     @abstractmethod
