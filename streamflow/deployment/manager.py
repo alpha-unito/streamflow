@@ -94,7 +94,7 @@ class DefaultDeploymentManager(DeploymentManager):
         if issubclass(connector_type, ConnectorWrapper):
             # Retrieve the inner connector's config
             if deployment_config.wraps is None:
-                deployment_name = LocalTarget.deployment_name
+                deployment_name = "__LOCAL__"
                 service = None
                 if deployment_name not in self.config_map:
                     await self._deploy(LocalTarget().deployment)

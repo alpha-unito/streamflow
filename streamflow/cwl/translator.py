@@ -3144,7 +3144,7 @@ class CWLTranslator:
             else posixpath.sep
         )
         # Register data locations for config files
-        deployment_name = LocalTarget.deployment_name
+        deployment_name = "__LOCAL__"
         path = _get_path(self.cwl_definition.id)
         self.context.data_manager.register_path(
             location=ExecutionLocation(

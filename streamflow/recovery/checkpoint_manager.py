@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from streamflow.core import utils
 from streamflow.core.data import DataLocation
-from streamflow.core.deployment import ExecutionLocation, LocalTarget
+from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.recovery import CheckpointManager
 from streamflow.core.utils import random_name
 
@@ -44,7 +44,7 @@ class DefaultCheckpointManager(CheckpointManager):
             src_path=data_location.path,
             dst_locations=[
                 ExecutionLocation(
-                    deployment=LocalTarget.deployment_name,
+                    deployment="__LOCAL__",
                     local=True,
                     name="__LOCAL__",
                 )

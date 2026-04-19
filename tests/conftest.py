@@ -171,7 +171,9 @@ def object_to_dict(obj: Any) -> MutableMapping[str, Any]:
     return {
         attr: getattr(obj, attr)
         for attr in dir(obj)
-        if not attr.startswith("__") and not callable(getattr(obj, attr))
+        if not attr.startswith("__")
+        and attr != "_saving"
+        and callable(getattr(obj, attr))
     }
 
 

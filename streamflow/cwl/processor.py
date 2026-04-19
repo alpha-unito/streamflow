@@ -10,7 +10,7 @@ import cwl_utils.types
 from schema_salad.exceptions import ValidationException
 from typing_extensions import Self
 
-from streamflow.core.deployment import Connector, LocalTarget, Target
+from streamflow.core.deployment import Connector, Target
 from streamflow.core.exception import (
     ProcessorTypeError,
     WorkflowExecutionException,
@@ -226,7 +226,7 @@ class CWLTokenProcessor(TokenProcessor):
                 # If such location does not exist, apply the standard heuristic to select the best one
                 data_location = (
                     await self.workflow.context.data_manager.get_source_location(
-                        path=filepath, dst_deployment=LocalTarget.deployment_name
+                        path=filepath, dst_deployment="__LOCAL__"
                     )
                 )
             if data_location:
