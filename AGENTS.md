@@ -12,10 +12,11 @@ Obtain explicit user permission before installing or updating any packages or de
 
 Never create git commits without explicit user approval. Required sequence:
 1. Run `uv run make format-check codespell-check typing` — all must pass
-2. Present the full commit message + `git diff --stat` + full `git diff`
-3. Ask explicitly for approval and wait — do not commit until confirmed
+2. Update `CHANGELOG.md` under `[Unreleased]` with a summary of the changes
+3. Present the full commit message + `git diff --stat` + full `git diff`
+4. Ask explicitly for approval and wait — do not commit until confirmed
 
-See `.agents/skills/git/SKILL.md` for commit message format and examples.
+See the **StreamFlow Git Workflow** skill for commit message format and CHANGELOG update rules.
 
 ## Forbidden Types
 
@@ -25,7 +26,7 @@ Never use these types in any form:
 - `dict[str, Any]`, `list[Any]`, `tuple[Any, ...]`, `dict[Any, Any]`
 - `MutableMapping[str, Any]`, `MutableSequence[Any]`
 
-If a fix requires any of the above, skip it entirely. See `.agents/skills/mypy/SKILL.md` for allowed alternatives and validation procedures.
+If a fix requires any of the above, skip it entirely. See the **StreamFlow Mypy Type Checking** skill for allowed alternatives and validation procedures.
 
 ## Project Structure
 
@@ -46,9 +47,9 @@ docs/               # Sphinx documentation
 
 ## Skills
 
-| Task | Skill                                |
-|---|--------------------------------------|
-| Type checking, mypy errors, forbidden types | `.agents/skills/mypy/SKILL.md`       |
-| Code style: imports, naming, error handling, docstrings | `.agents/skills/code-style/SKILL.md` |
-| Git commit message format | `.agents/skills/git/SKILL.md`        |
-| Writing and running tests | `.agents/skills/testing/SKILL.md`    |
+| Task | Skill |
+|---|---|
+| Type checking, mypy errors, forbidden types | **StreamFlow Mypy Type Checking** |
+| Code style: imports, naming, error handling, docstrings | **StreamFlow Code Style** |
+| Git commit message format | **StreamFlow Git Workflow** |
+| Writing and running tests | **StreamFlow Testing** |

@@ -1,10 +1,10 @@
 ---
-name: Mypy var-annotated Fixer
+name: StreamFlow Mypy var-annotated Fixer
 description: This skill should be used when the user encounters "var-annotated" mypy errors, asks to "fix var-annotated errors", "add type annotations to variables", or mentions "Need type annotation for" errors. Provides workflow for fixing missing variable type annotations while respecting forbidden type constraints (no Any, dict[str, Any], list[Any], etc.).
 version: 0.1.0
 ---
 
-# Mypy Sub-Skill: var-annotated
+# StreamFlow Mypy Sub-Skill: var-annotated
 
 **Error:** `[var-annotated]` — mypy cannot infer a variable's type. Fix: add an explicit annotation (`variable: Type = value`). If the correct type requires forbidden types, skip the error.
 
@@ -14,7 +14,7 @@ version: 0.1.0
 2. **Determine the concrete type** from usage, signatures, or similar patterns nearby
 3. **Check:** does the type need `Any` or other forbidden types? If YES → skip
 4. **Apply:** `variable: ConcreteType = value`
-5. **Validate & commit:** See `../SKILL.md` — General Workflow steps 3–5
+5. **Validate & commit:** Load the **StreamFlow Mypy Type Checking** skill — General Workflow steps 3–5
 
 ## Fix Patterns
 
@@ -61,5 +61,5 @@ Don't guess types — always verify by reading code. Don't use bare generics (`l
 
 ## See Also
 
-- **`../SKILL.md`** — General workflow, allowed types reference
+- **StreamFlow Mypy Type Checking** skill — General workflow, allowed types reference
 - **AGENTS.md** — Forbidden types list, commit approval rule
