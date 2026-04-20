@@ -1,12 +1,12 @@
 ---
-name: Code Style
+name: StreamFlow Code Style
 description: This skill should be used when the user asks to "add docstrings", "write error handling", "use naming conventions", "handle exceptions", or when writing new Python code for StreamFlow that requires docstring format, naming conventions, exception handling, or async cleanup patterns.
 version: 0.1.0
 ---
 
-# Code Style Skill
+# StreamFlow Code Style Skill
 
-Conventions for writing Python code in StreamFlow that are **not** automatically enforced by the formatter. For type annotations, see `.agents/skills/mypy/SKILL.md`.
+Conventions for writing Python code in StreamFlow that are **not** automatically enforced by the formatter. For type annotations, load the **StreamFlow Mypy Type Checking** skill.
 
 Run auto-fix before committing:
 
@@ -116,5 +116,5 @@ def deploy_connector(
 
 ## See Also
 
-- `.agents/skills/mypy/SKILL.md` — type annotations and forbidden types
-- `.agents/skills/git/SKILL.md` — commit message format
+- **StreamFlow Mypy Type Checking** skill — type annotations and forbidden types
+- **StreamFlow Git Workflow** skill — commit message format

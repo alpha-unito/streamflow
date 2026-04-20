@@ -1,10 +1,10 @@
 ---
-name: Mypy Type Checking
+name: StreamFlow Mypy Type Checking
 description: This skill should be used when the user asks to "fix mypy errors", "add type annotations", "fix type checking", "resolve no-untyped-def", "fix mypy type errors", or when working with type hints while respecting StreamFlow's forbidden type constraints (no Any, dict[str, Any], etc.).
 version: 0.1.0
 ---
 
-# Mypy Type Checking Skill
+# StreamFlow Mypy Type Checking Skill
 
 ## Core Constraint
 
@@ -14,8 +14,8 @@ version: 0.1.0
 
 | Error code | Description | Sub-skill |
 |---|---|---|
-| `[no-untyped-def]` | Function missing type annotations | `no-untyped-def/SKILL.md` |
-| `[var-annotated]` | Variable missing type annotation | `var-annotated/SKILL.md` |
+| `[no-untyped-def]` | Function missing type annotations | **StreamFlow Mypy no-untyped-def Fixer** skill |
+| `[var-annotated]` | Variable missing type annotation | **StreamFlow Mypy var-annotated Fixer** skill |
 
 ## General Workflow
 
@@ -29,7 +29,7 @@ version: 0.1.0
    ```bash
    uv run make format-check codespell-check typing
    ```
-5. **Commit:** See `.agents/skills/git/SKILL.md`
+5. **Commit:** Load the **StreamFlow Git Workflow** skill
 
 ## Allowed Types Quick Reference
 
@@ -65,5 +65,5 @@ async def close(self) -> None: ...
 ## See Also
 
 - **AGENTS.md** — Forbidden types list, mandatory rules
-- **`.agents/skills/git/SKILL.md`** — Commit message format and approval workflow
-- **`.agents/skills/code-style/SKILL.md`** — Code style guidelines
+- **StreamFlow Git Workflow** skill — Commit message format and approval workflow
+- **StreamFlow Code Style** skill — Code style guidelines

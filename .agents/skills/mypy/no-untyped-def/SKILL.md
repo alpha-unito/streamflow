@@ -1,10 +1,10 @@
 ---
-name: Mypy no-untyped-def Fixer
+name: StreamFlow Mypy no-untyped-def Fixer
 description: This skill should be used when the user encounters "no-untyped-def" mypy errors, asks to "fix no-untyped-def errors", "add type annotations to functions", or mentions "Function is missing a type annotation". Provides specific workflow for fixing missing type annotations while respecting forbidden type constraints.
 version: 0.1.0
 ---
 
-# Mypy Sub-Skill: no-untyped-def
+# StreamFlow Mypy Sub-Skill: no-untyped-def
 
 **Error:** `[no-untyped-def]` — function or method missing type annotations.
 
@@ -22,7 +22,7 @@ For each function: can all parameters and the return type use concrete types?
    ```
 2. **Classify** each function as FIXABLE or UNFIXABLE (see above)
 3. **Add annotations** to FIXABLE functions only
-4. **Validate & commit:** See `../SKILL.md` — General Workflow steps 3–5
+4. **Validate & commit:** Load the **StreamFlow Mypy Type Checking** skill — General Workflow steps 3–5
 
 ## Key Patterns
 
@@ -69,5 +69,5 @@ If any return path needs a forbidden type, skip the whole function.
 
 ## See Also
 
-- **`../SKILL.md`** — General workflow, allowed types reference
+- **StreamFlow Mypy Type Checking** skill — General workflow, allowed types reference
 - **AGENTS.md** — Forbidden types list, commit approval rule

@@ -1,12 +1,12 @@
 ---
-name: Git Workflow
+name: StreamFlow Git Workflow
 description: This skill should be used when the user asks to "write a commit message", "create a commit", "format a commit", "what commit type to use", or when preparing changes for a git commit in StreamFlow. Provides commit message format, type conventions, and examples.
 version: 0.1.0
 ---
 
-# Git Workflow Skill
+# StreamFlow Git Workflow Skill
 
-Commit message conventions for StreamFlow. The approval rule (never commit without explicit user approval) lives in `AGENTS.md`.
+Commit message conventions and CHANGELOG update rules for StreamFlow. The approval rule (never commit without explicit user approval) lives in `AGENTS.md`.
 
 ## Commit Message Format
 
@@ -45,6 +45,10 @@ Commit message conventions for StreamFlow. The approval rule (never commit witho
 - Use backticks around package names, rule/error codes, file names,
   and Python identifiers (functions, classes, variables, methods)
 - Reference issues: `Fixes #123`, `Closes #456`
+
+## CHANGELOG
+
+Before every commit, `CHANGELOG.md` must be updated under `## [Unreleased]`. Load the **StreamFlow Changelog Update** skill for the full rules on which subsection to use, entry format, and what to avoid.
 
 ## Examples
 

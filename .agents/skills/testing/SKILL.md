@@ -1,10 +1,10 @@
 ---
-name: Testing
+name: StreamFlow Testing
 description: This skill should be used when the user asks to "write a test", "run tests", "add a test for", "test this function", "check test coverage", "run the test suite", or when writing pytest tests for StreamFlow features or bug fixes.
 version: 0.1.0
 ---
 
-# Testing Skill
+# StreamFlow Testing Skill
 
 Guidelines for writing and running tests in StreamFlow.
 
