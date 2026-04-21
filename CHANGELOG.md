@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Improve `StreamFlowExecutor` termination protocol ([#1000](https://github.com/alpha-unito/streamflow/pull/1000))
 - Improve save protocol and SQLite pragmas ([#1036](https://github.com/alpha-unito/streamflow/pull/1036))
 - Refactor `load` API to drop the `context` parameter ([#1035](https://github.com/alpha-unito/streamflow/pull/1035))
 - Refactor `save` API to take a `Database` argument ([#1034](https://github.com/alpha-unito/streamflow/pull/1034))
