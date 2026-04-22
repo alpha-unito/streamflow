@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import posixpath
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
 from importlib.resources import files
@@ -529,7 +530,10 @@ class SSHConnector(BaseConnector):
                     for line in dir_info_list:
                         try:
                             mount_point, fs_type, size = line.split(" ")
-                            if fs_type not in FS_TYPES_TO_SKIP:
+                            if (
+                                mount_point == posixpath.sep
+                                or fs_type not in FS_TYPES_TO_SKIP
+                            ):
                                 self.hardware[location].storage[mount_point] = Storage(
                                     mount_point=mount_point,
                                     size=float(size) / 2**10,

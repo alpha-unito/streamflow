@@ -56,8 +56,10 @@ class LocalConnector(BaseConnector):
         super().__init__(deployment_name, config_dir, transferBufferSize)
         storage = {}
         for disk in psutil.disk_partitions(all=True):
-            if disk.fstype not in FS_TYPES_TO_SKIP and os.access(
-                disk.mountpoint, os.R_OK
+            if (
+                disk.fstype not in FS_TYPES_TO_SKIP
+                and os.access(disk.mountpoint, os.R_OK)
+                or disk.mountpoint == os.path.abspath(os.sep)
             ):
                 try:
                     storage[disk.mountpoint] = Storage(
