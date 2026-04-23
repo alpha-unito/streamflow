@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix root folder always added to hardware storage ([#1040](https://github.com/alpha-unito/streamflow/pull/1040))
 - Correctly skip nested subworkflows ([#1019](https://github.com/alpha-unito/streamflow/pull/1019))
 - Fix container `mount` parsing ([#1032](https://github.com/alpha-unito/streamflow/pull/1032))
 - Fix lock releasing logic in scheduler ([#1031](https://github.com/alpha-unito/streamflow/pull/1031))
@@ -33,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump cachebox from 5.2.2 to 5.2.3 ([#1027](https://github.com/alpha-unito/streamflow/pull/1027))
 - Bump cryptography from 46.0.6 to 46.0.7 ([#1025](https://github.com/alpha-unito/streamflow/pull/1025))
 - Bump cwl-utils from 0.40 to 0.41 ([#1012](https://github.com/alpha-unito/streamflow/pull/1012))
+- Bump lxml from 6.0.2 to 6.1.0 ([#1038](https://github.com/alpha-unito/streamflow/pull/1038))
 - Bump plotly from 6.6.0 to 6.7.0 ([#1026](https://github.com/alpha-unito/streamflow/pull/1026))
 
 ### Dev Dependencies
