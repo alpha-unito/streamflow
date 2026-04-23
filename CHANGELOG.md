@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dev Dependencies
 
 - Bump cwltool from 3.1.20260315121657 to 3.2.20260413085819 ([#1028](https://github.com/alpha-unito/streamflow/pull/1028), [#1030](https://github.com/alpha-unito/streamflow/pull/1030))
-- Bump mypy from 1.19.1 to 1.20.1 ([#1014](https://github.com/alpha-unito/streamflow/pull/1014), [#1029](https://github.com/alpha-unito/streamflow/pull/1029))
+- Bump mypy from 1.19.1 to 1.20.2 ([#1014](https://github.com/alpha-unito/streamflow/pull/1014), [#1029](https://github.com/alpha-unito/streamflow/pull/1029), [#1039](https://github.com/alpha-unito/streamflow/pull/1039)
 - Bump pytest from 9.0.2 to 9.0.3 ([#1021](https://github.com/alpha-unito/streamflow/pull/1021))
 - Bump types-antlr4-python3-runtime ([#1017](https://github.com/alpha-unito/streamflow/pull/1017), [#1020](https://github.com/alpha-unito/streamflow/pull/1020))
 - Bump types-cachetools from 6.2.0.20260317 to 6.2.0.20260408 ([#1022](https://github.com/alpha-unito/streamflow/pull/1022))
