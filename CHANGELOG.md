@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0rc2] - 2026-04-23
+
 ### Added
 
 - Add `CHANGELOG.md` and changelog update skill ([#1037](https://github.com/alpha-unito/streamflow/pull/1037))
@@ -1198,7 +1200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed remote-to-remote data movement on Helm connector ([0967668](https://github.com/alpha-unito/streamflow/commit/0967668))
 - Patched WebSocket client `update()` function to handle binary format ([ba48f19](https://github.com/alpha-unito/streamflow/commit/ba48f19))
 
-[Unreleased]: https://github.com/alpha-unito/streamflow/compare/0.2.0rc1...HEAD
+[Unreleased]: https://github.com/alpha-unito/streamflow/compare/0.2.0rc2...HEAD
+[0.2.0rc2]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc2
 [0.2.0rc1]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc1
 [0.2.0.dev14]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0.dev14
 [0.2.0.dev13]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0.dev13
