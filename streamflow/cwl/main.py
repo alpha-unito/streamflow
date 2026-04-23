@@ -74,6 +74,7 @@ async def main(
         context=context,
         name=args.name,
         output_directory=args.outdir,
+        hierarchical_output=args.hierarchical,
         cwl_definition=cwl_definition,
         cwl_inputs=cwl_inputs,
         cwl_inputs_path=cwl_args[1] if len(cwl_args) == 2 else None,

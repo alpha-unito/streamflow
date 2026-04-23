@@ -1653,6 +1653,7 @@ class CWLTranslator:
         context: StreamFlowContext,
         name: str,
         output_directory: str,
+        hierarchical_output: bool,
         cwl_definition: (
             cwl_utils.parser.CommandLineTool
             | cwl_utils.parser.ExpressionTool
@@ -1665,6 +1666,7 @@ class CWLTranslator:
         self.context: StreamFlowContext = context
         self.name: str = name
         self.output_directory: str = output_directory
+        self.hierarchical_output: bool = hierarchical_output
         self.cwl_definition: (
             cwl_utils.parser.CommandLineTool
             | cwl_utils.parser.ExpressionTool
@@ -3244,7 +3246,14 @@ class CWLTranslator:
                         connector_ports={
                             target.deployment.name: deploy_step.get_output_port()
                         },
-                        input_directory=self.output_directory,
+                        input_directory=(
+                            os.path.join(
+                                self.output_directory,
+                                output_name.lstrip(posixpath.sep),
+                            )
+                            if self.hierarchical_output
+                            else self.output_directory
+                        ),
                         binding_config=BindingConfig(targets=[target]),
                     )
                     # Add the port as an input of the schedule step
