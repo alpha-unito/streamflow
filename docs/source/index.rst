@@ -86,7 +86,6 @@ For LaTeX users, the following BibTeX entry can be used:
    connector/flux.rst
    connector/helm3.rst
    connector/kubernetes.rst
-   connector/occam.rst
    connector/pbs.rst
    connector/queue-manager.rst
    connector/singularity.rst

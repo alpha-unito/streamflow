@@ -13,7 +13,6 @@ from streamflow.deployment.connector.kubernetes import (
     KubernetesConnector,
 )
 from streamflow.deployment.connector.local import LocalConnector
-from streamflow.deployment.connector.occam import OccamConnector
 from streamflow.deployment.connector.queue_manager import (
     FluxConnector,
     PBSConnector,
@@ -29,7 +28,6 @@ connector_classes: MutableMapping[str, type[Connector]] = {
     "helm3": Helm3Connector,
     "kubernetes": KubernetesConnector,
     "local": LocalConnector,
-    "occam": OccamConnector,
     "pbs": PBSConnector,
     "singularity": SingularityConnector,
     "slurm": SlurmConnector,
