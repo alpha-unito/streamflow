@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix shell reuse collision across execution locations ([#1045](https://github.com/alpha-unito/streamflow/pull/1045))
 - Fix operators in `Hardware` and `Storage` ([#1044](https://github.com/alpha-unito/streamflow/pull/1044))
 - Fix Docker Compose NDJSON location parsing ([#1043](https://github.com/alpha-unito/streamflow/pull/1043))
 
