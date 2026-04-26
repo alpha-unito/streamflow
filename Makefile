@@ -11,12 +11,12 @@ coverage-report: testcov
 	coverage report
 
 format:
-	ruff check --fix streamflow tests
-	black --target-version py310 streamflow tests
+	ruff check --fix streamflow tests docs/source/conf.py docs/tests
+	black --target-version py310 streamflow tests docs/source/conf.py docs/tests
 
 format-check:
-	ruff check streamflow tests
-	black --target-version py310 --diff --check streamflow tests
+	ruff check streamflow tests docs/source/conf.py docs/tests
+	black --target-version py310 --diff --check streamflow tests docs/source/conf.py docs/tests
 
 pyupgrade:
 	pyupgrade --py3-only --py310-plus $(shell git ls-files '*.py' ':!streamflow/cwl/antlr')
@@ -28,4 +28,4 @@ testcov:
 	python -m pytest -rs --cov --junitxml=junit.xml -o junit_family=legacy --cov-report= ${PYTEST_EXTRA}
 
 typing:
-	mypy streamflow tests
+	mypy streamflow tests docs/source/conf.py docs/tests

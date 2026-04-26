@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add MPI application tutorial and docs agent skills ([#1042](https://github.com/alpha-unito/streamflow/pull/1042))
 - Add fault tolerance paper reference in the documentation ([#1049](https://github.com/alpha-unito/streamflow/pull/1049))
 
 ### Fixed

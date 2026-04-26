@@ -3,18 +3,16 @@ kind: Deployment
 metadata:
   name: {{ include "openmpi.fullname" . }}
   labels:
-{{ include "openmpi.labels" . | indent 4 }}
+    {{- include "openmpi.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "openmpi.name" . }}
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "openmpi.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "openmpi.name" . }}
-        app.kubernetes.io/instance: {{ .Release.Name }}
+        {{- include "openmpi.selectorLabels" . | nindent 8 }}
     spec:
       containers:
         - name: openmpi
@@ -22,15 +20,11 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - containerPort: 2022
-          command:
-            {{- range .Values.image.command }}
-            - {{ . }}
-            {{- end }}
           volumeMounts:
             - name: ssh-key
               mountPath: /ssh-key/openmpi
       volumes:
         - name: ssh-key
           secret:
-            secretName: {{ .Release.Name }}-ssh-key
+            secretName: {{ .Values.sshSecretName }}
             defaultMode: 256

@@ -55,6 +55,12 @@ For LaTeX users, the following BibTeX entry can be used:
    advanced/stacked-locations.rst
 
 .. toctree::
+   :caption: Examples
+   :hidden:
+
+   examples/mpi/mpi.rst
+
+.. toctree::
    :caption: CWL Standard
    :hidden:
 

@@ -9,11 +9,11 @@ workflows:
     bindings:
       - step: /compile
         target:
-          deployment: k8s-mpi
+          deployment: dc-mpi
           service: openmpi
       - step: /execute
         target:
-          deployment: k8s-mpi
+          deployment: dc-mpi
           locations: 2
           service: openmpi
 deployments:
@@ -24,18 +24,3 @@ deployments:
         - environment/docker-compose/docker-compose.yml
       compatibility: true
       projectName: openmpi
-  helm-mpi:
-    type: helm
-    config:
-      chart: environment/helm/openmpi
-      kubeconfig: ~/.kube/config-streamflow
-      releaseName: openmpi-rel
-    workdir: /tmp
-  k8s-mpi:
-    type: kubernetes
-    config:
-      files:
-        - environment/k8s/secrets.yaml
-        - environment/k8s/deployment.yaml
-      kubeconfig: ~/.kube/config-streamflow
-    workdir: /tmp

@@ -1,4 +1,4 @@
-// Author: Marco Aldinucci
+// Author: Prof. Marco Aldinucci
 // Date: 13 May 2010
 // Ex. 1-2, for PDS-physics class 2010
 
@@ -34,7 +34,6 @@ int main( int argc, char **argv )
   gettimeofday(&wt0,NULL);
   MPI_Init(&argc,&argv );
   t0 = MPI_Wtime();
-  //gettimeofday(&wt0,NULL); 
   MPI_Comm_size(MPI_COMM_WORLD,&numprocs); 
   MPI_Comm_rank(MPI_COMM_WORLD,&myid); 
   MPI_Get_processor_name(processor_name,&namelen);
@@ -84,7 +83,6 @@ int main( int argc, char **argv )
 
   MPI_Barrier(MPI_COMM_WORLD);
   t1 = MPI_Wtime();
-  //gettimeofday(&wt1,NULL); 
   MPI_Finalize();
   gettimeofday(&wt1,NULL);  
   std::cout << "Total time (MPI) " << myid << " is " << t1-t0 << "\n";

@@ -142,11 +142,12 @@ jobs:
             alphaunito/streamflow:latest \
             streamflow run /streamflow/project/streamflow.yml
   documentation:
-    name: "Build Sphinx documentation"
+    name: "Build and Test Sphinx documentation"
     strategy:
       matrix:
+        on: [ "ubuntu-24.04" ]
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
@@ -155,16 +156,53 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: docker/setup-qemu-action@v4
+      - name: "Install KinD"
+        uses: helm/kind-action@v1.14.0
+        with:
+          config: .github/kind/config.yaml
+          kubectl_version: v1.35.0
+          version: v0.31.0
+      - name: "Configure Calico on KinD"
+        run: |
+          kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+          kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
+      - name: "Install Helm"
+        uses: azure/setup-helm@v4
+        with:
+          version: v4.1.1
       - name: "Install Python Dependencies"
-        run: uv sync --locked --no-dev --group docs
+        run: uv sync --locked --no-dev --group docs --group test
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "ed740b88ca9f41250ba30d95e2525ca3739c30a8b116ad1f65f4b296414faa67"
+          CHECKSUM: "c4e5f6e188497b43ad540894e9be5fe66a78e99fd6b8057c4e69f54329f07b59"
         run: |
           cd docs
           HASH="$(uv run --no-sync make checksum | tail -n1)"
           echo "Docs checksum is ${HASH}"
           test "${HASH}" == "${CHECKSUM}"
+      - name: "Run documentation example tests"
+        run: |
+          cd docs
+          uv run --no-sync make coverage.xml
+      - name: "Upload test results"
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v6
+        with:
+          files: docs/junit.xml
+          report_type: test_results
+          token: ${{ secrets.CODECOV_TOKEN }}
+      - name: "Upload coverage report for documentation tests"
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ format('{0}-py{1}-documentation-tests', matrix.on, matrix.python) }}
+          path: |
+            ./docs/coverage.xml
+          retention-days: 1
+          if-no-files-found: error
   test-flux:
     runs-on: ubuntu-24.04
     permissions:
@@ -293,7 +331,7 @@ jobs:
           if-no-files-found: error
   upload-to-codecov:
     name: "Codecov report upload"
-    needs: ["cwl-conformance", "unit-tests"]
+    needs: ["cwl-conformance", "documentation", "unit-tests"]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -301,6 +339,10 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           pattern: "*-conformance-tests"
+      - name: "Download documentation tests artifacts"
+        uses: actions/download-artifact@v8
+        with:
+          pattern: "*-documentation-tests"
       - name: "Download unit tests artifacts"
         uses: actions/download-artifact@v8
         with:
