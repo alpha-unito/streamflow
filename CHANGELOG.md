@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix Docker Compose NDJSON location parsing ([#1043](https://github.com/alpha-unito/streamflow/pull/1043))
+
 ### Removed
 
 - Remove `OccamConnector` and all associated files ([#1041](https://github.com/alpha-unito/streamflow/pull/1041))
