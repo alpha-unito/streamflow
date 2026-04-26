@@ -653,7 +653,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
                     capture_output=capture_output,
                     timeout=timeout,
                 )
-        command = utils.create_command(
+        cmd = utils.create_command(
             self.__class__.__name__,
             command,
             environment,
@@ -665,7 +665,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "EXECUTING command {command} on {location} {job}".format(
-                    command=command,
+                    command=cmd,
                     location=location,
                     job=f"for job {job_name}" if job_name else "",
                 )
@@ -673,7 +673,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
         return await self.connector.run(
             location=get_inner_location(location),
             command=self._get_run_command(
-                command=command,
+                command=cmd,
                 location=location,
             ),
             capture_output=capture_output,
@@ -1508,7 +1508,16 @@ class DockerComposeConnector(DockerBaseConnector):
         ):
             if json_start != 0 and logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Docker Compose log: {output[:json_start].strip()}")
-            locations = json.loads(output[json_start : json_end + 1])
+            content = output[json_start : json_end + 1]
+            try:
+                locations = json.loads(content)
+            except json.JSONDecodeError:
+                # Modern Docker Compose (v2/v5) emits NDJSON: one object per line.
+                locations = [
+                    json.loads(line)
+                    for line in content.splitlines()
+                    if line.strip().startswith("{")
+                ]
         else:
             raise WorkflowExecutionException(
                 f"Error retrieving locations for Docker Compose deployment {self.deployment_name}: "
