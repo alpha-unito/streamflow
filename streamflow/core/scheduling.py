@@ -109,7 +109,7 @@ class Hardware:
             ),
         )
 
-    def __ior__(self, other: Hardware) -> None:
+    def __ior__(self, other: Hardware) -> Self:
         if not isinstance(other, Hardware):
             raise NotImplementedError
         self.cores += other.cores
@@ -119,6 +119,7 @@ class Hardware:
                 self.storage[key] = disk
             else:
                 self.storage[key] |= disk
+        return self
 
     def __or__(self, other: Hardware) -> Hardware:
         if not isinstance(other, Hardware):
@@ -403,7 +404,7 @@ class Storage:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
-            raise WorkflowExecutionException(
+            raise ArithmeticError(
                 f"Cannot sum two storages with different mount points: {self.mount_point} and {other.mount_point}"
             )
         return Storage(
@@ -413,21 +414,22 @@ class Storage:
             bind=self.bind,
         )
 
-    def __ior__(self, other: Storage) -> None:
+    def __ior__(self, other: Storage) -> Self:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
-            raise WorkflowExecutionException(
+            raise ArithmeticError(
                 f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
             )
         self.size = max(self.size, other.size)
         self.paths |= other.paths
+        return self
 
     def __or__(self, other: Storage) -> Storage:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
-            raise WorkflowExecutionException(
+            raise ArithmeticError(
                 f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
             )
         return Storage(
@@ -441,7 +443,7 @@ class Storage:
         if not isinstance(other, Storage):
             raise NotImplementedError
         if self.mount_point != other.mount_point:
-            raise WorkflowExecutionException(
+            raise ArithmeticError(
                 f"Cannot subtract two storages with different mount points: {self.mount_point} and {other.mount_point}"
             )
         return Storage(
