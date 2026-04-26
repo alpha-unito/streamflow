@@ -171,7 +171,6 @@ Name                                                        Class
 :ref:`helm <Helm3Connector>`                                streamflow.deployment.connector.kubernetes.Helm3Connector
 :ref:`helm3 <Helm3Connector>`                               streamflow.deployment.connector.kubernetes.Helm3Connector
 :ref:`kubernetes <KubernetesConnector>`                     streamflow.deployment.connector.kubernetes.KubernetesConnector
-:ref:`occam <OccamConnector>`                               streamflow.deployment.connector.occam.OccamConnector
 :ref:`pbs <PBSConnector>`                                   streamflow.deployment.connector.queue_manager.PBSConnector
 :ref:`singularity <SingularityConnector>`                   streamflow.deployment.connector.singularity.SingularityConnector
 :ref:`slurm <SlurmConnector>`                               streamflow.deployment.connector.queue_manager.SlurmConnector

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Remove `OccamConnector` and all associated files ([#1041](https://github.com/alpha-unito/streamflow/pull/1041))
+
 ## [0.2.0rc2] - 2026-04-23
 
 ### Added
