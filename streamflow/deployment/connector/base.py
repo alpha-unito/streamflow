@@ -367,7 +367,7 @@ class BaseConnector(Connector, FutureAware, ABC):
             config_dir=config_dir,
             transferBufferSize=transferBufferSize,
         )
-        self._shells: MutableMapping[str, Shell] = {}
+        self._shells: MutableMapping[str, MutableMapping[str, Shell]] = {}
         self._shells_lock: asyncio.Lock = asyncio.Lock()
 
     async def _create_shell(
@@ -453,18 +453,23 @@ class BaseConnector(Connector, FutureAware, ABC):
         self, command: MutableSequence[str], location: ExecutionLocation
     ) -> Shell:
         async with self._shells_lock:
-            if (key := str(hash("".join(command)))) in self._shells:
-                shell = self._shells[key]
+            if (key := str(hash("".join(command)))) in self._shells.setdefault(
+                location.name, {}
+            ):
+                shell = self._shells[location.name][key]
                 if not await shell.closed():
                     return shell
                 else:
-                    del self._shells[key]
+                    del self._shells[location.name][key]
             try:
-                self._shells[key] = await self._create_shell(command, location)
-                return self._shells[key]
+                self._shells[location.name][key] = await self._create_shell(
+                    command, location
+                )
+                return self._shells[location.name][key]
             except Exception as e:
                 raise WorkflowExecutionException(
-                    f"Failed to create shell with command `{' '.join(command)}`: {e}"
+                    f"Failed to create shell on location {location.name} "
+                    f"with command `{' '.join(command)}`: {e}"
                 ) from e
 
     async def get_stream_reader(
@@ -546,7 +551,11 @@ class BaseConnector(Connector, FutureAware, ABC):
     async def undeploy(self, external: bool) -> None:
         async with self._shells_lock:
             await asyncio.gather(
-                *(asyncio.create_task(shell.close()) for shell in self._shells.values())
+                *(
+                    asyncio.create_task(shell.close())
+                    for loc in self._shells.values()
+                    for shell in loc.values()
+                )
             )
             self._shells.clear()
 
