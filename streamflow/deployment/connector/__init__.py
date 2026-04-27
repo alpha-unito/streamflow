@@ -10,6 +10,7 @@ from streamflow.deployment.connector.container import (
 )
 from streamflow.deployment.connector.kubernetes import (
     Helm3Connector,
+    Helm4Connector,
     KubernetesConnector,
 )
 from streamflow.deployment.connector.local import LocalConnector
@@ -24,8 +25,9 @@ connector_classes: MutableMapping[str, type[Connector]] = {
     "docker": DockerConnector,
     "docker-compose": DockerComposeConnector,
     "flux": FluxConnector,
-    "helm": Helm3Connector,
+    "helm": Helm4Connector,
     "helm3": Helm3Connector,
+    "helm4": Helm4Connector,
     "kubernetes": KubernetesConnector,
     "local": LocalConnector,
     "pbs": PBSConnector,

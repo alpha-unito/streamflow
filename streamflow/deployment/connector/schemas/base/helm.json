@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/base/helm.json",
+  "type": "object",
+  "properties": {
+    "burstLimit": {
+      "type": "integer",
+      "title": "Burst limit",
+      "default": 100,
+      "description": "Client-side default throttling limit"
+    },
+    "caFile": {
+      "type": "string",
+      "title": "CA file",
+      "description": "Verify certificates of HTTPS-enabled servers using this CA bundle"
+    },
+    "cascade": {
+      "type": "string",
+      "title": "Cascade",
+      "enum": ["background", "foreground", "orphan"],
+      "description": "Selects the deletion cascading strategy for the dependents"
+    },
+    "certFile": {
+      "type": "string",
+      "title": "Certificate file",
+      "description": "Identify HTTPS client using this SSL certificate file"
+    },
+    "chart": {
+      "type": "string",
+      "title": "Chart",
+      "description": "A chart archive. This can be a chart reference, a path to a packaged chart, a path to an unpacked chart directory or a URL"
+    },
+    "chartVersion": {
+      "type": "string",
+      "title": "Chart version",
+      "description": "Specify the exact chart version to install",
+      "default": "latest"
+    },
+    "commandLineValues": {
+      "type": "string",
+      "title": "Command line values",
+      "description": "Set values on the command line. Can separate values with commas: key1=val1,key2=val2"
+    },
+    "createNamespace": {
+      "type": "boolean",
+      "title": "Create namespace",
+      "description": "Create the release namespace if not present",
+      "default": false
+    },
+    "debug": {
+      "type": "boolean",
+      "title": "Debug",
+      "description": "Enable verbose output"
+    },
+    "dependencyUpdate": {
+      "type": "boolean",
+      "title": "Dependency update",
+      "description": "Update dependencies if they are missing before installing the chart"
+    },
+    "description": {
+      "type": "string",
+      "title": "Description",
+      "description": "Add a custom description to the release"
+    },
+    "devel": {
+      "type": "boolean",
+      "title": "Development versions",
+      "description": "Use development versions, too (equivalent to version >0.0.0-0). If version is set, this is ignored"
+    },
+    "disableOpenapiValidation": {
+      "type": "boolean",
+      "title": "Disable OpenAPI validation",
+      "description": "If set, the installation process will not validate rendered templates against the Kubernetes OpenAPI Schema",
+      "default": false
+    },
+    "enableDns": {
+      "type": "boolean",
+      "title": "Enable DNS",
+      "description": "Enable DNS lookups when rendering templates",
+      "default": false
+    },
+    "fileValues": {
+      "type": "string",
+      "title": "File values",
+      "description": "Set values from respective files. Can separate values with commas: key1=path1,key2=path2"
+    },
+    "generateFlag": {
+      "type": "boolean",
+      "title": "Generate name",
+      "description": "Generate the release name (omit the NAME parameter)",
+      "default": false
+    },
+    "hideNotes": {
+      "type": "boolean",
+      "title": "Hide notes",
+      "description": "If set, do not show notes in install output. Does not affect presence in chart metadata",
+      "default": false
+    },
+    "inCluster": {
+      "type": "boolean",
+      "title": "In cluster",
+      "description": "If true, the Helm connector will use a ServiceAccount to connect to the Kubernetes cluster. This is useful when StreamFlow runs directly inside a Kubernetes Pod",
+      "default": false
+    },
+    "insecureSkipTLSVerify": {
+      "type": "boolean",
+      "title": "Insecure skip TLS verify",
+      "description": "Skip TLS certificate checks for the chart download",
+      "default": false
+    },
+    "keepHistory": {
+      "type": "boolean",
+      "title": "Keep history",
+      "description": "Remove all associated resources and mark the release as deleted, but retain the release history",
+      "default": false
+    },
+    "keyFile": {
+      "type": "string",
+      "title": "Key file",
+      "description": "Identify HTTPS client using this SSL key file"
+    },
+    "keyring": {
+      "type": "string",
+      "title": "Key ring",
+      "description": "Location of public keys used for verification"
+    },
+    "kubeApiserver": {
+      "type": "string",
+      "title": "Kubernetes API server",
+      "description": "The address and the port for the Kubernetes API server"
+    },
+    "kubeAsGroup": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "Impersonate groups",
+      "description": "Groups to impersonate for the operation"
+    },
+    "kubeAsUser": {
+      "type": "string",
+      "title": "Impersonate user",
+      "description": "Username to impersonate for the operation"
+    },
+    "kubeCaFile": {
+      "type": "string",
+      "title": "Kubernetes CA file",
+      "description": "The certificate authority file for the Kubernetes API server connection"
+    },
+    "kubeContext": {
+      "type": "string",
+      "title": "Kubernetes context",
+      "description": "Name of the kubeconfig context to use"
+    },
+    "kubeconfig": {
+      "type": "string",
+      "title": "Kubernetes config",
+      "description": "Absolute path of the kubeconfig file to be used"
+    },
+    "kubeInsecureSkipTLSVerify": {
+      "type": "boolean",
+      "title": "Kubernetes insecure skip TLS verify",
+      "default": false,
+      "description": "If true, the Kubernetes API server's server certificate will not be checked for validity. This will make your Kubernetes cluster insecure"
+    },
+    "kubeTLSServerName": {
+      "type": "string",
+      "title": "Kubernetes TLS server name",
+      "description": "Server name to use for Kubernetes API server certificate validation. If it is not provided, the hostname used to contact the server is used"
+    },
+    "kubeToken": {
+      "type": "string",
+      "title": "Kubernetes bearer token",
+      "description": "Bearer token for authentication"
+    },
+    "labels": {
+      "type": "string",
+      "title": "Labels",
+      "description": "Labels to add to release metadata, divided by comma: key1=val1,key2=val2"
+    },
+    "maxConcurrentConnections": {
+      "type": "integer",
+      "title": "Max concurrent connections",
+      "description": "Maximum number of concurrent connections to open for a single Kubernetes client",
+      "default": 4096
+    },
+    "namespace": {
+      "type": "string",
+      "title": "Namespace",
+      "description": "Namespace to install the release into"
+    },
+    "nameTemplate": {
+      "type": "string",
+      "title": "Name template",
+      "description": "Specify template used to name the release"
+    },
+    "noHooks": {
+      "type": "boolean",
+      "title": "No hooks",
+      "description": "Prevent hooks from running during install"
+    },
+    "output": {
+      "type": "string",
+      "title": "Output",
+      "enum": ["json", "table", "yaml"],
+      "description": "Print the output in the specified format"
+    },
+    "passCredentials": {
+      "type": "boolean",
+      "title": "Pass credentials",
+      "description": "Pass credentials to all domains",
+      "default": false
+    },
+    "password": {
+      "type": "string",
+      "title": "Password",
+      "description": "Chart repository password where to locate the requested chart"
+    },
+    "plainHttp": {
+      "type": "boolean",
+      "title": "Plain HTTP",
+      "description": "Use insecure HTTP connections for the chart download",
+      "default": false
+    },
+    "postRendererArgs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "Post renderer args",
+      "description": "Arguments to pass to the post-renderer (can specify multiple)"
+    },
+    "queriesPerSecond": {
+      "type": "float",
+      "title": "Queries per second",
+      "description": "Queries per second used when communicating with the Kubernetes API, not including bursting"
+    },
+    "registryConfig": {
+      "type": "string",
+      "title": "Registry config",
+      "description": "Path to the registry config file"
+    },
+    "repositoryCache": {
+      "type": "string",
+      "title": "Repository cache",
+      "description": "Path to the file containing cached repository indexes"
+    },
+    "repositoryConfig": {
+      "type": "string",
+      "title": "Repository config",
+      "description": "Path to the file containing repository names and URLs"
+    },
+    "releaseName": {
+      "type": "string",
+      "title": "Release name",
+      "description": "The release name. If unspecified, it will autogenerate one for you"
+    },
+    "renderSubchartNotes": {
+      "type": "boolean",
+      "title": "Render subchart notes",
+      "description": "Render subchart notes along with the parent"
+    },
+    "replace": {
+      "type": "boolean",
+      "title": "Replace",
+      "description": "Reuse the given name, only if that name is a deleted release which remains in the history. This is unsafe in production",
+      "default": false
+    },
+    "repo": {
+      "type": "string",
+      "title": "Repository",
+      "description": "Chart repository url where to locate the requested chart"
+    },
+    "locationsCacheTTL": {
+      "type": "integer",
+      "title": "Locations cache TTL",
+      "description": "Available locations cache TTL (in seconds). When such cache expires, the connector performs a new request to check locations availability",
+      "default": 10
+    },
+    "resourcesCacheTTL": {
+      "type": "integer",
+      "title": "Resources cache TTL",
+      "deprecated": true,
+      "description": "(**Deprecated.** Use locationsCacheTTL.) Available resources cache TTL (in seconds). When such cache expires, the connector performs a new request to check resources availability",
+      "default": 10
+    },
+    "rollbackOnFailure": {
+      "type": "boolean",
+      "title": "Rollback on failure",
+      "default": false,
+      "description": "If set, Helm will rollback (uninstall) the installation upon failure"
+    },
+    "setJson": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "Set JSON values",
+      "description": "Set JSON values on the command line (can specify multiple or separate values with commas: key1=jsonval1,key2=jsonval2)"
+    },
+    "setLiteral": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "Set literal values",
+      "description": "Set a literal STRING value on the command line (can specify multiple)"
+    },
+    "skipCrds": {
+      "type": "boolean",
+      "title": "Skip CRDs",
+      "description": "If set, no CRDs will be installed",
+      "default": false
+    },
+    "skipSchemaValidation": {
+      "type": "boolean",
+      "title": "Skip schema validation",
+      "description": "If set, disables JSON schema validation",
+      "default": false
+    },
+    "stringValues": {
+      "type": "string",
+      "title": "String values",
+      "description": "Set string values. Can separate values with commas: key1=val1,key2=val2"
+    },
+    "takeOwnership": {
+      "type": "boolean",
+      "title": "Take ownership",
+      "description": "If set, install will ignore the check for helm annotations and take ownership of the existing resources",
+      "default": false
+    },
+    "timeout": {
+      "type": "string",
+      "title": "Timeout",
+      "description": "Time to wait for any individual Kubernetes operation",
+      "default": "1000m"
+    },
+    "transferBufferSize": {
+      "type": "integer",
+      "title": "Transfer buffer size",
+      "description": "Buffer size allocated for local and remote data transfers",
+      "default": 33554431
+    },
+    "username": {
+      "type": "string",
+      "title": "Username",
+      "description": "Chart repository username where to locate the requested chart"
+    },
+    "yamlValues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "title": "YAML values",
+      "description": "Specify values in a list of YAML files and/or URLs"
+    },
+    "verify": {
+      "type": "boolean",
+      "title": "Verify",
+      "description": "Verify the package before installing it"
+    },
+    "waitForJobs": {
+      "type": "boolean",
+      "title": "Wait for jobs",
+      "description": "If set and --wait is enabled, will wait until all Jobs have been completed before marking the release as successful. It will wait for as long as timeout",
+      "default": false
+    }
+  },
+  "required": [
+    "chart"
+  ],
+  "additionalProperties": false
+}

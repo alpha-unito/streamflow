@@ -39,7 +39,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           build-args: |
-            HELM_VERSION=v3.19.0
+            HELM_VERSION=v4.1.1
           push: true
           tags: |
             alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}

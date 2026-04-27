@@ -85,6 +85,7 @@ For LaTeX users, the following BibTeX entry can be used:
    connector/docker-compose.rst
    connector/flux.rst
    connector/helm3.rst
+   connector/helm4.rst
    connector/kubernetes.rst
    connector/pbs.rst
    connector/queue-manager.rst
