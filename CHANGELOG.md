@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add fault tolerance paper reference in the documentation ([#1049](https://github.com/alpha-unito/streamflow/pull/1049))
+
 ### Fixed
 
 - Fix shell reuse collision across execution locations ([#1045](https://github.com/alpha-unito/streamflow/pull/1045))

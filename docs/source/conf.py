@@ -39,8 +39,11 @@ extensions = [
     'sphinx.ext.extlinks',
     'sphinx-jsonschema',
     'sphinx_llms_txt',
-    'sphinx_rtd_theme'
+    'sphinx_rtd_theme',
+    'sphinxcontrib.bibtex'
 ]
+
+bibtex_bibfiles = ['references.bib']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']

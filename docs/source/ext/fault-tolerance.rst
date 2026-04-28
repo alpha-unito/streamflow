@@ -3,7 +3,7 @@ Fault tolerance
 ===============
 
 .. note::
-   The failure tolerance features implemented in StreamFlow are the result of the research published in the paper *"A formal framework for fault tolerance in hybrid scientific workflows"* by Alberto Mulone, Doriana Medić, Iacopo Colonnelli, and Marco Aldinucci (Future Generation Computer Systems, 2026). For an in-depth discussion of the formal model and detailed implementation specifics, please refer to the `full article <https://doi.org/10.1016/j.future.2025.108188>`_.
+   The failure tolerance features implemented in StreamFlow are based on a formal framework for hybrid scientific workflows :cite:p:`MULONE2026108188`. For an in-depth discussion of the formal model and detailed implementation specifics, please refer to the full article.
 
 StreamFlow allows users to handle execution failures through two main extension points: :ref:`CheckpointManager <CheckpointManager>` and :ref:`FailureManager <FailureManager>`. These components can be used independently or in combination to provide robust execution.
 
@@ -113,3 +113,8 @@ Both properties are optional. If the ``retry_delay`` is not specified, the failu
 .. jsonschema:: https://streamflow.di.unito.it/schemas/recovery/rollback_failure_manager.json
     :lift_description: true
 
+==========
+References
+==========
+
+.. bibliography::
