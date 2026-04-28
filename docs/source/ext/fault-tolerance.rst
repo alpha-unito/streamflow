@@ -2,6 +2,9 @@
 Fault tolerance
 ===============
 
+.. note::
+   The failure tolerance features implemented in StreamFlow are the result of the research published in the paper *"A formal framework for fault tolerance in hybrid scientific workflows"* by Alberto Mulone, Doriana Medić, Iacopo Colonnelli, and Marco Aldinucci (Future Generation Computer Systems, 2026). For an in-depth discussion of the formal model and detailed implementation specifics, please refer to the `full article <https://doi.org/10.1016/j.future.2025.108188>`_.
+
 StreamFlow allows users to handle execution failures through two main extension points: :ref:`CheckpointManager <CheckpointManager>` and :ref:`FailureManager <FailureManager>`. These components can be used independently or in combination to provide robust execution.
 
 A key challenge in handling failures within hybrid workflows, which these two components must address, is how to recover from a data loss within the potentially high heterogeneity of StreamFlow execution locations.
