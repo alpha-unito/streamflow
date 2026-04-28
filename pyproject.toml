@@ -87,7 +87,7 @@ lint = [
     "black==26.3.1",
     "codespell==2.4.2",
     "pyupgrade==3.21.2",
-    "ruff==0.15.11"
+    "ruff==0.15.12"
 ]
 test = [
     "cwltest==2.6.20251216093331",
