@@ -1780,13 +1780,19 @@ class CWLTranslator:
         return input_port
 
     def _get_source_port(self, workflow: Workflow, source_name: str) -> Port:
-        if source_name in self.output_ports:
+        # Return the output port of a previous step.
+        # If the port has no input step, it means it is the output of the workflow
+        if (
+            source_name in self.output_ports
+            and self.output_ports[source_name].get_input_steps()
+        ):
             return self.output_ports[source_name]
         if source_name not in self.input_ports:
             if source_name not in self.output_ports:
                 self.output_ports[source_name] = workflow.create_port()
             return self.output_ports[source_name]
         else:
+            # The `source_port` is an input of the workflow
             return self.input_ports[source_name]
 
     def _handle_default_port(
