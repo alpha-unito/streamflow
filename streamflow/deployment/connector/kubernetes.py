@@ -913,32 +913,44 @@ class KubernetesConnector(KubernetesBaseConnector):
         await super().undeploy(external)
 
 
-class Helm3Connector(KubernetesBaseConnector):
+class HelmConnector(KubernetesBaseConnector, ABC):
     def __init__(
         self,
         deployment_name: str,
         config_dir: str,
         chart: str,
+        burstLimit: int = 100,
         debug: bool = False,
         kubeContext: str | None = None,
         kubeconfig: str | None = None,
-        atomic: bool = False,
         caFile: str | None = None,
+        cascade: str | None = None,
         certFile: str | None = None,
-        depUp: bool = False,
+        dependencyUpdate: bool = False,
         devel: bool = False,
         inCluster: bool = False,
         keepHistory: bool = False,
         keyFile: str | None = None,
         keyring: str | None = None,
+        kubeApiserver: str | None = None,
+        kubeAsGroup: MutableSequence[str] | None = None,
+        kubeAsUser: str | None = None,
+        kubeCaFile: str | None = None,
+        kubeInsecureSkipTLSVerify: bool = False,
+        kubeTLSServerName: str | None = None,
+        kubeToken: str | None = None,
         locationsCacheSize: int | None = None,
         locationsCacheTTL: int | None = None,
         maxConcurrentConnections: int = 4096,
         nameTemplate: str | None = None,
         namespace: str | None = None,
         noHooks: bool = False,
+        output: str | None = None,
+        passCredentials: bool = False,
         password: str | None = None,
+        queriesPerSecond: float | None = None,
         renderSubchartNotes: bool = False,
+        replace: bool = False,
         repo: str | None = None,
         commandLineValues: MutableSequence[str] | None = None,
         fileValues: MutableSequence[str] | None = None,
@@ -949,14 +961,29 @@ class Helm3Connector(KubernetesBaseConnector):
         repositoryConfig: str | None = None,
         resourcesCacheSize: int | None = None,
         resourcesCacheTTL: int | None = None,
+        rollbackOnFailure: bool = False,
         skipCrds: bool = False,
+        skipSchemaValidation: bool = False,
+        takeOwnership: bool = False,
         timeout: str | None = "1000m",
         transferBufferSize: int = (32 << 20) - 1,
         username: str | None = None,
         yamlValues: MutableSequence[str] | None = None,
         verify: bool = False,
         chartVersion: str | None = None,
-        wait: bool = True,
+        createNamespace: bool = False,
+        description: str | None = None,
+        disableOpenapiValidation: bool = False,
+        enableDns: bool = False,
+        generateFlag: bool = False,
+        hideNotes: bool = False,
+        insecureSkipTLSVerify: bool = False,
+        labels: str | None = None,
+        plainHttp: bool = False,
+        postRendererArgs: MutableSequence[str] | None = None,
+        setJson: MutableSequence[str] | None = None,
+        setLiteral: MutableSequence[str] | None = None,
+        waitForJobs: bool = False,
     ):
         super().__init__(
             deployment_name=deployment_name,
@@ -976,23 +1003,37 @@ class Helm3Connector(KubernetesBaseConnector):
             chart if os.path.isabs(chart) else os.path.join(self.config_dir, chart)
         )
         self.debug: bool = debug
-        self.atomic: bool = atomic
+        self.burstLimit: int = burstLimit
         self.caFile: str | None = caFile
+        self.cascade: str | None = cascade
         self.certFile: str | None = certFile
-        self.depUp: bool = depUp
+        self.dependencyUpdate: bool = dependencyUpdate
         self.devel: bool = devel
         self.keepHistory: bool = keepHistory
         self.keyFile: str | None = keyFile
         self.keyring: str | None = keyring
+        self.kubeApiserver: str | None = kubeApiserver
+        self.kubeAsGroup: MutableSequence[str] | None = kubeAsGroup
+        self.kubeAsUser: str | None = kubeAsUser
+        self.kubeCaFile: str | None = kubeCaFile
+        self.kubeInsecureSkipTLSVerify: bool = kubeInsecureSkipTLSVerify
+        self.kubeTLSServerName: str | None = kubeTLSServerName
+        self.kubeToken: str | None = kubeToken
         self.nameTemplate: str | None = nameTemplate
         self.noHooks: bool = noHooks
+        self.output: str | None = output
+        self.passCredentials: bool = passCredentials
         self.password: str | None = password
+        self.queriesPerSecond: float | None = queriesPerSecond
         self.renderSubchartNotes: bool = renderSubchartNotes
+        self.replace: bool = replace
         self.repo: str | None = repo
         self.commandLineValues: MutableSequence[str] | None = commandLineValues
         self.fileValues: MutableSequence[str] | None = fileValues
         self.stringValues: MutableSequence[str] | None = stringValues
         self.skipCrds: bool = skipCrds
+        self.skipSchemaValidation: bool = skipSchemaValidation
+        self.takeOwnership: bool = takeOwnership
         self.registryConfig = (
             str(Path(registryConfig).expanduser())
             if registryConfig is not None
@@ -1011,23 +1052,92 @@ class Helm3Connector(KubernetesBaseConnector):
             if repositoryConfig is not None
             else os.path.join(str(Path.home()), ".config/helm/repositories.yaml")
         )
+        self.rollbackOnFailure: bool = rollbackOnFailure
         self.timeout: str | None = timeout
         self.username: str | None = username
         self.yamlValues: MutableSequence[str] | None = yamlValues
         self.verify: bool = verify
         self.chartVersion: str | None = chartVersion
-        self.wait: bool = wait
+        self.createNamespace: bool = createNamespace
+        self.description: str | None = description
+        self.disableOpenapiValidation: bool = disableOpenapiValidation
+        self.enableDns: bool = enableDns
+        self.generateFlag: bool = generateFlag
+        self.hideNotes: bool = hideNotes
+        self.insecureSkipTLSVerify: bool = insecureSkipTLSVerify
+        self.labels: str | None = labels
+        self.plainHttp: bool = plainHttp
+        self.postRendererArgs: MutableSequence[str] | None = postRendererArgs
+        self.setJson: MutableSequence[str] | None = setJson
+        self.setLiteral: MutableSequence[str] | None = setLiteral
+        self.waitForJobs: bool = waitForJobs
+
+    @abstractmethod
+    async def _check_version(self) -> None: ...
 
     def _get_base_command(self) -> str:
         return (
             f"helm "
+            f"{get_option('burst-limit', self.burstLimit)}"
             f"{get_option('debug', self.debug)}"
+            f"{get_option('kube-apiserver', self.kubeApiserver)}"
+            f"{get_option('kube-as-group', self.kubeAsGroup)}"
+            f"{get_option('kube-as-user', self.kubeAsUser)}"
+            f"{get_option('kube-ca-file', self.kubeCaFile)}"
             f"{get_option('kube-context', self.kubeContext)}"
             f"{get_option('kubeconfig', self.kubeconfig)}"
+            f"{get_option('kube-insecure-skip-tls-verify', self.kubeInsecureSkipTLSVerify)}"
+            f"{get_option('kube-tls-server-name', self.kubeTLSServerName)}"
+            f"{get_option('kube-token', self.kubeToken)}"
             f"{get_option('namespace', self.namespace)}"
+            f"{get_option('qps', self.queriesPerSecond)}"
             f"{get_option('registry-config', self.registryConfig)}"
             f"{get_option('repository-cache', self.repositoryCache)}"
             f"{get_option('repository-config', self.repositoryConfig)}"
+        )
+
+    def _get_deploy_command(self) -> str:
+        return (
+            f"{self._get_base_command()} install "
+            f"{get_option('ca-file', self.caFile)}"
+            f"{get_option('cert-file', self.certFile)}"
+            f"{get_option('create-namespace', self.createNamespace)}"
+            f"{get_option('dependency-update', self.dependencyUpdate)}"
+            f"{get_option('description', self.description)}"
+            f"{get_option('devel', self.devel)}"
+            f"{get_option('disable-openapi-validation', self.disableOpenapiValidation)}"
+            f"{get_option('enable-dns', self.enableDns)}"
+            f"{get_option('generate-name', self.generateFlag)}"
+            f"{get_option('hide-notes', self.hideNotes)}"
+            f"{get_option('insecure-skip-tls-verify', self.insecureSkipTLSVerify)}"
+            f"{get_option('key-file', self.keyFile)}"
+            f"{get_option('keyring', self.keyring)}"
+            f"{get_option('labels', self.labels)}"
+            f"{get_option('name-template', self.nameTemplate)}"
+            f"{get_option('no-hooks', self.noHooks)}"
+            f"{get_option('output', self.output)}"
+            f"{get_option('pass-credentials', self.passCredentials)}"
+            f"{get_option('password', self.password)}"
+            f"{get_option('plain-http', self.plainHttp)}"
+            f"{get_option('post-renderer-args', self.postRendererArgs)}"
+            f"{get_option('render-subchart-notes', self.renderSubchartNotes)}"
+            f"{get_option('replace', self.replace)}"
+            f"{get_option('repo', self.repo)}"
+            f"{get_option('rollback-on-failure', self.rollbackOnFailure)}"
+            f"{get_option('set', self.commandLineValues)}"
+            f"{get_option('set-file', self.fileValues)}"
+            f"{get_option('set-json', self.setJson)}"
+            f"{get_option('set-literal', self.setLiteral)}"
+            f"{get_option('set-string', self.stringValues)}"
+            f"{get_option('skip-crds', self.skipCrds)}"
+            f"{get_option('skip-schema-validation', self.skipSchemaValidation)}"
+            f"{get_option('take-ownership', self.takeOwnership)}"
+            f"{get_option('timeout', self.timeout)}"
+            f"{get_option('username', self.username)}"
+            f"{get_option('values', self.yamlValues)}"
+            f"{get_option('verify', self.verify)}"
+            f"{get_option('version', self.chartVersion)}"
+            f"{get_option('wait-for-jobs', self.waitForJobs)}"
         )
 
     async def _get_running_pods(self) -> V1PodList:
@@ -1044,45 +1154,12 @@ class Helm3Connector(KubernetesBaseConnector):
             # Check if Helm is installed
             _check_helm_installed()
             # Check correct version of Helm
-            version = await _get_helm_version()
-            if not version.startswith("v3"):
-                raise WorkflowExecutionException(
-                    f"Helm {version} is not compatible with Helm3Connector"
-                )
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Using Helm {version}.")
+            await self._check_version()
             # Deploy Helm charts
-            deploy_command = (
-                f"{self._get_base_command()} install "
-                f"{get_option('atomic', self.atomic)}"
-                f"{get_option('ca-file', self.caFile)}"
-                f"{get_option('cert-file', self.certFile)}"
-                f"{get_option('dep-up', self.depUp)}"
-                f"{get_option('devel', self.devel)}"
-                f"{get_option('key-file', self.keyFile)}"
-                f"{get_option('keyring', self.keyring)}"
-                f"{get_option('name-template', self.nameTemplate)}"
-                f"{get_option('no-hooks', self.noHooks)}"
-                f"{get_option('password', self.password)}"
-                f"{get_option('render-subchart-notes', self.renderSubchartNotes)}"
-                f"{get_option('repo', self.repo)}"
-                f"{get_option('set', self.commandLineValues)}"
-                f"{get_option('set-file', self.fileValues)}"
-                f"{get_option('set-string', self.stringValues)}"
-                f"{get_option('skip-crds', self.skipCrds)}"
-                f"{get_option('timeout', self.timeout)}"
-                f"{get_option('username', self.username)}"
-                f"{get_option('values', self.yamlValues)}"
-                f"{get_option('verify', self.verify)}"
-                f"{get_option('version', self.chartVersion)}"
-                f"{get_option('wait', self.wait)}"
-                f"{self.releaseName} "
-                f"{self.chart}"
-            )
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"EXECUTING {deploy_command}")
             proc = await asyncio.create_subprocess_exec(
-                *shlex.split(deploy_command),
+                *shlex.split(
+                    f"{self._get_deploy_command()} {self.releaseName} {self.chart}"
+                ),
                 stderr=asyncio.subprocess.STDOUT,
                 stdout=asyncio.subprocess.PIPE,
             )
@@ -1092,29 +1169,21 @@ class Helm3Connector(KubernetesBaseConnector):
                     f"FAILED Deployment of {self.deployment_name} environment:\n\t{stdout.decode().strip()}"
                 )
 
-    @classmethod
-    def get_schema(cls) -> str:
+    def _get_undeploy_command(self) -> str:
         return (
-            files(__package__)
-            .joinpath("schemas")
-            .joinpath("helm3.json")
-            .read_text("utf-8")
+            f"{self._get_base_command()} uninstall "
+            f"{get_option('cascade', self.cascade)}"
+            f"{get_option('description', self.description)}"
+            f"{get_option('keep-history', self.keepHistory)}"
+            f"{get_option('no-hooks', self.noHooks)}"
+            f"{get_option('timeout', self.timeout)}"
         )
 
     async def undeploy(self, external: bool) -> None:
         if not external:
             # Undeploy
-            undeploy_command = (
-                f"{self._get_base_command()}  uninstall "
-                f"{get_option('keep-history', self.keepHistory)}"
-                f"{get_option('no-hooks', self.noHooks)}"
-                f"{get_option('timeout', self.timeout)}"
-                f"{self.releaseName}"
-            )
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"EXECUTING {undeploy_command}")
             proc = await asyncio.create_subprocess_exec(
-                *shlex.split(undeploy_command),
+                *shlex.split(f"{self._get_undeploy_command()} {self.releaseName}"),
                 stderr=asyncio.subprocess.STDOUT,
                 stdout=asyncio.subprocess.PIPE,
             )
@@ -1125,3 +1194,380 @@ class Helm3Connector(KubernetesBaseConnector):
                 )
         # Close connections
         await super().undeploy(external)
+
+
+class Helm3Connector(HelmConnector):
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        chart: str,
+        burstLimit: int = 100,
+        debug: bool = False,
+        kubeContext: str | None = None,
+        kubeconfig: str | None = None,
+        caFile: str | None = None,
+        cascade: str | None = None,
+        certFile: str | None = None,
+        dependencyUpdate: bool = False,
+        devel: bool = False,
+        inCluster: bool = False,
+        keepHistory: bool = False,
+        keyFile: str | None = None,
+        keyring: str | None = None,
+        kubeApiserver: str | None = None,
+        kubeAsGroup: MutableSequence[str] | None = None,
+        kubeAsUser: str | None = None,
+        kubeCaFile: str | None = None,
+        kubeInsecureSkipTLSVerify: bool = False,
+        kubeTLSServerName: str | None = None,
+        kubeToken: str | None = None,
+        locationsCacheSize: int | None = None,
+        locationsCacheTTL: int | None = None,
+        maxConcurrentConnections: int = 4096,
+        nameTemplate: str | None = None,
+        namespace: str | None = None,
+        noHooks: bool = False,
+        output: str | None = None,
+        passCredentials: bool = False,
+        password: str | None = None,
+        queriesPerSecond: float | None = None,
+        renderSubchartNotes: bool = False,
+        replace: bool = False,
+        repo: str | None = None,
+        commandLineValues: MutableSequence[str] | None = None,
+        fileValues: MutableSequence[str] | None = None,
+        stringValues: MutableSequence[str] | None = None,
+        registryConfig: str | None = None,
+        releaseName: str | None = None,
+        repositoryCache: str | None = None,
+        repositoryConfig: str | None = None,
+        resourcesCacheSize: int | None = None,
+        resourcesCacheTTL: int | None = None,
+        rollbackOnFailure: bool = False,
+        skipCrds: bool = False,
+        skipSchemaValidation: bool = False,
+        takeOwnership: bool = False,
+        timeout: str | None = "1000m",
+        transferBufferSize: int = (32 << 20) - 1,
+        username: str | None = None,
+        yamlValues: MutableSequence[str] | None = None,
+        verify: bool = False,
+        chartVersion: str | None = None,
+        createNamespace: bool = False,
+        description: str | None = None,
+        disableOpenapiValidation: bool = False,
+        enableDns: bool = False,
+        force: bool = False,
+        generateFlag: bool = False,
+        hideNotes: bool = False,
+        insecureSkipTLSVerify: bool = False,
+        labels: str | None = None,
+        plainHttp: bool = False,
+        postRenderer: str | None = None,
+        postRendererArgs: MutableSequence[str] | None = None,
+        setJson: MutableSequence[str] | None = None,
+        setLiteral: MutableSequence[str] | None = None,
+        waitForJobs: bool = False,
+        wait: bool = True,
+    ):
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            chart=chart,
+            burstLimit=burstLimit,
+            debug=debug,
+            kubeContext=kubeContext,
+            kubeconfig=kubeconfig,
+            caFile=caFile,
+            cascade=cascade,
+            certFile=certFile,
+            dependencyUpdate=dependencyUpdate,
+            devel=devel,
+            inCluster=inCluster,
+            keepHistory=keepHistory,
+            keyFile=keyFile,
+            keyring=keyring,
+            kubeApiserver=kubeApiserver,
+            kubeAsGroup=kubeAsGroup,
+            kubeAsUser=kubeAsUser,
+            kubeCaFile=kubeCaFile,
+            kubeInsecureSkipTLSVerify=kubeInsecureSkipTLSVerify,
+            kubeTLSServerName=kubeTLSServerName,
+            kubeToken=kubeToken,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            maxConcurrentConnections=maxConcurrentConnections,
+            nameTemplate=nameTemplate,
+            namespace=namespace,
+            noHooks=noHooks,
+            output=output,
+            passCredentials=passCredentials,
+            password=password,
+            queriesPerSecond=queriesPerSecond,
+            renderSubchartNotes=renderSubchartNotes,
+            replace=replace,
+            repo=repo,
+            commandLineValues=commandLineValues,
+            fileValues=fileValues,
+            stringValues=stringValues,
+            registryConfig=registryConfig,
+            releaseName=releaseName,
+            repositoryCache=repositoryCache,
+            repositoryConfig=repositoryConfig,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL,
+            rollbackOnFailure=rollbackOnFailure,
+            skipCrds=skipCrds,
+            skipSchemaValidation=skipSchemaValidation,
+            takeOwnership=takeOwnership,
+            timeout=timeout,
+            transferBufferSize=transferBufferSize,
+            username=username,
+            yamlValues=yamlValues,
+            verify=verify,
+            chartVersion=chartVersion,
+            createNamespace=createNamespace,
+            description=description,
+            disableOpenapiValidation=disableOpenapiValidation,
+            enableDns=enableDns,
+            generateFlag=generateFlag,
+            hideNotes=hideNotes,
+            insecureSkipTLSVerify=insecureSkipTLSVerify,
+            labels=labels,
+            plainHttp=plainHttp,
+            postRendererArgs=postRendererArgs,
+            setJson=setJson,
+            setLiteral=setLiteral,
+            waitForJobs=waitForJobs,
+        )
+        if logger.isEnabledFor(logging.WARNING):
+            logger.warning(
+                "The Helm3Connector is deprecated and will be removed in StreamFlow 0.3. "
+                "Please migrate to the Helm4Connector as soon as possible."
+            )
+        self.force: bool = force
+        self.postRenderer: str | None = postRenderer
+        self.wait: bool = wait
+
+    async def _check_version(self) -> None:
+        version = await _get_helm_version()
+        if not version.startswith("v3"):
+            raise WorkflowExecutionException(
+                f"Helm {version} is not compatible with Helm3Connector"
+            )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Using Helm {version}.")
+
+    def _get_deploy_command(self) -> str:
+        return (
+            f"{super()._get_deploy_command()}"
+            f"{get_option('force', self.force)}"
+            f"{get_option('post-renderer', self.postRenderer)}"
+            f"{get_option('wait', self.wait)}"
+        )
+
+    def _get_undeploy_command(self) -> str:
+        return f"{super()._get_undeploy_command()}{get_option('wait', self.wait)}"
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("helm3.json")
+            .read_text("utf-8")
+        )
+
+
+class Helm4Connector(HelmConnector):
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        chart: str,
+        burstLimit: int = 100,
+        debug: bool = False,
+        kubeContext: str | None = None,
+        kubeconfig: str | None = None,
+        caFile: str | None = None,
+        cascade: str | None = None,
+        certFile: str | None = None,
+        contentCache: str | None = None,
+        dependencyUpdate: bool = False,
+        devel: bool = False,
+        inCluster: bool = False,
+        keepHistory: bool = False,
+        keyFile: str | None = None,
+        keyring: str | None = None,
+        kubeApiserver: str | None = None,
+        kubeAsGroup: MutableSequence[str] | None = None,
+        kubeAsUser: str | None = None,
+        kubeCaFile: str | None = None,
+        kubeInsecureSkipTLSVerify: bool = False,
+        kubeTLSServerName: str | None = None,
+        kubeToken: str | None = None,
+        locationsCacheSize: int | None = None,
+        locationsCacheTTL: int | None = None,
+        maxConcurrentConnections: int = 4096,
+        nameTemplate: str | None = None,
+        namespace: str | None = None,
+        noHooks: bool = False,
+        output: str | None = None,
+        passCredentials: bool = False,
+        password: str | None = None,
+        queriesPerSecond: float | None = None,
+        renderSubchartNotes: bool = False,
+        replace: bool = False,
+        repo: str | None = None,
+        commandLineValues: MutableSequence[str] | None = None,
+        fileValues: MutableSequence[str] | None = None,
+        stringValues: MutableSequence[str] | None = None,
+        registryConfig: str | None = None,
+        releaseName: str | None = None,
+        repositoryCache: str | None = None,
+        repositoryConfig: str | None = None,
+        resourcesCacheSize: int | None = None,
+        resourcesCacheTTL: int | None = None,
+        rollbackOnFailure: bool = False,
+        serverSide: bool = False,
+        skipCrds: bool = False,
+        skipSchemaValidation: bool = False,
+        takeOwnership: bool = False,
+        timeout: str | None = "1000m",
+        transferBufferSize: int = (32 << 20) - 1,
+        username: str | None = None,
+        yamlValues: MutableSequence[str] | None = None,
+        verify: bool = False,
+        chartVersion: str | None = None,
+        createNamespace: bool = False,
+        description: str | None = None,
+        disableOpenapiValidation: bool = False,
+        enableDns: bool = False,
+        forceConflicts: bool = False,
+        forceReplace: bool = False,
+        generateFlag: bool = False,
+        hideNotes: bool = False,
+        insecureSkipTLSVerify: bool = False,
+        labels: str | None = None,
+        plainHttp: bool = False,
+        postRenderer: str | None = None,
+        postRendererArgs: MutableSequence[str] | None = None,
+        setJson: MutableSequence[str] | None = None,
+        setLiteral: MutableSequence[str] | None = None,
+        waitForJobs: bool = False,
+        wait: str = "watcher",
+    ):
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            chart=chart,
+            burstLimit=burstLimit,
+            debug=debug,
+            kubeContext=kubeContext,
+            kubeconfig=kubeconfig,
+            caFile=caFile,
+            cascade=cascade,
+            certFile=certFile,
+            dependencyUpdate=dependencyUpdate,
+            devel=devel,
+            inCluster=inCluster,
+            keepHistory=keepHistory,
+            keyFile=keyFile,
+            keyring=keyring,
+            kubeApiserver=kubeApiserver,
+            kubeAsGroup=kubeAsGroup,
+            kubeAsUser=kubeAsUser,
+            kubeCaFile=kubeCaFile,
+            kubeInsecureSkipTLSVerify=kubeInsecureSkipTLSVerify,
+            kubeTLSServerName=kubeTLSServerName,
+            kubeToken=kubeToken,
+            locationsCacheSize=locationsCacheSize,
+            locationsCacheTTL=locationsCacheTTL,
+            maxConcurrentConnections=maxConcurrentConnections,
+            nameTemplate=nameTemplate,
+            namespace=namespace,
+            noHooks=noHooks,
+            output=output,
+            passCredentials=passCredentials,
+            password=password,
+            queriesPerSecond=queriesPerSecond,
+            renderSubchartNotes=renderSubchartNotes,
+            replace=replace,
+            repo=repo,
+            commandLineValues=commandLineValues,
+            fileValues=fileValues,
+            stringValues=stringValues,
+            registryConfig=registryConfig,
+            releaseName=releaseName,
+            repositoryCache=repositoryCache,
+            repositoryConfig=repositoryConfig,
+            resourcesCacheSize=resourcesCacheSize,
+            resourcesCacheTTL=resourcesCacheTTL,
+            rollbackOnFailure=rollbackOnFailure,
+            skipCrds=skipCrds,
+            skipSchemaValidation=skipSchemaValidation,
+            takeOwnership=takeOwnership,
+            timeout=timeout,
+            transferBufferSize=transferBufferSize,
+            username=username,
+            yamlValues=yamlValues,
+            verify=verify,
+            chartVersion=chartVersion,
+            createNamespace=createNamespace,
+            description=description,
+            disableOpenapiValidation=disableOpenapiValidation,
+            enableDns=enableDns,
+            generateFlag=generateFlag,
+            hideNotes=hideNotes,
+            insecureSkipTLSVerify=insecureSkipTLSVerify,
+            labels=labels,
+            plainHttp=plainHttp,
+            postRendererArgs=postRendererArgs,
+            setJson=setJson,
+            setLiteral=setLiteral,
+            waitForJobs=waitForJobs,
+        )
+        self.contentCache: str | None = contentCache
+        self.forceConflicts: bool = forceConflicts
+        self.forceReplace: bool = forceReplace
+        self.postRenderer: str | None = postRenderer
+        self.serverSide: bool = serverSide
+        self.wait: str = wait
+
+    async def _check_version(self) -> None:
+        version = await _get_helm_version()
+        if not version.startswith("v4"):
+            raise WorkflowExecutionException(
+                f"Helm {version} is not compatible with Helm4Connector"
+            )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Using Helm {version}.")
+
+    def _get_base_command(self) -> str:
+        return (
+            f"{super()._get_base_command()} "
+            f"{get_option('content-cache', self.contentCache)}"
+        )
+
+    def _get_deploy_command(self) -> str:
+        return (
+            f"{super()._get_deploy_command()}"
+            f"{get_option('force-conflicts', self.forceConflicts)}"
+            f"{get_option('force-replace', self.forceReplace)}"
+            f"{get_option('post-renderer', self.postRenderer)}"
+            f"{get_option('server-side', self.serverSide)}"
+            f"{get_option('wait', self.wait)}"
+        )
+
+    def _get_undeploy_command(self) -> str:
+        return f"{super()._get_undeploy_command()}{get_option('wait', self.wait)}"
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return (
+            files(__package__)
+            .joinpath("schemas")
+            .joinpath("helm4.json")
+            .read_text("utf-8")
+        )

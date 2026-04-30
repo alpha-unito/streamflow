@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://streamflow.di.unito.it/schemas/deployment/connector/helm4.json",
+  "type": "object",
+  "$ref": "base/helm.json",
+  "properties": {
+    "contentCache": {
+      "type": "string",
+      "title": "Content cache",
+      "description": "Path to the directory containing cached content (e.g. charts)"
+    },
+    "forceConflicts": {
+      "type": "boolean",
+      "title": "Force conflicts",
+      "description": "If set, server-side apply will force changes against field ownership conflicts",
+      "default": false
+    },
+    "forceReplace": {
+      "type": "boolean",
+      "title": "Force replace",
+      "description": "Force resource updates by replacement (delete and recreate the resource)",
+      "default": false
+    },
+    "postRenderer": {
+      "type": "string",
+      "title": "Post renderer",
+      "description": "The name of a post renderer type plugin to be used for post rendering. If it exists, the plugin will be used"
+    },
+    "serverSide": {
+      "type": "boolean",
+      "title": "Server side",
+      "default": true,
+      "description": "Object updates run in the server instead of the client"
+    },
+    "wait": {
+      "type": "string",
+      "enum": [
+        "hookOnly",
+        "legacy",
+        "watcher"
+      ],
+      "title": "Wait",
+      "default": "watcher",
+      "description": "If specified, wait until resources are ready, up to timeout"
+    }
+  },
+  "unevaluatedProperties": false
+}

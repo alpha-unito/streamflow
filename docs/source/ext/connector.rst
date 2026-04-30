@@ -168,8 +168,9 @@ Name                                                        Class
 :ref:`docker <DockerConnector>`                             streamflow.deployment.connector.docker.DockerConnector
 :ref:`docker-compose <DockerComposeConnector>`              streamflow.deployment.connector.docker.DockerComposeConnector
 :ref:`flux <FluxConnector>`                                 streamflow.deployment.connector.queue_manager.FluxConnector
-:ref:`helm <Helm3Connector>`                                streamflow.deployment.connector.kubernetes.Helm3Connector
+:ref:`helm <Helm4Connector>`                                streamflow.deployment.connector.kubernetes.Helm4Connector
 :ref:`helm3 <Helm3Connector>`                               streamflow.deployment.connector.kubernetes.Helm3Connector
+:ref:`helm4 <Helm4Connector>`                               streamflow.deployment.connector.kubernetes.Helm4Connector
 :ref:`kubernetes <KubernetesConnector>`                     streamflow.deployment.connector.kubernetes.KubernetesConnector
 :ref:`pbs <PBSConnector>`                                   streamflow.deployment.connector.queue_manager.PBSConnector
 :ref:`singularity <SingularityConnector>`                   streamflow.deployment.connector.singularity.SingularityConnector

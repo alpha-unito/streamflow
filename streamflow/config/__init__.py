@@ -16,6 +16,10 @@ ext_schemas: MutableSequence[Traversable] = [
     files("streamflow.deployment.connector")
     .joinpath("schemas")
     .joinpath("base")
+    .joinpath("helm.json"),
+    files("streamflow.deployment.connector")
+    .joinpath("schemas")
+    .joinpath("base")
     .joinpath("kubernetes.json"),
     files("streamflow.deployment.connector")
     .joinpath("schemas")
