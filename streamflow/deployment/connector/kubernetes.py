@@ -1368,7 +1368,7 @@ class Helm3Connector(HelmConnector):
         )
 
     def _get_undeploy_command(self) -> str:
-        return f"{super()._get_undeploy_command()}{get_option('wait', self.wait)}"
+        return f"{super()._get_undeploy_command()}" f"{get_option('wait', self.wait)}"
 
     @classmethod
     def get_schema(cls) -> str:
@@ -1557,11 +1557,11 @@ class Helm4Connector(HelmConnector):
             f"{get_option('force-replace', self.forceReplace)}"
             f"{get_option('post-renderer', self.postRenderer)}"
             f"{get_option('server-side', self.serverSide)}"
-            f"{get_option('wait', self.wait)}"
+            f"--wait={self.wait} "
         )
 
     def _get_undeploy_command(self) -> str:
-        return f"{super()._get_undeploy_command()}{get_option('wait', self.wait)}"
+        return f"{super()._get_undeploy_command()}" f"--wait={self.wait} "
 
     @classmethod
     def get_schema(cls) -> str:
