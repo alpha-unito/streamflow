@@ -60,6 +60,11 @@ jobs:
             commit: "e71ddcc925d64c2efa68c2a56dd0edcc960a2170"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
+          - on: "ubuntu-24.04-riscv"
+            python: "3.14"
+            commit: "6eddbfb03b8861885832b26e322fbd0fcb9a884d"
+            exclude: "docker_entrypoint,modify_file_content"
+            version: "v1.3"
     runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v6
