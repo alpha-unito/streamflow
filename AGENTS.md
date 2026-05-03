@@ -53,3 +53,4 @@ docs/               # Sphinx documentation
 | Code style: imports, naming, error handling, docstrings | **StreamFlow Code Style** |
 | Git commit message format | **StreamFlow Git Workflow** |
 | Writing and running tests | **StreamFlow Testing** |
+| Writing RST documentation, adding examples | **StreamFlow Documentation** |

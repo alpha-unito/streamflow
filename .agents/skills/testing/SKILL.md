@@ -74,3 +74,8 @@ uv run pytest --deploys local,docker,ssh tests/test_remotepath.py
 Coverage reports: https://app.codecov.io/gh/alpha-unito/streamflow
 
 Run locally with `uv run make testcov` — generates an HTML report in `htmlcov/`.
+
+## See Also
+
+- **StreamFlow Code Style** skill — naming conventions and docstrings for test code
+- **StreamFlow Git Workflow** skill — commit message format when committing tests

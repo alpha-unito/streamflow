@@ -1,0 +1,25 @@
+#!/usr/bin/env streamflow
+version: v1.0
+workflows:
+  master:
+    type: cwl
+    config:
+      file: cwl/main.cwl
+      settings: cwl/config.yml
+    bindings:
+      - step: /compile
+        target:
+          deployment: k8s-mpi
+          service: openmpi
+      - step: /execute
+        target:
+          deployment: k8s-mpi
+          locations: 2
+          service: openmpi
+deployments:
+  k8s-mpi:
+    type: kubernetes
+    config:
+      files:
+        - environment/k8s/deployment.yaml
+    workdir: /tmp

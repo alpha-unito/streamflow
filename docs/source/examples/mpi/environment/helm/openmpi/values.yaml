@@ -1,0 +1,13 @@
+# Declare variables to be passed into your templates.
+
+replicaCount: 2
+
+image:
+  repository: everpeace/kube-openmpi
+  tag: 0.7.0
+  pullPolicy: Always
+
+sshSecretName: streamflow-ssh-key
+
+nameOverride: ""
+fullnameOverride: ""

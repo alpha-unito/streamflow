@@ -12,7 +12,7 @@ BUILDDIR      = build
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-.PHONY: help Makefile
+.PHONY: help Makefile test testcov
 
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
@@ -21,6 +21,18 @@ help:
 
 clean:
 	@rm -fr build/
+
+test:
+	python -m pytest -rs tests/ ${PYTEST_EXTRA}
+
+testcov:
+	python -m pytest -s tests/ --cov --junitxml=junit.xml -o junit_family=legacy --cov-report= ${PYTEST_EXTRA}
+
+coverage.xml: testcov
+	coverage xml
+
+coverage-report: testcov
+	coverage report
 
 checksum: clean html
 	@echo "Documentation checksum: "

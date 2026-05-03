@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   openmpi:
     deploy:
@@ -7,17 +5,18 @@ services:
     expose:
       - 2022
     image: everpeace/kube-openmpi:0.7.0
+    platform: linux/amd64
     stdin_open: true
     volumes:
       - type: bind
-        source: ./id_rsa
+        source: ../id_rsa
         target: /ssh-key/openmpi/id_rsa
         read_only: true
       - type: bind
-        source: ./id_rsa.pub
+        source: ../id_rsa.pub
         target: /ssh-key/openmpi/id_rsa.pub
         read_only: true
       - type: bind
-        source: ./id_rsa.pub
+        source: ../id_rsa.pub
         target: /ssh-key/openmpi/authorized_keys
         read_only: true
