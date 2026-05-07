@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from contextlib import suppress
 from importlib.resources import files
+from pathlib import PurePosixPath
 from shutil import which
 from typing import Any, AsyncContextManager
 
@@ -41,6 +42,13 @@ from streamflow.deployment.connector.base import (
 )
 from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
+
+
+def _get_longest_prefix_path(path: str, paths: MutableSequence[str]) -> PurePosixPath:
+    for curr in sorted(paths, reverse=True):
+        if path.startswith(curr):
+            return PurePosixPath(curr)
+    return PurePosixPath(posixpath.sep)
 
 
 async def _get_storage_from_binds(
@@ -194,7 +202,11 @@ class ContainerConnector(ConnectorWrapper, ABC):
         source_location: ExecutionLocation | None = None,
     ) -> tuple[MutableMapping[str, Any], MutableSequence[ExecutionLocation]]:
         # Get all container mounts
-        for volume in (await self._get_instance(location.name)).volumes.values():
+        for volume in sorted(
+            (await self._get_instance(location.name)).volumes.values(),
+            reverse=True,
+            key=lambda item: item.mount_point,
+        ):
             # If volume is a bind mount
             if volume.bind is not None:
                 # If path is in a persistent volume
@@ -537,7 +549,11 @@ class ContainerConnector(ConnectorWrapper, ABC):
         return effective_locations
 
     def _get_container_path(self, instance: ContainerInstance, path: str) -> str | None:
-        for volume in instance.volumes.values():
+        for volume in sorted(
+            filter(lambda x: x.bind is not None, instance.volumes.values()),
+            reverse=True,
+            key=lambda item: item.bind,
+        ):
             if volume.bind is not None and path.startswith(volume.bind):
                 path_processor = os.path if self._wraps_local() else posixpath
                 return posixpath.join(
@@ -547,7 +563,9 @@ class ContainerConnector(ConnectorWrapper, ABC):
         return None
 
     def _get_host_path(self, instance: ContainerInstance, path: str) -> str | None:
-        for volume in instance.volumes.values():
+        for volume in sorted(
+            instance.volumes.values(), reverse=True, key=lambda item: item.mount_point
+        ):
             if volume.bind is not None and path.startswith(volume.mount_point):
                 path_processor = os.path if self._wraps_local() else posixpath
                 return path_processor.join(
@@ -1829,12 +1847,11 @@ class SingularityConnector(ContainerConnector):
             )
         # Get inner location mount points
         if self._wraps_local():
-            fs_mounts = {
-                disk.device: disk.mountpoint
+            fs_mounts = [
+                disk.mountpoint
                 for disk in psutil.disk_partitions(all=True)
                 if disk.fstype not in FS_TYPES_TO_SKIP
-                and os.access(disk.mountpoint, os.R_OK)
-            }
+            ]
         else:
             stdout, returncode = await self.connector.run(
                 location=self._get_inner_location(),
@@ -1845,19 +1862,65 @@ class SingularityConnector(ContainerConnector):
                 capture_output=True,
             )
             if returncode == 0:
-                fs_mounts = {
-                    line.split(" - ")[1].split()[1]: line.split()[4]
+                fs_mounts = [
+                    line.split()[4]
                     for line in stdout.splitlines()
                     if line.split(" - ")[1].split()[0] not in FS_TYPES_TO_SKIP
-                }
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"Host mount points: {fs_mounts}")
+                ]
             else:
                 raise WorkflowExecutionException(
                     f"FAILED retrieving volume mounts from `/proc/1/mountinfo` "
                     f"in deployment {self.connector.deployment_name}: [{returncode}]: {stdout}"
                 )
-        # Get the list of bind mounts for the container instance
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(f"Host mount points: {fs_mounts}")
+
+        # Aggregate all bind mounts for the container instance
+        binds = {}
+        # 1. Extract explicit user-defined bind mounts
+        for b in self.bind or ():
+            source, dest, _ = _parse_bind(b)
+            if source != dest:
+                binds[dest] = source
+        for m in self.mount or ():
+            type_, source, dest = _parse_mount(m)
+            if type_ == "bind" and source != dest:
+                binds[dest] = source
+        # 2. Extract system-level bind mounts from the Singularity configuration
+        stdout, returncode = await self.connector.run(
+            location=location,
+            command=[
+                "singularity",
+                "buildcfg",
+                "|",
+                "grep",
+                "CONF_FILE",
+                "|",
+                "cut",
+                "-d'='",
+                "-f2",
+                "|",
+                "xargs",
+                "cat",
+                "|",
+                "grep",
+                '"^bind path"',
+            ],
+            capture_output=True,
+        )
+        if returncode == 0:
+            for line in stdout.splitlines():
+                source, dest, _ = _parse_bind(line.split("=")[1].strip())
+                # Do not override any user-defined paths
+                if source != dest and dest not in binds:
+                    binds[dest] = source
+        else:
+            logger.warning(
+                f"Impossible to retrieve singularity configuration file "
+                f"in deployment {self.connector.deployment_name}"
+            )
+        # 3. Extract dynamically resolved mount points directly from the running container.
+        # This includes the discarded cases from the previous steps when the source and destination have the same path.
         stdout, returncode = await self.run(
             location=location,
             command=[
@@ -1867,37 +1930,15 @@ class SingularityConnector(ContainerConnector):
             capture_output=True,
         )
         if returncode == 0:
-            binds = {}
-            for b in self.bind or ():
-                source, dest, _ = _parse_bind(b)
-                binds[dest] = source
-            for m in self.mount or ():
-                type_, source, dest = _parse_mount(m)
-                if type_ == "bind":
-                    binds[dest] = source
             for line in stdout.splitlines():
-                if (dst := line.split()[4]) != posixpath.sep and (
-                    fs_type := line.split(" - ")[1].split()[0]
-                ) not in FS_TYPES_TO_SKIP:
-                    mount_source = line.split(" - ")[1].split()[1]
-                    if mount_source.startswith("/dev"):
-                        host_mount = line.split()[3]
-                    elif fs_type.startswith("nfs"):
-                        host_mount = None
-                        for host_source in sorted(fs_mounts.keys(), reverse=True):
-                            if mount_source.startswith(host_source):
-                                host_mount = mount_source.split(":", 1)[1]
-                                break
-                    else:
-                        host_mount = (
-                            (os.path if self._wraps_local() else posixpath).join(
-                                fs_mounts[mount_source], line.split()[3][1:]
-                            )
-                            if mount_source in fs_mounts
-                            else None
-                        )
-                    if dst not in binds.keys() and host_mount is not None:
-                        binds[dst] = host_mount
+                if (
+                    (dst := line.split()[4]) != posixpath.sep
+                    and dst not in binds
+                    and (line.split(" - ")[1].split()[0]) not in FS_TYPES_TO_SKIP
+                ):
+                    binds[dst] = str(
+                        _get_longest_prefix_path(dst, fs_mounts) / line.split()[3][1:]
+                    )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
         else:
