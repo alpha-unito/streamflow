@@ -44,11 +44,16 @@ from streamflow.deployment.wrapper import ConnectorWrapper, get_inner_location
 from streamflow.log_handler import logger
 
 
-def _get_longest_prefix_path(path: str, paths: MutableSequence[str]) -> PurePosixPath:
-    for curr in sorted(paths, reverse=True):
-        if path.startswith(curr):
-            return PurePosixPath(curr)
-    return PurePosixPath(posixpath.sep)
+def _get_longest_prefix_path(path: str, paths: MutableSequence[str]) -> str:
+    pure_path = PurePosixPath(path)
+    return next(
+        (
+            curr
+            for curr in sorted(paths, reverse=True)
+            if pure_path.is_relative_to(curr)
+        ),
+        posixpath.sep,
+    )
 
 
 async def _get_storage_from_binds(
@@ -554,7 +559,7 @@ class ContainerConnector(ConnectorWrapper, ABC):
             reverse=True,
             key=lambda item: item.bind,
         ):
-            if volume.bind is not None and path.startswith(volume.bind):
+            if path.startswith(volume.bind):
                 path_processor = os.path if self._wraps_local() else posixpath
                 return posixpath.join(
                     volume.mount_point,
@@ -1936,8 +1941,8 @@ class SingularityConnector(ContainerConnector):
                     and dst not in binds
                     and (line.split(" - ")[1].split()[0]) not in FS_TYPES_TO_SKIP
                 ):
-                    binds[dst] = str(
-                        _get_longest_prefix_path(dst, fs_mounts) / line.split()[3][1:]
+                    binds[dst] = posixpath.join(
+                        _get_longest_prefix_path(dst, fs_mounts), line.split()[3][1:]
                     )
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
