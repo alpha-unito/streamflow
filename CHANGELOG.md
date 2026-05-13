@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix bind mount inspection in `SingularityConnector` ([#1058](https://github.com/alpha-unito/streamflow/pull/1058))
 - Fix `--wait` flag in `Helm4Connector` for Cobra parser ([#1050](https://github.com/alpha-unito/streamflow/pull/1050))
 - Fix shell reuse collision across execution locations ([#1045](https://github.com/alpha-unito/streamflow/pull/1045))
 - Fix operators in `Hardware` and `Storage` ([#1044](https://github.com/alpha-unito/streamflow/pull/1044))
