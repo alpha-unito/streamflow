@@ -28,6 +28,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove `OccamConnector` and all associated files ([#1041](https://github.com/alpha-unito/streamflow/pull/1041))
 
+### Dependencies
+
+- Bump asyncssh from 2.22.0 to 2.23.0 ([#1064](https://github.com/alpha-unito/streamflow/pull/1064))
+- Bump kaleido from 1.2.0 to 1.3.0 ([#1055](https://github.com/alpha-unito/streamflow/pull/1055))
+- Bump urllib3 from 2.6.3 to 2.7.0 ([#1063](https://github.com/alpha-unito/streamflow/pull/1063))
+
+### Dev Dependencies
+
+- Bump azure/setup-helm from 4 to 5 ([#1051](https://github.com/alpha-unito/streamflow/pull/1051))
+- Bump mistune from 3.1.4 to 3.2.1 ([#1060](https://github.com/alpha-unito/streamflow/pull/1060))
+- Bump mypy from 1.20.2 to 2.1.0 ([#1059](https://github.com/alpha-unito/streamflow/pull/1059), [#1065](https://github.com/alpha-unito/streamflow/pull/1065))
+- Bump ruff from 0.15.11 to 0.15.12 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047))
+- Bump sphinxcontrib-bibtex from 2.6.5 to 2.7.0 ([#1057](https://github.com/alpha-unito/streamflow/pull/1057))
+- Bump types-cachetools from 6.2.0.20260408 to 7.0.0.20260503 ([#1052](https://github.com/alpha-unito/streamflow/pull/1052))
+- Bump types-jsonschema from 4.26.0.20260408 to 4.26.0.20260508 ([#1062](https://github.com/alpha-unito/streamflow/pull/1062))
+- Bump types-psutil from 7.2.2.20260408 to 7.2.2.20260508 ([#1061](https://github.com/alpha-unito/streamflow/pull/1061))
+
 ## [0.2.0rc2] - 2026-04-23
 
 ### Added
