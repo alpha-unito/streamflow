@@ -10,6 +10,24 @@ concurrency:
   group: build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  check-changelog:
+    name: "Enforce CHANGELOG updates"
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check if CHANGELOG.md changed
+        run: |
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"          
+          git fetch origin $BASE_BRANCH
+          if ! git diff --name-only origin/$BASE_BRANCH...HEAD | grep -q "^CHANGELOG.md$"; then
+            echo "Error: CHANGELOG.md has not been updated!"
+            exit 1
+          fi
   code-ql-check:
     name: "StreamFlow CodeQL check"
     runs-on: ubuntu-24.04
