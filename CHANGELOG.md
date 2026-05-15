@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump azure/setup-helm from 4 to 5 ([#1051](https://github.com/alpha-unito/streamflow/pull/1051))
 - Bump mistune from 3.1.4 to 3.2.1 ([#1060](https://github.com/alpha-unito/streamflow/pull/1060))
 - Bump mypy from 1.20.2 to 2.1.0 ([#1059](https://github.com/alpha-unito/streamflow/pull/1059), [#1065](https://github.com/alpha-unito/streamflow/pull/1065))
-- Bump ruff from 0.15.11 to 0.15.12 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047))
+- Bump ruff from 0.15.11 to 0.15.13 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067))
 - Bump sphinxcontrib-bibtex from 2.6.5 to 2.7.0 ([#1057](https://github.com/alpha-unito/streamflow/pull/1057))
 - Bump types-cachetools from 6.2.0.20260408 to 7.0.0.20260503 ([#1052](https://github.com/alpha-unito/streamflow/pull/1052))
 - Bump types-jsonschema from 4.26.0.20260408 to 4.26.0.20260508 ([#1062](https://github.com/alpha-unito/streamflow/pull/1062))
