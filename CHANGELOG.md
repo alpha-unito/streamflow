@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dev Dependencies
 
 - Bump azure/setup-helm from 4 to 5 ([#1051](https://github.com/alpha-unito/streamflow/pull/1051))
+- Bump black from 26.3.1 to 26.5.1 ([#1073](https://github.com/alpha-unito/streamflow/pull/1073))
 - Bump mistune from 3.1.4 to 3.2.1 ([#1060](https://github.com/alpha-unito/streamflow/pull/1060))
 - Bump mypy from 1.20.2 to 2.1.0 ([#1059](https://github.com/alpha-unito/streamflow/pull/1059), [#1065](https://github.com/alpha-unito/streamflow/pull/1065))
 - Bump ruff from 0.15.11 to 0.15.13 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067))
