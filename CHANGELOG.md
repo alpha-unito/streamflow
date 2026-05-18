@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump ruff from 0.15.11 to 0.15.13 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067))
 - Bump sphinxcontrib-bibtex from 2.6.5 to 2.7.0 ([#1057](https://github.com/alpha-unito/streamflow/pull/1057))
 - Bump types-cachetools from 6.2.0.20260408 to 7.0.0.20260518 ([#1052](https://github.com/alpha-unito/streamflow/pull/1052), [#1071](https://github.com/alpha-unito/streamflow/pull/1071))
-- Bump types-jsonschema from 4.26.0.20260408 to 4.26.0.20260508 ([#1062](https://github.com/alpha-unito/streamflow/pull/1062))
+- Bump types-jsonschema from 4.26.0.20260408 to 4.26.0.20260518 ([#1062](https://github.com/alpha-unito/streamflow/pull/1062), [#1069](https://github.com/alpha-unito/streamflow/pull/1069))
 - Bump types-psutil from 7.2.2.20260408 to 7.2.2.20260518 ([#1061](https://github.com/alpha-unito/streamflow/pull/1061), [#1072](https://github.com/alpha-unito/streamflow/pull/1072))
 
 ## [0.2.0rc2] - 2026-04-23
