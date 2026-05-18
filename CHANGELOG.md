@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confine the `uvloop` async engine to macOS ([#1205](https://github.com/alpha-unito/streamflow/pull/1205))
 - Refactor token value extraction into `get_data()` ([#1207](https://github.com/alpha-unito/streamflow/pull/1207))
 
+### Fixed
+
+- Fix `SSHConnector` memory retrieval ([#1197](https://github.com/alpha-unito/streamflow/pull/1197))
+- Fix environment of `CommandLineTool` ([#1181](https://github.com/alpha-unito/streamflow/pull/1181))
+- Fix Slurm job exit code retrieval ([#1160](https://github.com/alpha-unito/streamflow/pull/1160))
+- Fix provenance handling for secondary files ([#1068](https://github.com/alpha-unito/streamflow/pull/1068))
+
 ### Removed
 
 - Remove `importlib-metadata` dependency ([#1204](https://github.com/alpha-unito/streamflow/pull/1204))
@@ -62,12 +69,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump sphinx from 8.1.3 to 9.0.4 ([#1180](https://github.com/alpha-unito/streamflow/pull/1180))
 - Bump types-jsonschema from 4.26.0.20260518 to 4.26.0.20261006 ([#1167](https://github.com/alpha-unito/streamflow/pull/1167))
 - Bump types-psutil from 7.2.2.20260906 to 7.2.2.20261111 ([#1201](https://github.com/alpha-unito/streamflow/pull/1201))
-
-### Fixed
-
-- Fix `SSHConnector` memory retrieval ([#1197](https://github.com/alpha-unito/streamflow/pull/1197))
-- Fix environment of `CommandLineTool` ([#1181](https://github.com/alpha-unito/streamflow/pull/1181))
-- Fix Slurm job exit code retrieval ([#1160](https://github.com/alpha-unito/streamflow/pull/1160))
 
 ## [0.2.0rc3] - 2026-09-19
 
