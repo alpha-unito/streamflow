@@ -1483,16 +1483,19 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             )
             value = []
             for property_value in (k for k in property_values if k is not None):
-                if property_value["@type"] in ["Dataset", "File"]:
-                    # Check for duplicate checksums
-                    if property_value["@id"] not in self.graph:
-                        self.graph["./"]["hasPart"].append(
-                            {"@id": property_value["@id"]}
-                        )
-                        self.graph[property_value["@id"]] = property_value
-                    value.append({"@id": property_value["@id"]})
-                else:
-                    value.append(property_value["value"])
+                match property_value["@type"]:
+                    case "Collection":
+                        value.append({"@id": property_value["@id"]})
+                    case "Dataset" | "File":
+                        # Check for duplicate checksums
+                        if property_value["@id"] not in self.graph:
+                            self.graph["./"]["hasPart"].append(
+                                {"@id": property_value["@id"]}
+                            )
+                            self.graph[property_value["@id"]] = property_value
+                        value.append({"@id": property_value["@id"]})
+                    case _:
+                        value.append(property_value["value"])
             value = streamflow.core.utils.flatten_list(value)
             return {
                 "@id": "#" + str(uuid.uuid4()),
