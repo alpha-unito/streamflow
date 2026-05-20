@@ -251,7 +251,7 @@ async def get_openpbs_deployment_config(_context: StreamFlowContext):
             "files": [
                 str(get_data_path("deployment", "openpbs", "docker-compose.yml"))
             ],
-            "projectName": random_name(),
+            "projectName": random_name().split("-")[0],
         },
         external=False,
     )

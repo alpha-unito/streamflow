@@ -1464,9 +1464,28 @@ class DockerComposeConnector(DockerBaseConnector):
                 capture_output=True,
             )
             if returncode != 0:
+                log_stdout, returncode = await self.connector.run(
+                    location=self._get_inner_location(),
+                    command=await self._get_base_command() + ["logs"],
+                    capture_output=True,
+                )
+                if returncode == 0:
+                    stdout += f"\n{log_stdout}"
                 raise WorkflowExecutionException(
                     f"FAILED Deployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
                 )
+            elif logger.isEnabledFor(logging.DEBUG):
+                stdout, returncode = await self.connector.run(
+                    location=self._get_inner_location(),
+                    command=await self._get_base_command() + ["logs"],
+                    capture_output=True,
+                )
+                if returncode == 0:
+                    logger.debug(f"Docker Compose {self.deployment_name} log while deploying:\n\t{stdout}")
+                else:
+                    raise WorkflowExecutionException(
+                        f"FAILED Deployment of {self.deployment_name} environment [{returncode}]:\n\t{stdout}"
+                    )
 
     async def get_available_locations(
         self, service: str | None = None
@@ -1481,7 +1500,7 @@ class DockerComposeConnector(DockerBaseConnector):
             (json_end := output.rfind("}")) != -1
         ):
             if json_start != 0 and logger.isEnabledFor(logging.DEBUG):
-                logger.debug(f"Docker Compose log: {output[:json_start].strip()}")
+                logger.debug(f"Docker Compose {self.deployment_name} log while inspecting: {output[:json_start].strip()}")
             locations = json.loads(output[json_start : json_end + 1])
         else:
             raise WorkflowExecutionException(
