@@ -11,7 +11,7 @@ class ManyToOneTransformer(Transformer, ABC):
             super().add_output_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                f"{self.name} step must contain a single output port."
+                f"Step {self.name} must contain a single output port."
             )
 
     def get_output_name(self) -> str:
@@ -20,7 +20,24 @@ class ManyToOneTransformer(Transformer, ABC):
     async def run(self) -> None:
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
-                f"{self.name} step must contain a single output port."
+                f"Step {self.name} must contain a single output port."
+            )
+        await super().run()
+
+
+class OneToManyTransformer(Transformer, ABC):
+    def add_input_port(self, name: str, port: Port) -> None:
+        if not self.input_ports:
+            super().add_input_port(name, port)
+        else:
+            raise WorkflowDefinitionException(
+                f"Step {self.name} must contain a single input port."
+            )
+
+    async def run(self) -> None:
+        if len(self.input_ports) != 1:
+            raise WorkflowDefinitionException(
+                f"Step {self.name} must contain a single input port."
             )
         await super().run()
 
@@ -31,16 +48,16 @@ class OneToOneTransformer(ManyToOneTransformer, ABC):
             super().add_input_port(name, port)
         else:
             raise WorkflowDefinitionException(
-                f"{self.name} step must contain a single input port."
+                f"Step {self.name} must contain a single input port."
             )
 
     async def run(self) -> None:
         if len(self.input_ports) != 1:
             raise WorkflowDefinitionException(
-                f"{self.name} step must contain a single input port."
+                f"Step {self.name} must contain a single input port."
             )
         if len(self.output_ports) != 1:
             raise WorkflowDefinitionException(
-                f"{self.name} step must contain a single output port."
+                f"Step {self.name} must contain a single output port."
             )
         await super().run()
