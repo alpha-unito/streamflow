@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump black from 26.3.1 to 26.5.1 ([#1073](https://github.com/alpha-unito/streamflow/pull/1073))
 - Bump mistune from 3.1.4 to 3.2.1 ([#1060](https://github.com/alpha-unito/streamflow/pull/1060))
 - Bump mypy from 1.20.2 to 2.1.0 ([#1059](https://github.com/alpha-unito/streamflow/pull/1059), [#1065](https://github.com/alpha-unito/streamflow/pull/1065))
-- Bump ruff from 0.15.11 to 0.15.13 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067))
+- Bump ruff from 0.15.11 to 0.15.14 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067), [#1075](https://github.com/alpha-unito/streamflow/pull/1075))
 - Bump sphinxcontrib-bibtex from 2.6.5 to 2.7.0 ([#1057](https://github.com/alpha-unito/streamflow/pull/1057))
 - Bump types-antlr4-python3-runtime from 4.13.0.20260408 to 4.13.0.20260518 ([#1070](https://github.com/alpha-unito/streamflow/pull/1070))
 - Bump types-cachetools from 6.2.0.20260408 to 7.0.0.20260518 ([#1052](https://github.com/alpha-unito/streamflow/pull/1052), [#1071](https://github.com/alpha-unito/streamflow/pull/1071))
