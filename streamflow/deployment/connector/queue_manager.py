@@ -33,7 +33,7 @@ from streamflow.deployment.wrapper import (
 from streamflow.log_handler import logger
 
 
-def _const_key_maker(args: tuple, kwds: dict) -> str:
+def _const_key_maker(*args, **kwds) -> str:
     return "running_jobs"
 
 
@@ -413,7 +413,9 @@ class QueueManagerConnector(BatchConnector, ConnectorWrapper, ABC):
                     "this value to improve performance."
                 )
         self.pollingInterval: int = pollingInterval
-        self._jobs_cache: BaseCacheImpl = TTLCache(maxsize=1, ttl=self.pollingInterval)
+        self._jobs_cache: BaseCacheImpl = TTLCache(
+            maxsize=1, global_ttl=self.pollingInterval
+        )
         self._jobs_cache_lock: asyncio.Lock = asyncio.Lock()
         self._scheduled_jobs: MutableMapping[str, ExecutionLocation] = {}
 

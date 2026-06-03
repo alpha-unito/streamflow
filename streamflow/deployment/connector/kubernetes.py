@@ -275,7 +275,9 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                     )
             else:
                 cacheTTL = 10
-        self.locationsCache: BaseCacheImpl = TTLCache(maxsize=cacheSize, ttl=cacheTTL)
+        self.locationsCache: BaseCacheImpl = TTLCache(
+            maxsize=cacheSize, global_ttl=cacheTTL
+        )
         self.configuration: Configuration | None = None
         self.client: client.CoreV1Api | None = None
         self.client_ws: client.CoreV1Api | None = None
