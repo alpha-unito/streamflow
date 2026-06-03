@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Dependencies
 
+- Bump aiohttp from 3.13.5 to 3.14.0 ([#1079](https://github.com/alpha-unito/streamflow/pull/1079))
 - Bump asyncssh from 2.22.0 to 2.23.0 ([#1064](https://github.com/alpha-unito/streamflow/pull/1064))
 - Bump idna from 3.11 to 3.15 ([#1074](https://github.com/alpha-unito/streamflow/pull/1074))
 - Bump kaleido from 1.2.0 to 1.3.0 ([#1055](https://github.com/alpha-unito/streamflow/pull/1055))
