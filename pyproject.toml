@@ -52,7 +52,7 @@ version = "0.2.0rc2"
 [project.optional-dependencies]
 report = [
     "pandas==2.3.3",
-    "plotly==6.7.0",
+    "plotly==6.8.0",
     "kaleido==1.3.0"
 ]
 
