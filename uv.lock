@@ -972,7 +972,7 @@ wheels = [
 
 [[package]]
 name = "cwl-utils"
-version = "0.41"
+version = "0.42"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cwl-upgrader" },
@@ -983,9 +983,9 @@ dependencies = [
     { name = "schema-salad" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e7/46/e8cc314b2a6c4f2f684b0d9a00313b661e83d4cda4b6bd752ba078f90366/cwl_utils-0.41.tar.gz", hash = "sha256:74c03bc62e9d58fc20f9b2c17e9c3b29e8f11de111f20efb3b0e1ae74ec748f2", size = 396387, upload-time = "2026-03-31T15:23:44Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5f/39/f14c6799741a1b3e00ca515dea63aefdb1c8a6549cdf99c86c7e15dc351e/cwl_utils-0.42.tar.gz", hash = "sha256:94e585dcc3082416c657ae446804b5e60f6363045743cbd64814ed85402e3f87", size = 397794, upload-time = "2026-06-01T15:26:08.184Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/f7/4b4eb0f2dbec43101e2bbc1fd30df7ba5778b99290b5aa83e1b5614368c5/cwl_utils-0.41-py3-none-any.whl", hash = "sha256:8244584e10151f7838383f138496d347a23b06ccda4c90c75f57f0cee66d7ca5", size = 462104, upload-time = "2026-03-31T15:23:42.062Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/b4/23f8462c72e514563f5fd949e38a9e45bcc86fb59bf4b88240ba0ef02026/cwl_utils-0.42-py3-none-any.whl", hash = "sha256:3ded53f626268d1113895f59e91a6ce2d8a1568823b4db506b4814ae2e4904c4", size = 458464, upload-time = "2026-06-01T15:26:06.452Z" },
 ]
 
 [[package]]
@@ -3454,7 +3454,7 @@ requires-dist = [
     { name = "asyncssh", specifier = "==2.23.0" },
     { name = "bcrypt", specifier = "==5.0.0" },
     { name = "cachebox", specifier = "==6.1.0" },
-    { name = "cwl-utils", specifier = "==0.41" },
+    { name = "cwl-utils", specifier = "==0.42" },
     { name = "importlib-metadata", specifier = "==9.0.0" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "jsonschema", specifier = "==4.26.0" },
