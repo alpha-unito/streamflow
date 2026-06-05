@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump cachebox from 5.2.3 to 6.0.0 ([#1078](https://github.com/alpha-unito/streamflow/pull/1078))
 - Bump idna from 3.11 to 3.15 ([#1074](https://github.com/alpha-unito/streamflow/pull/1074))
 - Bump kaleido from 1.2.0 to 1.3.0 ([#1055](https://github.com/alpha-unito/streamflow/pull/1055))
+- Bump plotly from 6.7.0 to 6.8.0 ([#1081](https://github.com/alpha-unito/streamflow/pull/1081))
 - Bump urllib3 from 2.6.3 to 2.7.0 ([#1063](https://github.com/alpha-unito/streamflow/pull/1063))
 
 ### Dev Dependencies
