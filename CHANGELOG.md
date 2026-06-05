@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump aiohttp from 3.13.5 to 3.14.0 ([#1079](https://github.com/alpha-unito/streamflow/pull/1079))
 - Bump asyncssh from 2.22.0 to 2.23.0 ([#1064](https://github.com/alpha-unito/streamflow/pull/1064))
-- Bump cachebox from 5.2.3 to 6.0.0 ([#1078](https://github.com/alpha-unito/streamflow/pull/1078))
+- Bump cachebox from 5.2.3 to 6.1.0 ([#1078](https://github.com/alpha-unito/streamflow/pull/1078), [#1083](https://github.com/alpha-unito/streamflow/pull/1083))
 - Bump idna from 3.11 to 3.15 ([#1074](https://github.com/alpha-unito/streamflow/pull/1074))
 - Bump kaleido from 1.2.0 to 1.3.0 ([#1055](https://github.com/alpha-unito/streamflow/pull/1055))
 - Bump urllib3 from 2.6.3 to 2.7.0 ([#1063](https://github.com/alpha-unito/streamflow/pull/1063))
