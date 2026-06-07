@@ -8,6 +8,7 @@ import urllib.parse
 from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
 from pathlib import PurePath
+from shutil import which
 from types import ModuleType
 from typing import Any, cast
 
@@ -15,6 +16,7 @@ import cwl_utils.expression
 import cwl_utils.parser
 import cwl_utils.parser.utils
 import cwl_utils.types
+from cachebox import FIFOCache, cached
 from cwl_utils.parser.cwl_v1_2_utils import CONTENT_LIMIT
 from typing_extensions import Self, TypeIs
 
@@ -111,6 +113,14 @@ async def _create_remote_directory(
             path=str(path),
             relpath=relpath,
         )
+
+
+@cached(cache=FIFOCache(1))
+def _get_container_engine() -> str:
+    for engine in ("docker", "singularity", "podman", "udocker"):
+        if which(engine) is not None:
+            return engine
+    return "docker"
 
 
 async def _get_contents(
@@ -740,6 +750,7 @@ def eval_expression(
             fullJS=full_js,
             strip_whitespace=strip_whitespace,
             timeout=timeout,
+            container_engine=_get_container_engine(),
         )
         if is_expression(expression)
         else expression
