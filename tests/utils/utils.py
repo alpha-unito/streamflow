@@ -136,6 +136,8 @@ async def compare_remote_dirs(
             await (src_path / src_file).checksum()
             == await (dst_path / dst_file).checksum()
         )
+        if await (src_path / src_file).is_executable():
+            assert await (dst_path / dst_file).is_executable()
     assert len(src_dirs) == len(dst_dirs)
     tasks = []
     for src_dir, dst_dir in zip(sorted(src_dirs), sorted(dst_dirs), strict=True):

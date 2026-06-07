@@ -38,7 +38,11 @@ async def _create_tmp_dir(
     file_lvl = f"-{lvl}" if lvl else ""
     for i in range(n_files):
         file_name = f"file{file_lvl}-{i}-{utils.random_name()}"
-        await (dir_path / file_name).write_text(f"Hello from {file_name}")
+        file_path = dir_path / file_name
+        await file_path.write_text(f"Hello from {file_name}")
+        if i == 1:
+            await file_path.chmod(0o755)
+            assert await file_path.is_executable()
     return dir_path
 
 
@@ -49,18 +53,18 @@ async def test_directory_to_directory(
     """Test transferring a directory and its content from one location to another."""
     # dir
     #   |- file_0
-    #   |- file_1
+    #   |- file_1 (executable)
     #   |- file_2
     #   |- file_3
     #   |- dir_0
     #   |   |- file_0_0
-    #   |   |- file_0_1
+    #   |   |- file_0_1 (executable)
     #   |   |- dir_0_0
-    #   |   |   |- file_0_0_1
+    #   |   |   |- file_0_0_1 (executable)
     #   |   |   |- file_0_0_2
     #   |- dir_1
     #   |   |- file_1_0
-    #   |   |- file_1_1
+    #   |   |- file_1_1 (executable)
     #   |   |- file_1_2
     #   |- dir_2
     #   |   |   empty

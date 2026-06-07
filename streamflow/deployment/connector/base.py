@@ -54,10 +54,11 @@ async def extract_tar_stream(
     async for member in tar:
         # If `dst` is a directory, copy the content of `src` inside `dst`
         if os.path.isdir(dst) and member.path == posixpath.basename(src):
-            await tar.extract(member, dst)
+            await tar.extract(member, dst, numeric_owner=True)
 
         # Otherwise, if copying a file, simply move it inside `dst`
         elif member.isfile():
+            tarinfo = await tar.getmember(member) if isinstance(member, str) else member
             async with await tar.extractfile(member) as inputfile:
                 path = os.path.normpath(
                     os.path.join(
@@ -67,6 +68,7 @@ async def extract_tar_stream(
                 with open(path, "wb") as outputfile:
                     while content := await inputfile.read(transferBufferSize):
                         outputfile.write(content)
+                os.chmod(path, tarinfo.mode)
 
         # Otherwise, if copying a directory, modify the member path to
         # move all the file hierarchy inside `dst`
@@ -79,7 +81,9 @@ async def extract_tar_stream(
                     member.linkname, posixpath.basename(src)
                 )
             await tar.extract(
-                member, os.path.normpath(os.path.join(dst, os.path.curdir))
+                member,
+                os.path.normpath(os.path.join(dst, os.path.curdir)),
+                numeric_owner=True,
             )
 
 
@@ -399,7 +403,7 @@ class BaseConnector(Connector, FutureAware, ABC):
                         location=location,
                         src=src,
                         dst=dst,
-                        writer_command=["tar", "xf", "-", "-C", "/"],
+                        writer_command=["tar", "xpf", "-", "-C", "/"],
                     )
                 )
                 for location in locations
