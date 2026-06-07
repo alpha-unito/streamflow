@@ -261,7 +261,7 @@ async def get_remote_to_remote_write_command(
         raise WorkflowExecutionException(is_dst_dir)
     # If destination path exists and is a directory
     elif status == 0:
-        return ["tar", "xf", "-", "-C", dst]
+        return ["tar", "xpf", "-", "-C", dst]
     # Otherwise, if destination path does not exist
     else:
         # If basename must be renamed during transfer
@@ -285,13 +285,13 @@ async def get_remote_to_remote_write_command(
                         for dst_location in dst_locations
                     )
                 )
-                return ["tar", "xf", "-", "-C", dst, "--strip-components", "1"]
+                return ["tar", "xpf", "-", "-C", dst, "--strip-components", "1"]
             # Otherwise, if source path is a file
             else:
-                return ["tar", "xf", "-", "-O", "|", "tee", dst, ">", "/dev/null"]
+                return ["tar", "xpf", "-", "-O", "|", "tee", dst, ">", "/dev/null"]
         # Otherwise, if basename must be preserved
         else:
-            return ["tar", "xf", "-", "-C", posixpath.dirname(dst)]
+            return ["tar", "xpf", "-", "-C", posixpath.dirname(dst)]
 
 
 def get_tag(tokens: Iterable[Token]) -> str:

@@ -170,6 +170,9 @@ class StreamFlowPath(PurePath, ABC):
     async def checksum(self) -> str | None: ...
 
     @abstractmethod
+    async def chmod(self, mode: int, *, follow_symlinks: bool = True): ...
+
+    @abstractmethod
     async def exists(self) -> bool: ...
 
     @abstractmethod
@@ -179,6 +182,9 @@ class StreamFlowPath(PurePath, ABC):
 
     @abstractmethod
     async def is_dir(self) -> bool: ...
+
+    @abstractmethod
+    async def is_executable(self) -> bool: ...
 
     @abstractmethod
     async def is_file(self) -> bool: ...
@@ -351,6 +357,9 @@ class LocalStreamFlowPath(
         else:
             return None
 
+    async def chmod(self, mode: int, *, follow_symlinks: bool = True) -> None:
+        cast(Path, super()).chmod(mode, follow_symlinks=follow_symlinks)
+
     async def exists(self) -> bool:
         return cast(Path, super()).exists()
 
@@ -362,6 +371,9 @@ class LocalStreamFlowPath(
 
     async def is_dir(self) -> bool:
         return cast(Path, super()).is_dir()
+
+    async def is_executable(self) -> bool:
+        return os.access(str(self), os.X_OK)
 
     async def is_file(self) -> bool:
         return cast(Path, super()).is_file()
@@ -613,6 +625,19 @@ class RemoteStreamFlowPath(
                 )
             return result.strip()
 
+    async def chmod(self, mode: int, *, follow_symlinks=True):
+        if (inner_path := await self._get_inner_path()) != self:
+            await inner_path.chmod(mode, follow_symlinks=follow_symlinks)
+        else:
+            command = ["chmod"]
+            if not follow_symlinks:
+                command.append("-h")
+            command.extend([f"{mode:o}", self.__str__()])
+            result, status = await self.connector.run(
+                location=self.location, command=command, capture_output=True
+            )
+            _check_status(command, self.location, result, status)
+
     async def exists(self) -> bool:
         if (inner_path := await self._get_inner_path()) != self:
             return await inner_path.exists()
@@ -659,6 +684,12 @@ class RemoteStreamFlowPath(
             return await inner_path.is_dir()
         else:
             return await self._test(command=["-d", shlex.quote(self.__str__())])
+
+    async def is_executable(self) -> bool:
+        if (inner_path := await self._get_inner_path()) != self:
+            return await inner_path.is_executable()
+        else:
+            return await self._test(command=["-x", shlex.quote(self.__str__())])
 
     async def is_file(self) -> bool:
         if (inner_path := await self._get_inner_path()) != self:

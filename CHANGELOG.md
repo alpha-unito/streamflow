@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix permission propagation when transferring files between locations ([#1085](https://github.com/alpha-unito/streamflow/pull/1085))
 - Fix provenance of empty unbound inputs ([#968](https://github.com/alpha-unito/streamflow/pull/968))
 - Fix bind mount inspection in `SingularityConnector` ([#1058](https://github.com/alpha-unito/streamflow/pull/1058))
 - Fix `--wait` flag in `Helm4Connector` for Cobra parser ([#1050](https://github.com/alpha-unito/streamflow/pull/1050))
