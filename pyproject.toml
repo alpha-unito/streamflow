@@ -32,7 +32,7 @@ dependencies = [
     "aiohttp==3.14.0",
     "aiosqlite==0.22.1",
     "antlr4-python3-runtime==4.13.2",
-    "asyncssh==2.23.0",
+    "asyncssh==2.23.1",
     "bcrypt==5.0.0",
     "cachebox==6.1.0",
     "cwl-utils==0.42",
