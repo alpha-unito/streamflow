@@ -123,7 +123,7 @@ jobs:
         run: ./cwl-conformance-test.sh
       - name: "Upload test results"
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
           report_type: test_results
@@ -208,7 +208,7 @@ jobs:
           uv run --no-sync make coverage.xml
       - name: "Upload test results"
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: docs/junit.xml
           report_type: test_results
@@ -334,7 +334,7 @@ jobs:
         run: tox
       - name: "Upload test results"
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           flags: ${{ startsWith(matrix.on, 'macos-') && 'macos' || 'ubuntu' }}
           report_type: test_results
@@ -366,7 +366,7 @@ jobs:
         with:
           pattern: "*-unit-tests"
       - name: "Upload coverage to Codecov"
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
