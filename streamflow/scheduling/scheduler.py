@@ -271,6 +271,7 @@ class DefaultScheduler(Scheduler):
             else:
                 slots = location.slots if location.slots is not None else 1
                 if not len(self._get_running_jobs(job_name, location)) < slots:
+                    logger.info(f"Location {location.name} has not enough jobs to run: {len(self._get_running_jobs(job_name, location))}/{slots}")
                     return False
             # If AvailableLocation is stacked, evaluate also the inner location
             if location := location.wraps if location.stacked else None:

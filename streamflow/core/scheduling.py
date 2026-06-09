@@ -20,6 +20,7 @@ from streamflow.core.context import SchemaEntity, StreamFlowContext
 from streamflow.core.deployment import ExecutionLocation
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.persistence import Database, DatabaseLoadingContext
+from streamflow.log_handler import logger
 
 if TYPE_CHECKING:
     from typing import Any
@@ -147,19 +148,28 @@ class Hardware:
         """Check if this hardware has enough resources to satisfy the requirement."""
         if not isinstance(other, Hardware):
             raise NotImplementedError
-        if self.cores >= other.cores and self.memory >= other.memory:
-            if set((other_norm := other._normalize_storage()).keys()) - set(
-                (self_norm := self._normalize_storage()).keys()
-            ):
-                raise WorkflowExecutionException(
-                    f"Invalid `Hardware` comparison: {self} should contain all the storage included in {other}."
-                )
-            return all(
-                self_norm[other_disk.mount_point].size >= other_disk.size
-                for other_disk in other_norm.values()
-            )
-        else:
+        if self.cores < other.cores:
+            logger.info(f"Hardware unsatisfied: insufficient cores (has {self.cores}, requires {other.cores}).")
             return False
+        if self.memory < other.memory:
+            logger.info(f"Hardware unsatisfied: insufficient memory (has {self.memory}, requires {other.memory}).")
+            return False
+        other_norm = other._normalize_storage()
+        self_norm = self._normalize_storage()
+        missing_mounts = set(other_norm.keys()) - set(self_norm.keys())
+        if missing_mounts:
+            error_msg = f"Invalid `Hardware` comparison: {self} should contain all the storage included in {other}. Missing mounts: {missing_mounts}"
+            logger.error(error_msg)
+            raise WorkflowExecutionException(error_msg)
+        for mount_point, other_disk in other_norm.items():
+            self_disk = self_norm[mount_point]
+            if self_disk.size < other_disk.size:
+                logger.info(
+                    f"Hardware unsatisfied: insufficient storage at '{mount_point}' "
+                    f"(has {self_disk.size}, requires {other_disk.size})."
+                )
+                return False
+        return True
 
 
 class HardwareRequirement(ABC):
