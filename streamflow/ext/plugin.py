@@ -101,7 +101,9 @@ class StreamFlowPlugin(ABC):
     def register_policy(self, name: str, cls: type[Policy]) -> None:
         self._register(name, cls, "policy")
 
-    def register_provenance_manager(self, name: str, cls: type[ProvenanceManager]) -> None:
+    def register_provenance_manager(
+        self, name: str, cls: type[ProvenanceManager]
+    ) -> None:
         self._register(name, cls, "provenance_manager")
 
     def register_scheduler(self, name: str, cls: type[Scheduler]) -> None:
