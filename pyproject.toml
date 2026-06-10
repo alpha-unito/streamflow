@@ -29,7 +29,7 @@ classifiers = [
     "Topic :: System :: Distributed Computing"
 ]
 dependencies = [
-    "aiohttp==3.14.0",
+    "aiohttp==3.14.1",
     "aiosqlite==0.22.1",
     "antlr4-python3-runtime==4.13.2",
     "asyncssh==2.23.1",
