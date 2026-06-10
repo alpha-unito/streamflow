@@ -114,6 +114,7 @@ async def _async_plugin(args: argparse.Namespace) -> None:
 
 
 async def _async_prov(args: argparse.Namespace) -> None:
+    load_extensions()
     context = _get_context_from_config(args.file)
     try:
         db_context = DefaultDatabaseLoadingContext(database=context.database)
@@ -130,27 +131,19 @@ async def _async_prov(args: argparse.Namespace) -> None:
                 )
             )
         )
-        wf_type = {w.type for w in workflows}
-        if len(wf_type) != 1:
+        if len(wf_type := {w.type for w in workflows}) != 1:
             raise WorkflowProvenanceException(
                 "Cannot mix different provenance types in the same file. "
                 f"Workflow {args.workflow} is associated to the following types: {','.join(wf_type)}"
             )
-        wf_type = next(iter(wf_type))
         if args.type not in provenance_manager_classes:
             raise WorkflowProvenanceException(
                 f"{args.type} provenance format is not supported."
             )
-        elif wf_type not in provenance_manager_classes[args.type]:
-            raise WorkflowProvenanceException(
-                "{} provenance format is not supported for workflows of type {}.".format(
-                    args.type, wf_type
-                )
-            )
         else:
             provenance_manager: ProvenanceManager = provenance_manager_classes[
                 args.type
-            ][wf_type](context, db_context, workflows)
+            ](context, db_context, workflows)
             await provenance_manager.create_archive(
                 outdir=args.outdir,
                 filename=args.name,

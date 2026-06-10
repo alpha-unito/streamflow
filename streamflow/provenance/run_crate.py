@@ -13,7 +13,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Container, MutableMapping, MutableSequence
 from importlib.resources import files
-from typing import Any, cast, get_args
+from typing import Any, cast
 from zipfile import ZipFile
 
 import cwl_utils.parser
