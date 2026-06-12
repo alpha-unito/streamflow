@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump mistune from 3.1.4 to 3.2.1 ([#1060](https://github.com/alpha-unito/streamflow/pull/1060))
 - Bump mypy from 1.20.2 to 2.1.0 ([#1059](https://github.com/alpha-unito/streamflow/pull/1059), [#1065](https://github.com/alpha-unito/streamflow/pull/1065))
 - Bump pytest-asyncio from 1.3.0 to 1.4.0 ([#1076](https://github.com/alpha-unito/streamflow/pull/1076)
-- Bump ruff from 0.15.11 to 0.15.16 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067), [#1075](https://github.com/alpha-unito/streamflow/pull/1075), [#1077](https://github.com/alpha-unito/streamflow/pull/1077), [#1082](https://github.com/alpha-unito/streamflow/pull/1082))
+- Bump ruff from 0.15.11 to 0.15.17 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067), [#1075](https://github.com/alpha-unito/streamflow/pull/1075), [#1077](https://github.com/alpha-unito/streamflow/pull/1077), [#1082](https://github.com/alpha-unito/streamflow/pull/1082), [#1093](https://github.com/alpha-unito/streamflow/pull/1093))
 - Bump sphinxcontrib-bibtex from 2.6.5 to 2.7.0 ([#1057](https://github.com/alpha-unito/streamflow/pull/1057))
 - Bump types-antlr4-python3-runtime from 4.13.0.20260408 to 4.13.0.20260518 ([#1070](https://github.com/alpha-unito/streamflow/pull/1070))
 - Bump types-cachetools from 6.2.0.20260408 to 7.0.0.20260518 ([#1052](https://github.com/alpha-unito/streamflow/pull/1052), [#1071](https://github.com/alpha-unito/streamflow/pull/1071))
