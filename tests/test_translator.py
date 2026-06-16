@@ -194,6 +194,7 @@ async def test_inject_remote_input(
         context=context,
         name=utils.random_name(),
         output_directory=tempfile.gettempdir(),
+        hierarchical_output=True,
         cwl_definition=None,  # CWL object
         cwl_inputs=cwl_inputs,
         cwl_inputs_path=None,
