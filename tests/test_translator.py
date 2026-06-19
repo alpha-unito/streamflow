@@ -75,7 +75,7 @@ def _get_workflow_config(streamflow_config) -> WorkflowConfig:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "file_type,file_kind",
-    itertools.product(("File", "Directory"), ("literal", "concrete")),
+    list(itertools.product(("File", "Directory"), ("literal", "concrete"))),
 )
 async def test_inject_remote_input(
     chosen_deployment_types: MutableSequence[str],

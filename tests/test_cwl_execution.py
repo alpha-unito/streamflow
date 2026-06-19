@@ -35,7 +35,7 @@ from tests.utils.workflow import (
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "token_type,file_type",
-    itertools.product(("file", "list", "object"), ("file", "dir", "listing")),
+    list(itertools.product(("file", "list", "object"), ("file", "dir", "listing"))),
 )
 async def test_initial_workdir(
     context: StreamFlowContext, token_type: str, file_type: str

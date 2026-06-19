@@ -94,7 +94,7 @@ lint = [
 test = [
     "cwltest==2.6.20251216093331",
     "cwltool==3.2.20260413085819",
-    "pytest==9.1.0",
+    "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "pytest-xdist==3.8.0"

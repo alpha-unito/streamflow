@@ -178,8 +178,14 @@ async def fault_tolerant_context() -> AsyncGenerator[StreamFlowContext, Any]:
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "num_of_steps,failure_step,error_type,num_of_failures,token_type",
-    itertools.product(
-        NUM_STEPS.values(), FAILURE_STEP, ERROR_TYPE, NUM_FAILURES.values(), TOKEN_TYPE
+    list(
+        itertools.product(
+            NUM_STEPS.values(),
+            FAILURE_STEP,
+            ERROR_TYPE,
+            NUM_FAILURES.values(),
+            TOKEN_TYPE,
+        )
     ),
     ids=[
         f"{n_step}_{step_t}_{error_t}_{n_failure}_{token_t}"
@@ -365,7 +371,7 @@ async def test_exceed_max_retries_poison_pill(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "prefix_tag,resume_from",
-    itertools.product(("0", "0.1"), ("begin", "first", "half")),
+    list(itertools.product(("0", "0.1"), ("begin", "first", "half"))),
 )
 async def test_resume_loop_combinator_step(
     context: StreamFlowContext, prefix_tag: str, resume_from: str
