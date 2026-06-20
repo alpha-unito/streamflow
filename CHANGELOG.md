@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump idna from 3.11 to 3.15 ([#1074](https://github.com/alpha-unito/streamflow/pull/1074))
 - Bump kaleido from 1.2.0 to 1.3.0 ([#1055](https://github.com/alpha-unito/streamflow/pull/1055))
 - Bump kubernetes-asyncio from 35.0.1 to 36.1.0 ([#1090](https://github.com/alpha-unito/streamflow/pull/1090))
+- Bump msgpack from 1.1.2 to 1.2.1 ([#1101](https://github.com/alpha-unito/streamflow/pull/1101))
 - Bump plotly from 6.7.0 to 6.8.0 ([#1081](https://github.com/alpha-unito/streamflow/pull/1081))
 - Bump urllib3 from 2.6.3 to 2.7.0 ([#1063](https://github.com/alpha-unito/streamflow/pull/1063))
 
