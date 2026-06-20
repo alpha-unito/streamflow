@@ -16,7 +16,7 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -34,7 +34,7 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: github/codeql-action/init@v4
         with:
           config-file: .github/codeql/config.yml
@@ -80,7 +80,7 @@ jobs:
             version: "v1.3"
     runs-on: ${{ matrix.on }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           version: "0.9.16"
@@ -140,7 +140,7 @@ jobs:
     name: "StreamFlow Docker image tests"
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - name: "Build Docker image"
@@ -167,7 +167,7 @@ jobs:
         python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.on }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           version: "0.9.16"
@@ -239,7 +239,7 @@ jobs:
           rm -rf /usr/share/dotnet
           rm -rf /opt/ghc
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Install Python modules
         run: |
           apt update
@@ -267,7 +267,7 @@ jobs:
     env:
       TOXENV: ${{ matrix.step }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           version: "0.9.16"
@@ -291,7 +291,7 @@ jobs:
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
           version: "0.9.16"
@@ -352,7 +352,7 @@ jobs:
     needs: ["cwl-conformance", "documentation", "unit-tests"]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: "Download conformance tests artifacts"
         uses: actions/download-artifact@v8
         with:
