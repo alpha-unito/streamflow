@@ -429,11 +429,13 @@ class DefaultScheduler(Scheduler):
                         mount_point = await utils.get_mount_point(
                             self.context, location, path
                         )
+                        loc_storage = location.hardware.get_storage(mount_point)
                         storage[key] = Storage(
                             mount_point=mount_point,
                             size=disk.size,
                             paths={path},
-                            bind=location.hardware.get_storage(mount_point).bind,
+                            bind=loc_storage.bind,
+                            in_memory=loc_storage.in_memory,
                         )
                 current_hw = Hardware(
                     cores=hardware_requirement.cores,

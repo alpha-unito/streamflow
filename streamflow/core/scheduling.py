@@ -41,6 +41,7 @@ def _reduce_storages(
                 size=disk.size,
                 paths=disk.paths,
                 bind=disk.bind,
+                in_memory=disk.in_memory,
             )
     return storage
 
@@ -159,7 +160,7 @@ class Hardware:
         """Check if this hardware has enough resources to satisfy the requirement."""
         if not isinstance(other, Hardware):
             raise NotImplementedError
-        if self.cores >= other.cores and self.memory >= other.memory:
+        if self.cores >= other.cores:
             if set((other_norm := other._normalize_storage()).keys()) - set(
                 (self_norm := self._normalize_storage()).keys()
             ):
@@ -169,6 +170,16 @@ class Hardware:
             return all(
                 self_norm[other_disk.mount_point].size >= other_disk.size
                 for other_disk in other_norm.values()
+            ) and (
+                self.memory
+                >= (
+                    other.memory
+                    + sum(
+                        other_disk.size
+                        for other_disk in other_norm.values()
+                        if other_disk.in_memory
+                    )
+                )
             )
         else:
             return False
@@ -380,7 +391,7 @@ class Scheduler(SchemaEntity):
 
 
 class Storage:
-    __slots__ = ("mount_point", "size", "paths", "bind")
+    __slots__ = ("mount_point", "size", "paths", "bind", "in_memory")
 
     def __init__(
         self,
@@ -388,6 +399,7 @@ class Storage:
         size: float,
         paths: AbstractSet[str] | None = None,
         bind: str | None = None,
+        in_memory: bool = False,
     ):
         """
         The `Storage` class represents a persistent volume
@@ -396,6 +408,7 @@ class Storage:
         :param size: the total size of the volume, expressed in Kilobyte
         :param paths: a list of paths inside the volume
         :param bind: the path bound by the volume, if any
+        :param in_memory: whether the volume is in memory
         """
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
@@ -405,12 +418,16 @@ class Storage:
             )
         self.size: float = size
         self.bind: str | None = bind
+        self.in_memory: bool = in_memory
 
     def add_path(self, path: str) -> None:
         self.paths.add(path)
 
     def __repr__(self) -> str:
-        return f"Storage(mount_point={self.mount_point}, size={self.size}, bind={self.bind}, paths={self.paths})"
+        return (
+            f"Storage(mount_point={self.mount_point}, size={self.size}, "
+            f"bind={self.bind}, in_memory={self.in_memory}, paths={self.paths})"
+        )
 
     def __add__(self, other: Any) -> Storage:
         if not isinstance(other, Storage):
@@ -424,6 +441,7 @@ class Storage:
             size=self.size + other.size,
             paths=self.paths | other.paths,
             bind=self.bind,
+            in_memory=self.in_memory,
         )
 
     def __ior__(self, other: Storage) -> Self:
@@ -449,6 +467,7 @@ class Storage:
             size=max(self.size, other.size),
             paths=self.paths | other.paths,
             bind=self.bind,
+            in_memory=self.in_memory,
         )
 
     def __sub__(self, other: Any) -> Storage:
@@ -463,4 +482,5 @@ class Storage:
             size=self.size - other.size,
             paths=self.paths | other.paths,
             bind=self.bind,
+            in_memory=self.in_memory,
         )
