@@ -370,7 +370,6 @@ async def test_binding_filter(
         context.scheduler.get_allocation(job.name).target.deployment.name
         == docker_config.name
     )
-
     # Job changes status to RUNNING
     await _notify_status_and_test(context, job, Status.RUNNING)
     # Job changes status to COMPLETED
@@ -880,8 +879,7 @@ async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
                 match=f"Could not retrieve allocation for job {jobs[1].name}",
             ):
                 context.scheduler.get_allocation(jobs[1].name)
-            fst_job = jobs[0]
-            snd_job = jobs[1]
+            fst_job, snd_job = jobs[0], jobs[1]
         except WorkflowExecutionException:
             assert (
                 context.scheduler.get_allocation(jobs[1].name).status == Status.FIREABLE
@@ -891,8 +889,7 @@ async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
                 match=f"Could not retrieve allocation for job {jobs[0].name}",
             ):
                 context.scheduler.get_allocation(jobs[0].name)
-            fst_job = jobs[1]
-            snd_job = jobs[0]
+            fst_job, snd_job = jobs[1], jobs[0]
 
         # First job changes status to RUNNING and continue to keep all resources
         # Testing that second job is not scheduled (timeout parameter necessary)
