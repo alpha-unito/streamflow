@@ -41,6 +41,7 @@ FS_TYPES_TO_SKIP = {
     "fusectl",
     "mqueue",
     "proc",
+    "pstore",
     "securityfs",
     "selinuxfs",
     "sysfs",
