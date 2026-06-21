@@ -34,6 +34,7 @@ from streamflow.core.utils import (
 )
 from streamflow.deployment.connector.base import (
     FS_TYPES_TO_SKIP,
+    IN_MEMORY_FS_TYPES,
     BatchConnector,
     copy_local_to_remote,
     copy_remote_to_local,
@@ -87,6 +88,7 @@ async def _get_storage_from_binds(
                     storage[mount_point] = Storage(
                         mount_point=mount_point,
                         size=float(size) / 2**10,
+                        in_memory=fs_type in IN_MEMORY_FS_TYPES,
                     )
                     if mount_point in binds:
                         storage[mount_point].bind = binds[mount_point]
