@@ -131,6 +131,7 @@ async def _setup_hardware_test(
     memory: float,
     storage: float,
     job_dirs: MutableSequence[tuple[str | None, str | None, str | None]] | None = None,
+    inmemory: bool = False,
 ) -> _HardwareTestContext:
     with InjectPlugin(plugin_name="parameterizable-hardware"):
         config = get_parameterizable_hardware_deployment_config(name=random_name())
@@ -139,7 +140,7 @@ async def _setup_hardware_test(
             ParameterizableHardwareConnector,
             context.deployment_manager.get_connector(config.name),
         )
-        disk = Storage(mount_point=os.sep, size=storage)
+        disk = Storage(mount_point=os.sep, size=storage,  inmemory_usage=0.0 if inmemory else None)
         conn.set_hardware(
             hardware=Hardware(
                 cores=float(requirement.cores),
