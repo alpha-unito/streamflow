@@ -42,6 +42,7 @@ def _reduce_storages(
                 paths=disk.paths,
                 bind=disk.bind,
                 in_memory=disk.in_memory,
+                usage=disk.usage,
             )
     return storage
 
@@ -171,7 +172,7 @@ class Hardware:
                 self_norm[other_disk.mount_point].size >= other_disk.size
                 for other_disk in other_norm.values()
             ) and (
-                self.memory
+                self.memory - sum(s.usage for s in self_norm.values() if s.in_memory)
                 >= (
                     other.memory
                     + sum(
@@ -391,7 +392,7 @@ class Scheduler(SchemaEntity):
 
 
 class Storage:
-    __slots__ = ("mount_point", "size", "paths", "bind", "in_memory")
+    __slots__ = ("mount_point", "size", "paths", "bind", "in_memory", "usage")
 
     def __init__(
         self,
@@ -400,6 +401,7 @@ class Storage:
         paths: AbstractSet[str] | None = None,
         bind: str | None = None,
         in_memory: bool = False,
+        usage: float = 0.0,
     ):
         """
         The `Storage` class represents a persistent volume
@@ -409,6 +411,7 @@ class Storage:
         :param paths: a list of paths inside the volume
         :param bind: the path bound by the volume, if any
         :param in_memory: whether the volume is in memory
+        :param usage: amount of volume capacity currently in use, in MB
         """
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
@@ -419,6 +422,7 @@ class Storage:
         self.size: float = size
         self.bind: str | None = bind
         self.in_memory: bool = in_memory
+        self.usage: float = usage
 
     def add_path(self, path: str) -> None:
         self.paths.add(path)
@@ -441,7 +445,8 @@ class Storage:
             size=self.size + other.size,
             paths=self.paths | other.paths,
             bind=self.bind,
-            in_memory=self.in_memory,
+            in_memory=self.in_memory or other.in_memory,
+            usage=self.usage + other.usage,
         )
 
     def __ior__(self, other: Storage) -> Self:
@@ -453,6 +458,7 @@ class Storage:
             )
         self.size = max(self.size, other.size)
         self.paths |= other.paths
+        self.in_memory |= other.in_memory
         return self
 
     def __or__(self, other: Storage) -> Storage:
@@ -467,7 +473,7 @@ class Storage:
             size=max(self.size, other.size),
             paths=self.paths | other.paths,
             bind=self.bind,
-            in_memory=self.in_memory,
+            in_memory=self.in_memory or other.in_memory,
         )
 
     def __sub__(self, other: Any) -> Storage:
@@ -483,4 +489,5 @@ class Storage:
             paths=self.paths | other.paths,
             bind=self.bind,
             in_memory=self.in_memory,
+            usage=max(self.usage, other.usage),
         )
