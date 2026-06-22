@@ -69,7 +69,9 @@ class LocalConnector(BaseConnector):
                     storage[disk.mountpoint] = Storage(
                         mount_point=disk.mountpoint,
                         size=shutil.disk_usage(disk.mountpoint).free / 2**20,
-                        in_memory=disk.fstype in IN_MEMORY_FS_TYPES,
+                        inmemory_usage=(
+                            0.0 if disk.fstype in IN_MEMORY_FS_TYPES else None
+                        ),
                     )
                 except (PermissionError, TimeoutError) as e:
                     logger.warning(
