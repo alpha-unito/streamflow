@@ -139,18 +139,25 @@ class DefaultScheduler(Scheduler):
             for loc in locations:
                 if loc.name in self.hardware_locations.keys():
                     try:
+                        job_norm_hw = Hardware() + job_hardware
                         storage_usage = Hardware(
                             storage=(
                                 {
                                     k: Storage(
-                                        mount_point=job_hardware.storage[k].mount_point,
+                                        mount_point=job_norm_hw.storage[k].mount_point,
                                         size=size / 2**20,
+                                        in_memory=job_norm_hw.storage[k].in_memory,
+                                        usage=(
+                                            size / 2**20
+                                            if job_norm_hw.storage[k].in_memory
+                                            else 0.0
+                                        ),
                                     )
                                     for k, size in (
                                         await remotepath.get_storage_usages(
                                             self.context,
                                             loc,
-                                            job_hardware,
+                                            job_norm_hw,
                                         )
                                     ).items()
                                 }
