@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix in-memory fs mounts ([#1102](https://github.com/alpha-unito/streamflow/pull/1102))
 - Fix double-counting of occupied disk space ([#1103](https://github.com/alpha-unito/streamflow/pull/1103))
 - Fix NodeJS retrieval when Docker is unavailable ([#1054](https://github.com/alpha-unito/streamflow/pull/1054))
 - Fix permission propagation when transferring files between locations ([#1085](https://github.com/alpha-unito/streamflow/pull/1085))
