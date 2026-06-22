@@ -69,7 +69,7 @@ class LocalConnector(BaseConnector):
                     storage[disk.mountpoint] = Storage(
                         mount_point=disk.mountpoint,
                         size=shutil.disk_usage(disk.mountpoint).free / 2**20,
-                        inmemory_usage=(
+                        memory_usage=(
                             0.0 if disk.fstype in IN_MEMORY_FS_TYPES else None
                         ),
                     )

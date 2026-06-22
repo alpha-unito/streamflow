@@ -140,7 +140,9 @@ async def _setup_hardware_test(
             ParameterizableHardwareConnector,
             context.deployment_manager.get_connector(config.name),
         )
-        disk = Storage(mount_point=os.sep, size=storage,  inmemory_usage=0.0 if inmemory else None)
+        disk = Storage(
+            mount_point=os.sep, size=storage, memory_usage=0.0 if inmemory else None
+        )
         conn.set_hardware(
             hardware=Hardware(
                 cores=float(requirement.cores),
@@ -933,6 +935,144 @@ async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
             )
         )
         await context.deployment_manager.undeploy(param_config.name)
+
+
+@pytest.mark.asyncio
+async def test_parallel_in_memory(context: StreamFlowContext) -> None:
+    """
+    Verify that in-memory storage prevents parallel job scheduling.
+
+    Two jobs each need 300 MB effective (100 memory + 200 in_memory storage).
+    With 350 MB total, only one fits at a time. The first job runs, completes,
+    and the second can be scheduled.
+    """
+    num_jobs = 2
+    requirement = CWLHardwareRequirement(
+        cwl_version=CWL_VERSION,
+        cores=1,
+        memory=100,
+        tmpdir=100,
+        outdir=100,
+    )
+    inmemory_ctx = await _setup_hardware_test(
+        context,
+        num_jobs,
+        requirement,
+        memory=350.0,
+        storage=600.0,
+        inmemory=True,
+    )
+    path = None
+    try:
+        tasks = [
+            asyncio.create_task(
+                context.scheduler.schedule(
+                    job, inmemory_ctx.binding_config, inmemory_ctx.requirement
+                )
+            )
+            for job in inmemory_ctx.jobs
+        ]
+        done, pending = await asyncio.wait(
+            tasks, return_when=asyncio.FIRST_COMPLETED, timeout=60
+        )
+        assert len(done) == 1
+        for t in done:
+            assert t.result() is None
+        first_job = _get_scheduled_job(context=context, jobs=inmemory_ctx.jobs)
+        assert first_job is not None
+        second_job = next(j for j in inmemory_ctx.jobs if j is not first_job)
+
+        await context.scheduler.notify_status(first_job.name, Status.RUNNING)
+        path = StreamFlowPath(
+            first_job.output_directory,
+            "persistent.dat",
+            context=context,
+            location=inmemory_ctx.exec_location,
+        )
+        await path.write_text("\0" * (10 * 1024 * 1024))
+        await context.scheduler.notify_status(first_job.name, Status.COMPLETED)
+
+        done, _ = await asyncio.wait(pending, timeout=60)
+        assert len(done) == 1
+        assert (
+            context.scheduler.get_allocation(second_job.name).status == Status.FIREABLE
+        )
+    finally:
+        await _cleanup_hardware_test(
+            context=context,
+            deployment_name=inmemory_ctx.deployment_name,
+            jobs=inmemory_ctx.jobs,
+            paths=[path],
+        )
+
+
+@pytest.mark.asyncio
+async def test_residual_in_memory(context: StreamFlowContext) -> None:
+    """
+    Verify that residual in-memory files leak memory.
+
+    A job with in_memory storage writes a 50 MB file and completes.
+    The file persists on disk, consuming memory. A subsequent job needing
+    330 MB of memory should be blocked (only 300 MB free).
+    """
+    requirement = CWLHardwareRequirement(
+        cwl_version=CWL_VERSION,
+        cores=1,
+        memory=100,
+        tmpdir=50,
+        outdir=50,
+    )
+    inmemory_ctx = await _setup_hardware_test(
+        context,
+        2,
+        requirement,
+        memory=350.0,
+        storage=200.0,
+        inmemory=True,
+    )
+    path = None
+    try:
+        await context.scheduler.schedule(
+            inmemory_ctx.jobs[0], inmemory_ctx.binding_config, inmemory_ctx.requirement
+        )
+        first_job = _get_scheduled_job(context=context, jobs=inmemory_ctx.jobs[:1])
+        assert first_job is not None
+
+        await context.scheduler.notify_status(first_job.name, Status.RUNNING)
+        path = StreamFlowPath(
+            first_job.output_directory,
+            "persistent.dat",
+            context=context,
+            location=inmemory_ctx.exec_location,
+        )
+        await path.write_text("\0" * (50 * 1024 * 1024))
+        await context.scheduler.notify_status(first_job.name, Status.COMPLETED)
+
+        snd_hardware = CWLHardwareRequirement(
+            cwl_version=CWL_VERSION,
+            cores=1,
+            memory=330,
+            tmpdir=0,
+            outdir=0,
+        )
+        snd_job = inmemory_ctx.jobs[1]
+        snd_task = asyncio.create_task(
+            context.scheduler.schedule(
+                snd_job, inmemory_ctx.binding_config, snd_hardware
+            )
+        )
+        done, _ = await asyncio.wait([snd_task], timeout=5)
+        assert len(done) == 0
+        snd_task.cancel()
+        with pytest.raises(WorkflowExecutionException):
+            context.scheduler.get_allocation(snd_job.name)
+    finally:
+        await _cleanup_hardware_test(
+            context=context,
+            deployment_name=inmemory_ctx.deployment_name,
+            jobs=inmemory_ctx.jobs,
+            paths=[path],
+        )
 
 
 @pytest.mark.asyncio

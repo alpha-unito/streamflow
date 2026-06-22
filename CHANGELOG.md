@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix environment of `CommandLineTool` ([#1181](https://github.com/alpha-unito/streamflow/pull/1181))
 - Fix Slurm job exit code retrieval ([#1160](https://github.com/alpha-unito/streamflow/pull/1160))
 - Fix provenance handling for secondary files ([#1068](https://github.com/alpha-unito/streamflow/pull/1068))
+- Fix in-memory fs mounts ([#1102](https://github.com/alpha-unito/streamflow/pull/1102))
 
 ### Removed
 
