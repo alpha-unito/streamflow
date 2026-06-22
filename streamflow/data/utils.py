@@ -45,7 +45,7 @@ async def bind_mount_point(
                     )
                     for p in disk.paths
                 },
-                in_memory=disk.in_memory,
+                memory_usage=disk.memory_usage,
             )
             if mount_point in storages:
                 storages[mount_point] += storage

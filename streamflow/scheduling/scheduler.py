@@ -139,16 +139,15 @@ class DefaultScheduler(Scheduler):
             for loc in locations:
                 if loc.name in self.hardware_locations.keys():
                     try:
-                        job_norm_hw = Hardware() + job_hardware
                         storage_usage = Hardware(
                             storage=(
                                 {
                                     k: Storage(
-                                        mount_point=job_norm_hw.storage[k].mount_point,
+                                        mount_point=job_hardware.storage[k].mount_point,
                                         size=size / 2**20,
-                                        inmemory_usage=(
+                                        memory_usage=(
                                             size / 2**20
-                                            if job_norm_hw.storage[k].inmemory_usage
+                                            if job_hardware.storage[k].memory_usage
                                             is not None
                                             else None
                                         ),
@@ -157,7 +156,7 @@ class DefaultScheduler(Scheduler):
                                         await remotepath.get_storage_usages(
                                             self.context,
                                             loc,
-                                            job_norm_hw,
+                                            job_hardware,
                                         )
                                     ).items()
                                 }
@@ -442,7 +441,7 @@ class DefaultScheduler(Scheduler):
                             size=disk.size,
                             paths={path},
                             bind=loc_storage.bind,
-                            inmemory_usage=loc_storage.inmemory_usage,
+                            memory_usage=loc_storage.memory_usage,
                         )
                 current_hw = Hardware(
                     cores=hardware_requirement.cores,
@@ -529,16 +528,11 @@ class DefaultScheduler(Scheduler):
             )
             for target in targets
         ]
-        try:
-            # Capture finished tasks and call result() to check for exceptions
-            finished, _ = await asyncio.wait(
-                wait_tasks, return_when=asyncio.FIRST_COMPLETED
-            )
-            for task in finished:
-                if task.cancelled():
-                    continue
-                task.result()
-        finally:
-            for task in wait_tasks:
-                if not task.done():
-                    task.cancel()
+        # Capture finished tasks and call result() to check for exceptions
+        finished, _ = await asyncio.wait(
+            wait_tasks, return_when=asyncio.FIRST_COMPLETED
+        )
+        for task in finished:
+            if task.cancelled():
+                continue
+            task.result()

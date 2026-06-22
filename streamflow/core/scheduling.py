@@ -41,7 +41,7 @@ def _reduce_storages(
                 size=disk.size,
                 paths=disk.paths,
                 bind=disk.bind,
-                inmemory_usage=disk.inmemory_usage,
+                memory_usage=disk.memory_usage,
             )
     return storage
 
@@ -173,16 +173,16 @@ class Hardware:
             ) and (
                 self.memory
                 - sum(
-                    s.inmemory_usage
+                    s.memory_usage
                     for s in self_norm.values()
-                    if s.inmemory_usage is not None
+                    if s.memory_usage is not None
                 )
                 >= (
                     other.memory
                     + sum(
                         other_disk.size
                         for other_disk in other_norm.values()
-                        if other_disk.inmemory_usage is not None
+                        if other_disk.memory_usage is not None
                     )
                 )
             )
@@ -396,7 +396,7 @@ class Scheduler(SchemaEntity):
 
 
 class Storage:
-    __slots__ = ("mount_point", "size", "paths", "bind", "inmemory_usage")
+    __slots__ = ("mount_point", "size", "paths", "bind", "memory_usage")
 
     def __init__(
         self,
@@ -404,7 +404,7 @@ class Storage:
         size: float,
         paths: AbstractSet[str] | None = None,
         bind: str | None = None,
-        inmemory_usage: float | None = None,
+        memory_usage: float | None = None,
     ):
         """
         The `Storage` class represents a persistent volume
@@ -413,7 +413,8 @@ class Storage:
         :param size: the total size of the volume, expressed in Kilobyte
         :param paths: a list of paths inside the volume
         :param bind: the path bound by the volume, if any
-        :param inmemory_usage: amount of RAM consumed by files on this in-memory volume (None for non-in-memory volumes)
+        :param memory_usage: amount of memory consumed by files on the
+                             in-memory volume (None for a non-in-memory volume)
         """
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
@@ -423,7 +424,7 @@ class Storage:
             )
         self.size: float = size
         self.bind: str | None = bind
-        self.inmemory_usage: float | None = inmemory_usage
+        self.memory_usage: float | None = memory_usage
 
     def add_path(self, path: str) -> None:
         self.paths.add(path)
@@ -431,7 +432,7 @@ class Storage:
     def __repr__(self) -> str:
         return (
             f"Storage(mount_point={self.mount_point}, size={self.size}, "
-            f"bind={self.bind}, inmemory_usage={self.inmemory_usage}, paths={self.paths})"
+            f"bind={self.bind}, memory_usage={self.memory_usage}, paths={self.paths})"
         )
 
     def __add__(self, other: Any) -> Storage:
@@ -446,10 +447,10 @@ class Storage:
             size=self.size + other.size,
             paths=self.paths | other.paths,
             bind=self.bind,
-            inmemory_usage=(
+            memory_usage=(
                 None
-                if self.inmemory_usage is None and other.inmemory_usage is None
-                else (self.inmemory_usage or 0.0) + (other.inmemory_usage or 0.0)
+                if self.memory_usage is None and other.memory_usage is None
+                else (self.memory_usage or 0.0) + (other.memory_usage or 0.0)
             ),
         )
 
@@ -462,8 +463,8 @@ class Storage:
             )
         self.size = max(self.size, other.size)
         self.paths |= other.paths
-        if self.inmemory_usage is None:
-            self.inmemory_usage = other.inmemory_usage
+        if self.memory_usage is None:
+            self.memory_usage = other.memory_usage
         return self
 
     def __or__(self, other: Storage) -> Storage:
@@ -478,10 +479,10 @@ class Storage:
             size=max(self.size, other.size),
             paths=self.paths | other.paths,
             bind=self.bind,
-            inmemory_usage=(
-                self.inmemory_usage
-                if self.inmemory_usage is not None
-                else other.inmemory_usage
+            memory_usage=(
+                self.memory_usage
+                if self.memory_usage is not None
+                else other.memory_usage
             ),
         )
 
@@ -497,9 +498,9 @@ class Storage:
             size=self.size - other.size,
             paths=self.paths | other.paths,
             bind=self.bind,
-            inmemory_usage=(
+            memory_usage=(
                 None
-                if self.inmemory_usage is None and other.inmemory_usage is None
-                else max(self.inmemory_usage or 0.0, other.inmemory_usage or 0.0)
+                if self.memory_usage is None and other.memory_usage is None
+                else max(self.memory_usage or 0.0, other.memory_usage or 0.0)
             ),
         )
