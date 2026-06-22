@@ -146,11 +146,11 @@ class DefaultScheduler(Scheduler):
                                     k: Storage(
                                         mount_point=job_norm_hw.storage[k].mount_point,
                                         size=size / 2**20,
-                                        in_memory=job_norm_hw.storage[k].in_memory,
-                                        usage=(
+                                        inmemory_usage=(
                                             size / 2**20
-                                            if job_norm_hw.storage[k].in_memory
-                                            else 0.0
+                                            if job_norm_hw.storage[k].inmemory_usage
+                                            is not None
+                                            else None
                                         ),
                                     )
                                     for k, size in (
@@ -442,7 +442,7 @@ class DefaultScheduler(Scheduler):
                             size=disk.size,
                             paths={path},
                             bind=loc_storage.bind,
-                            in_memory=loc_storage.in_memory,
+                            inmemory_usage=loc_storage.inmemory_usage,
                         )
                 current_hw = Hardware(
                     cores=hardware_requirement.cores,
@@ -529,11 +529,16 @@ class DefaultScheduler(Scheduler):
             )
             for target in targets
         ]
-        # Capture finished tasks and call result() to check for exceptions
-        finished, _ = await asyncio.wait(
-            wait_tasks, return_when=asyncio.FIRST_COMPLETED
-        )
-        for task in finished:
-            if task.cancelled():
-                continue
-            task.result()
+        try:
+            # Capture finished tasks and call result() to check for exceptions
+            finished, _ = await asyncio.wait(
+                wait_tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in finished:
+                if task.cancelled():
+                    continue
+                task.result()
+        finally:
+            for task in wait_tasks:
+                if not task.done():
+                    task.cancel()
