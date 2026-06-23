@@ -46,6 +46,8 @@ def _reduce_storages(
 
 
 class Hardware:
+    __slots__ = ("cores", "memory", "storage")
+
     def __init__(
         self,
         cores: float = 0.0,
@@ -147,10 +149,11 @@ class Hardware:
     def is_normalized(self) -> bool:
         return all(key == disk.mount_point for key, disk in self.storage.items())
 
-    def normalize(self) -> Self:
-        """Normalize the Hardware instance in-place."""
-        self.storage = self._normalize_storage()
-        return self
+    def normalized(self) -> Hardware:
+        """Get normalized Hardware instance."""
+        return Hardware(
+            cores=self.cores, memory=self.memory, storage=self._normalize_storage()
+        )
 
     def satisfies(self, other: Any) -> bool:
         """Check if this hardware has enough resources to satisfy the requirement."""

@@ -26,14 +26,14 @@ async def bind_mount_point(
     :param context: the `StreamFlowContext` object with global application status.
     :param location: the `AvailableLocation` object of the location information
     :param hardware: the `Hardware` object with eventual binds to resolve
-    :return: a new `Hardware` object with the eventual bind in the storages resolved
+    :return: a new normalized `Hardware` object with the eventual bind in the storages resolved
     """
     path_processor = get_path_processor(location.location)
-    storage: dict[str, Storage] = {}
-    for key, disk in hardware.storage.items():
+    storages: dict[str, Storage] = {}
+    for disk in hardware.storage.values():
         if disk.bind is not None:
             mount_point = await get_mount_point(context, location, disk.bind)
-            storage[key] = Storage(
+            storage = Storage(
                 mount_point=mount_point,
                 size=disk.size,
                 paths={
@@ -46,7 +46,11 @@ async def bind_mount_point(
                     for p in disk.paths
                 },
             )
-    return Hardware(cores=hardware.cores, memory=hardware.memory, storage=storage)
+            if mount_point in storages:
+                storages[mount_point] += storage
+            else:
+                storages[mount_point] = storage
+    return Hardware(cores=hardware.cores, memory=hardware.memory, storage=storages)
 
 
 async def get_mount_point(

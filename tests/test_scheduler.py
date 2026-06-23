@@ -40,10 +40,10 @@ from tests.utils.workflow import CWL_VERSION, random_job_name
 
 class _HardwareTestContext(NamedTuple):
     binding_config: BindingConfig
-    requirement: CWLHardwareRequirement
-    jobs: MutableSequence[Job]
+    deployment_name: str
     exec_location: ExecutionLocation
-    config_name: str
+    jobs: MutableSequence[Job]
+    requirement: CWLHardwareRequirement
 
 
 async def _cleanup_hardware_test(
@@ -132,13 +132,12 @@ async def _setup_hardware_test(
     storage: float,
     job_dirs: MutableSequence[tuple[str | None, str | None, str | None]] | None = None,
 ) -> _HardwareTestContext:
-    config_name = random_name()
     with InjectPlugin(plugin_name="parameterizable-hardware"):
-        config = get_parameterizable_hardware_deployment_config(name=config_name)
+        config = get_parameterizable_hardware_deployment_config(name=random_name())
         await context.deployment_manager.deploy(config)
         conn = cast(
             ParameterizableHardwareConnector,
-            context.deployment_manager.get_connector(config_name),
+            context.deployment_manager.get_connector(config.name),
         )
         disk = Storage(mount_point=os.sep, size=storage)
         conn.set_hardware(
@@ -148,7 +147,7 @@ async def _setup_hardware_test(
                 storage={os.sep: disk},
             )
         )
-    param_config = get_parameterizable_hardware_deployment_config(name=config_name)
+    param_config = get_parameterizable_hardware_deployment_config(name=config.name)
     target = Target(
         deployment=param_config,
         service=get_service(context, param_config.type),
@@ -200,10 +199,10 @@ async def _setup_hardware_test(
         )
     return _HardwareTestContext(
         binding_config=BindingConfig(targets=[target]),
-        requirement=requirement,
-        jobs=jobs,
+        deployment_name=config.name,
         exec_location=exec_location,
-        config_name=config.name,
+        jobs=jobs,
+        requirement=requirement,
     )
 
 
@@ -234,10 +233,11 @@ async def test_bind_volumes(
     local_deployment = get_local_deployment_config()
     service = get_service(context, local_deployment.type)
     local_connector = context.deployment_manager.get_connector(local_deployment.name)
-    assert local_connector is not None
+    assert local_connector is not None and local_deployment.workdir is not None
     local_location = next(
         iter((await local_connector.get_available_locations(service=service)).values())
     )
+    assert local_location.hardware is not None
 
     # Get container deployment
     container_paths = {
@@ -290,7 +290,7 @@ async def test_bind_volumes(
     mount_point = await utils.get_mount_point(
         context, container_location, container_path
     )
-    container_hardware = Hardware(
+    fake_hardware = Hardware(
         cores=float(1),
         memory=float(100),
         storage={
@@ -303,26 +303,24 @@ async def test_bind_volumes(
             for key in ["tmpdir", "workdir"]
         },
     )
-    assert (
-        len(container_hardware.storage) == 2 and not container_hardware.is_normalized()
+    assert not fake_hardware.is_normalized()
+    container_hardware = await utils.bind_mount_point(
+        context, local_location, fake_hardware
     )
-    container_hardware.normalize()
-    assert len(container_hardware.storage) == 1 and container_hardware.is_normalized()
-    bound_hardware = await utils.bind_mount_point(
-        context, local_location, container_hardware
+    assert (
+        container_hardware.is_normalized()
+        and len(container_hardware.storage) == 1
+        and len(fake_hardware.storage) == 2
+        and next(iter(container_hardware.storage.values())).size
+        == sum(s.size for s in fake_hardware.storage.values())
     )
     # The target paths are all mounted to the same host path
-    assert (
-        local_deployment.workdir is not None
-        and len(bound_hardware.storage) == 1
-        and next(iter(bound_hardware.storage.values())).mount_point
-        == await utils.get_mount_point(
-            context, local_location, local_deployment.workdir
-        )
+    assert next(
+        iter(container_hardware.storage.values())
+    ).mount_point == await utils.get_mount_point(
+        context, local_location, local_deployment.workdir
     )
-    assert local_location.hardware is not None and local_location.hardware.satisfies(
-        bound_hardware
-    )
+    assert local_location.hardware.satisfies(container_hardware)
 
 
 @pytest.mark.asyncio
@@ -400,6 +398,7 @@ def test_hardware() -> None:
             ),
         },
     )
+    assert not main_hardware.is_normalized()
     extra_hardware = Hardware(
         cores=float(5),
         storage={
@@ -407,6 +406,7 @@ def test_hardware() -> None:
         },
     )
     secondary_hardware = main_hardware + extra_hardware
+    assert secondary_hardware.is_normalized()
     assert secondary_hardware.cores == main_hardware.cores + extra_hardware.cores
     assert secondary_hardware.memory == main_hardware.memory
     # Secondary hardware after the sum operation has the storage keys in the normalized form
@@ -1008,7 +1008,7 @@ async def test_disk_usage(context: StreamFlowContext) -> None:
     finally:
         await _cleanup_hardware_test(
             context=context,
-            deployment_name=hw_ctx.config_name,
+            deployment_name=hw_ctx.deployment_name,
             jobs=hw_ctx.jobs,
             paths=[out_file, out_file2],
         )
