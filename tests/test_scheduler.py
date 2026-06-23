@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Callable, MutableSequence
-from typing import cast
+from typing import NamedTuple, cast
 
 import pytest
 import pytest_asyncio
@@ -12,6 +12,7 @@ from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import (
     DeploymentConfig,
+    ExecutionLocation,
     FilterConfig,
     LocalTarget,
     Target,
@@ -19,9 +20,11 @@ from streamflow.core.deployment import (
 )
 from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import Hardware, Storage
+from streamflow.core.utils import get_job_step_name, random_name
 from streamflow.core.workflow import Job, Status
 from streamflow.cwl.hardware import CWLHardwareRequirement
 from streamflow.data import utils
+from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.connector import DockerConnector, SingularityConnector
 from tests.utils.connector import ParameterizableHardwareConnector
 from tests.utils.deployment import (
@@ -33,6 +36,45 @@ from tests.utils.deployment import (
 )
 from tests.utils.utils import InjectPlugin
 from tests.utils.workflow import CWL_VERSION, random_job_name
+
+
+class _HardwareTestContext(NamedTuple):
+    binding_config: BindingConfig
+    requirement: CWLHardwareRequirement
+    jobs: MutableSequence[Job]
+    exec_location: ExecutionLocation
+    config_name: str
+
+
+async def _cleanup_hardware_test(
+    context: StreamFlowContext,
+    deployment_name: str,
+    jobs: MutableSequence[Job],
+    paths: MutableSequence[StreamFlowPath | None] | None = None,
+) -> None:
+    for j in jobs:
+        try:
+            if context.scheduler.get_allocation(j.name).status != Status.COMPLETED:
+                await context.scheduler.notify_status(j.name, Status.COMPLETED)
+        except WorkflowExecutionException:
+            pass
+    await context.scheduler.context.deployment_manager.undeploy(deployment_name)
+    if paths is not None:
+        await asyncio.gather(
+            *(asyncio.create_task(path.rmtree()) for path in paths if path is not None)
+        )
+
+
+def _get_scheduled_job(
+    context: StreamFlowContext, jobs: MutableSequence[Job]
+) -> Job | None:
+    for job in jobs:
+        try:
+            context.scheduler.get_allocation(job.name)
+            return job
+        except WorkflowExecutionException:
+            continue
+    return None
 
 
 async def _notify_status_and_test(
@@ -47,6 +89,7 @@ async def _notify_status_and_test(
 
 def _prepare_connector(
     context: StreamFlowContext,
+    deployment_name: str,
     location_memory: Callable[[float], float] | None = None,
     num_jobs: int = 1,
 ) -> tuple[CWLHardwareRequirement, Target]:
@@ -54,12 +97,12 @@ def _prepare_connector(
     hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
     conn = cast(
         ParameterizableHardwareConnector,
-        context.deployment_manager.get_connector("custom-hardware"),
+        context.deployment_manager.get_connector(deployment_name),
     )
     conn.set_hardware(
         hardware=Hardware(
-            cores=hardware_requirement.cores * num_jobs,
-            memory=(
+            cores=float(hardware_requirement.cores * num_jobs),
+            memory=float(
                 location_memory(hardware_requirement.memory)
                 if location_memory
                 else hardware_requirement.memory * num_jobs
@@ -67,17 +110,100 @@ def _prepare_connector(
             storage={
                 os.sep: Storage(
                     os.sep,
-                    hardware_requirement.tmpdir * num_jobs
-                    + hardware_requirement.outdir * num_jobs,
+                    float(hardware_requirement.tmpdir * num_jobs)
+                    + float(hardware_requirement.outdir * num_jobs),
                 )
             },
         )
     )
-    param_config = get_parameterizable_hardware_deployment_config()
+    param_config = get_parameterizable_hardware_deployment_config(name=deployment_name)
     return hardware_requirement, Target(
         deployment=param_config,
         service=get_service(context, param_config.type),
         workdir=param_config.workdir,
+    )
+
+
+async def _setup_hardware_test(
+    context: StreamFlowContext,
+    num_jobs: int,
+    requirement: CWLHardwareRequirement,
+    memory: float,
+    storage: float,
+    job_dirs: MutableSequence[tuple[str | None, str | None, str | None]] | None = None,
+) -> _HardwareTestContext:
+    config_name = random_name()
+    with InjectPlugin(plugin_name="parameterizable-hardware"):
+        config = get_parameterizable_hardware_deployment_config(name=config_name)
+        await context.deployment_manager.deploy(config)
+        conn = cast(
+            ParameterizableHardwareConnector,
+            context.deployment_manager.get_connector(config_name),
+        )
+        disk = Storage(mount_point=os.sep, size=storage)
+        conn.set_hardware(
+            hardware=Hardware(
+                cores=float(requirement.cores),
+                memory=memory,
+                storage={os.sep: disk},
+            )
+        )
+    param_config = get_parameterizable_hardware_deployment_config(name=config_name)
+    target = Target(
+        deployment=param_config,
+        service=get_service(context, param_config.type),
+        workdir=param_config.workdir,
+    )
+    exec_location = next(
+        iter(
+            (
+                await conn.get_available_locations(
+                    service=get_service(context, param_config.type)
+                )
+            ).values()
+        )
+    ).location
+    jobs = []
+    for i in range(num_jobs):
+        job_name = random_job_name()
+        if job_dirs is not None and i < len(job_dirs):
+            in_dir, out_dir, tmp_dir = job_dirs[i]
+        else:
+            for d in ("input", "output", "tmp"):
+                await StreamFlowPath(
+                    param_config.workdir,
+                    f"{get_job_step_name(job_name).lstrip(os.sep)}-{d}-{i}",
+                    context=context,
+                    location=exec_location,
+                ).mkdir(parents=True, exist_ok=True)
+            in_dir = os.path.join(
+                param_config.workdir,
+                f"{get_job_step_name(job_name).lstrip(os.sep)}-input-{i}",
+            )
+            out_dir = os.path.join(
+                param_config.workdir,
+                f"{get_job_step_name(job_name).lstrip(os.sep)}-output-{i}",
+            )
+            tmp_dir = os.path.join(
+                param_config.workdir,
+                f"{get_job_step_name(job_name).lstrip(os.sep)}-tmp-{i}",
+            )
+        jobs.append(
+            Job(
+                name=job_name,
+                workflow_id=0,
+                inputs={},
+                input_directory=in_dir,
+                output_directory=out_dir,
+                tmp_directory=tmp_dir,
+            )
+        )
+    return _HardwareTestContext(
+        binding_config=BindingConfig(targets=[target]),
+        requirement=requirement,
+        jobs=jobs,
+        exec_location=exec_location,
+        config_name=config.name,
     )
 
 
@@ -108,6 +234,7 @@ async def test_bind_volumes(
     local_deployment = get_local_deployment_config()
     service = get_service(context, local_deployment.type)
     local_connector = context.deployment_manager.get_connector(local_deployment.name)
+    assert local_connector is not None
     local_location = next(
         iter((await local_connector.get_available_locations(service=service)).values())
     )
@@ -125,9 +252,11 @@ async def test_bind_volumes(
         context, container_deployment_name
     )
     service = get_service(context, container_deployment.type)
-    container_connector = context.deployment_manager.get_connector(
-        container_deployment.name
-    )
+    assert (
+        container_connector := context.deployment_manager.get_connector(
+            container_deployment.name
+        )
+    ) is not None
     container_location = next(
         iter(
             (
@@ -153,8 +282,11 @@ async def test_bind_volumes(
             )
         )
 
-    assert not container_paths - container_location.hardware.storage.keys()
-    container_path = container_deployment.workdir
+    assert (
+        container_location.hardware is not None
+        and not container_paths - container_location.hardware.storage.keys()
+    )
+    assert (container_path := container_deployment.workdir) is not None
     mount_point = await utils.get_mount_point(
         context, container_location, container_path
     )
@@ -176,12 +308,17 @@ async def test_bind_volumes(
         ),
     )
     # The target paths are all mounted to the same host path. So they collapse to the same mount point
-    assert len(container_hardware.storage) == 1 and next(
-        iter(container_hardware.storage.values())
-    ).mount_point == await utils.get_mount_point(
-        context, local_location, local_deployment.workdir
+    assert (
+        local_deployment.workdir is not None
+        and len(container_hardware.storage) == 1
+        and next(iter(container_hardware.storage.values())).mount_point
+        == await utils.get_mount_point(
+            context, local_location, local_deployment.workdir
+        )
     )
-    assert local_location.hardware.satisfies(container_hardware)
+    assert local_location.hardware is not None and local_location.hardware.satisfies(
+        container_hardware
+    )
 
 
 @pytest.mark.asyncio
@@ -207,7 +344,6 @@ async def test_binding_filter(
         service=get_service(context, docker_config.type),
         workdir=docker_config.workdir,
     )
-
     filter_config = FilterConfig(name="reverse-filter", type="reverse", config={})
     binding_config = BindingConfig(
         targets=[local_target, docker_target], filters=[filter_config]
@@ -317,9 +453,11 @@ async def test_multi_env(
         if deployment not in chosen_deployment_types:
             pytest.skip(f"Deployment {deployment} was not activated")
     with InjectPlugin(plugin_name="parameterizable-hardware"):
-        config = await get_deployment_config(context, "parameterizable-hardware")
+        config = get_parameterizable_hardware_deployment_config(name=random_name())
         await context.deployment_manager.deploy(config)
-        hardware_requirement, target = _prepare_connector(context)
+        hardware_requirement, target = _prepare_connector(
+            context=context, deployment_name=config.name
+        )
     docker_config = get_docker_deployment_config()
     docker_target = Target(
         deployment=docker_config,
@@ -372,9 +510,11 @@ async def test_multi_targets_one_job(
         if deployment not in chosen_deployment_types:
             pytest.skip(f"Deployment {deployment} was not activated")
     with InjectPlugin(plugin_name="parameterizable-hardware"):
-        config = await get_deployment_config(context, "parameterizable-hardware")
+        config = get_parameterizable_hardware_deployment_config(name=random_name())
         await context.deployment_manager.deploy(config)
-        hardware_requirement, target = _prepare_connector(context)
+        hardware_requirement, target = _prepare_connector(
+            context=context, deployment_name=config.name
+        )
     # Create fake job with two targets and schedule it
     job = Job(
         name=random_job_name(),
@@ -432,9 +572,11 @@ async def test_multi_targets_two_jobs(
         if deployment not in chosen_deployment_types:
             pytest.skip(f"Deployment {deployment} was not activated")
     with InjectPlugin(plugin_name="parameterizable-hardware"):
-        config = await get_deployment_config(context, "parameterizable-hardware")
+        config = get_parameterizable_hardware_deployment_config(name=random_name())
         await context.deployment_manager.deploy(config)
-        hardware_requirement, target = _prepare_connector(context)
+        hardware_requirement, target = _prepare_connector(
+            context=context, deployment_name=config.name
+        )
     # Create fake jobs with two same targets and schedule them
     jobs = [
         Job(
@@ -516,9 +658,11 @@ async def test_single_env_enough_resources(context: StreamFlowContext) -> None:
     """Test scheduling two jobs on a single environment with resources for all jobs together."""
     num_jobs = 2
     with InjectPlugin(plugin_name="parameterizable-hardware"):
-        config = await get_deployment_config(context, "parameterizable-hardware")
+        config = get_parameterizable_hardware_deployment_config(name=random_name())
         await context.deployment_manager.deploy(config)
-        hardware_requirement, target = _prepare_connector(context, num_jobs=num_jobs)
+        hardware_requirement, target = _prepare_connector(
+            context=context, deployment_name=config.name, num_jobs=num_jobs
+        )
     # Create fake jobs and schedule them
     jobs = [
         Job(
@@ -574,10 +718,12 @@ async def test_single_env_few_resources(context: StreamFlowContext) -> None:
     """Test scheduling two jobs on single environment but with resources for one job at a time."""
     num_jobs = 2
     with InjectPlugin(plugin_name="parameterizable-hardware"):
-        config = await get_deployment_config(context, "parameterizable-hardware")
+        config = get_parameterizable_hardware_deployment_config(name=random_name())
         await context.deployment_manager.deploy(config)
         hardware_requirement, target = _prepare_connector(
-            context, location_memory=lambda x: x * num_jobs * 3
+            context=context,
+            deployment_name=config.name,
+            location_memory=lambda x: x * num_jobs * 3,
         )
     # Create fake jobs and schedule them
     jobs = [
@@ -662,9 +808,13 @@ async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
     """
     num_jobs = 2
     with InjectPlugin(plugin_name="parameterizable-hardware"):
-        param_config = await get_deployment_config(context, "parameterizable-hardware")
+        param_config = get_parameterizable_hardware_deployment_config(
+            name=random_name()
+        )
         await context.deployment_manager.deploy(param_config)
-        _prepare_connector(context, num_jobs=1)
+        _prepare_connector(
+            context=context, deployment_name=param_config.name, num_jobs=1
+        )
     hardware_requirement = CWLHardwareRequirement(cwl_version=CWL_VERSION)
 
     targets = []
@@ -781,3 +931,80 @@ async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
             )
         )
         await context.deployment_manager.undeploy(param_config.name)
+
+
+@pytest.mark.asyncio
+async def test_disk_usage(context: StreamFlowContext) -> None:
+    """
+    Verify that the scheduler correctly tracks disk usage across multiple jobs.
+    Jobs fill available storage until the last one is left pending because no space remains.
+    """
+    requirement = CWLHardwareRequirement(
+        cwl_version=CWL_VERSION,
+        cores=1,
+        memory=100,
+        tmpdir=25,
+        outdir=25,
+    )
+    hw_ctx = await _setup_hardware_test(
+        context,
+        num_jobs=3,
+        requirement=requirement,
+        memory=1000.0,
+        storage=100.0,
+        job_dirs=[(None, None, None)],
+    )
+    out_file, out_file2 = None, None
+    try:
+        await context.scheduler.schedule(
+            hw_ctx.jobs[0], hw_ctx.binding_config, hw_ctx.requirement
+        )
+        first_job = _get_scheduled_job(context=context, jobs=hw_ctx.jobs[:1])
+        assert first_job is not None
+        await context.scheduler.notify_status(first_job.name, Status.RUNNING)
+        out_file = StreamFlowPath(
+            hw_ctx.binding_config.targets[0].workdir,
+            "out.dat",
+            context=context,
+            location=hw_ctx.exec_location,
+        )
+        await out_file.write_text("\0" * (30 * 1024 * 1024))
+        await context.scheduler.notify_status(first_job.name, Status.COMPLETED)
+
+        task = asyncio.create_task(
+            context.scheduler.schedule(
+                hw_ctx.jobs[1], hw_ctx.binding_config, hw_ctx.requirement
+            )
+        )
+        done, _ = await asyncio.wait([task], timeout=5)
+        assert len(done) == 1
+        task.cancel()
+        second_job = _get_scheduled_job(context=context, jobs=hw_ctx.jobs[1:2])
+        assert second_job is not None
+        await context.scheduler.notify_status(second_job.name, Status.RUNNING)
+        out_file2 = StreamFlowPath(
+            second_job.output_directory,
+            "out.dat",
+            context=context,
+            location=hw_ctx.exec_location,
+        )
+        await out_file2.write_text("\0" * (70 * 1024 * 1024))
+        await context.scheduler.notify_status(second_job.name, Status.COMPLETED)
+
+        task = asyncio.create_task(
+            context.scheduler.schedule(
+                hw_ctx.jobs[2], hw_ctx.binding_config, hw_ctx.requirement
+            )
+        )
+        done, _ = await asyncio.wait([task], timeout=5)
+        assert len(done) == 0
+        task.cancel()
+        with pytest.raises(WorkflowExecutionException):
+            context.scheduler.get_allocation(hw_ctx.jobs[2].name)
+    finally:
+        await _cleanup_hardware_test(
+            context=context,
+            deployment_name=hw_ctx.config_name,
+            jobs=hw_ctx.jobs,
+            paths=[out_file, out_file2],
+        )

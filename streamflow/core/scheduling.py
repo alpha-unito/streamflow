@@ -39,6 +39,7 @@ def _reduce_storages(
             storage[disk.mount_point] = Storage(
                 mount_point=disk.mount_point,
                 size=disk.size,
+                paths=disk.paths,
                 bind=disk.bind,
             )
     return storage
