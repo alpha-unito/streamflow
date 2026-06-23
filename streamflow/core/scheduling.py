@@ -74,24 +74,6 @@ class Hardware:
             os.sep: Storage(os.sep, 0.0)
         }
 
-    def _normalize_storage(self) -> MutableMapping[str, Storage]:
-        return _reduce_storages(self.storage.values(), Storage.__add__.__call__)
-
-    def get_mount_point(self, path: str) -> str:
-        return self.get_storage(path).mount_point
-
-    def get_mount_points(self) -> MutableSequence[str]:
-        return list({storage.mount_point for storage in self.storage.values()})
-
-    def get_size(self, path: str) -> float:
-        return self.get_storage(path).size
-
-    def get_storage(self, path: str) -> Storage:
-        for disk in self.storage.values():
-            if path == disk.mount_point or path in disk.paths:
-                return disk
-        raise KeyError(path)
-
     def __repr__(self) -> str:
         return f"Hardware(cores={self.cores}, memory={self.memory}, storage={self.storage})"
 
@@ -143,6 +125,32 @@ class Hardware:
                 Storage.__sub__.__call__,
             ),
         )
+
+    def _normalize_storage(self) -> MutableMapping[str, Storage]:
+        return _reduce_storages(self.storage.values(), Storage.__add__.__call__)
+
+    def get_mount_point(self, path: str) -> str:
+        return self.get_storage(path).mount_point
+
+    def get_mount_points(self) -> MutableSequence[str]:
+        return list({storage.mount_point for storage in self.storage.values()})
+
+    def get_size(self, path: str) -> float:
+        return self.get_storage(path).size
+
+    def get_storage(self, path: str) -> Storage:
+        for disk in self.storage.values():
+            if path == disk.mount_point or path in disk.paths:
+                return disk
+        raise KeyError(path)
+
+    def is_normalized(self) -> bool:
+        return all(key == disk.mount_point for key, disk in self.storage.items())
+
+    def normalize(self) -> Self:
+        """Normalize the Hardware instance in-place."""
+        self.storage = self._normalize_storage()
+        return self
 
     def satisfies(self, other: Any) -> bool:
         """Check if this hardware has enough resources to satisfy the requirement."""

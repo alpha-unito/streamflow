@@ -290,34 +290,38 @@ async def test_bind_volumes(
     mount_point = await utils.get_mount_point(
         context, container_location, container_path
     )
-    container_hardware = await utils.bind_mount_point(
-        context,
-        local_location,
-        Hardware(
-            cores=float(1),
-            memory=float(100),
-            storage={
-                key: Storage(
-                    mount_point=mount_point,
-                    size=float(100),
-                    paths={container_path},
-                    bind=container_location.hardware.get_storage(mount_point).bind,
-                )
-                for key in ["tmpdir", "workdir"]
-            },
-        ),
+    container_hardware = Hardware(
+        cores=float(1),
+        memory=float(100),
+        storage={
+            key: Storage(
+                mount_point=mount_point,
+                size=float(100),
+                paths={container_path},
+                bind=container_location.hardware.get_storage(mount_point).bind,
+            )
+            for key in ["tmpdir", "workdir"]
+        },
     )
-    # The target paths are all mounted to the same host path. So they collapse to the same mount point
+    assert (
+        len(container_hardware.storage) == 2 and not container_hardware.is_normalized()
+    )
+    container_hardware.normalize()
+    assert len(container_hardware.storage) == 1 and container_hardware.is_normalized()
+    bound_hardware = await utils.bind_mount_point(
+        context, local_location, container_hardware
+    )
+    # The target paths are all mounted to the same host path
     assert (
         local_deployment.workdir is not None
-        and len(container_hardware.storage) == 1
-        and next(iter(container_hardware.storage.values())).mount_point
+        and len(bound_hardware.storage) == 1
+        and next(iter(bound_hardware.storage.values())).mount_point
         == await utils.get_mount_point(
             context, local_location, local_deployment.workdir
         )
     )
     assert local_location.hardware is not None and local_location.hardware.satisfies(
-        container_hardware
+        bound_hardware
     )
 
 

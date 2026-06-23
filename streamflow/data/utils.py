@@ -30,23 +30,22 @@ async def bind_mount_point(
     """
     path_processor = get_path_processor(location.location)
     storage: dict[str, Storage] = {}
-    for disk in hardware.storage.values():
+    for key, disk in hardware.storage.items():
         if disk.bind is not None:
             mount_point = await get_mount_point(context, location, disk.bind)
-            if mount_point not in storage.keys():
-                storage[mount_point] = Storage(
-                    mount_point=mount_point,
-                    size=disk.size,
-                    paths={
-                        path_processor.normpath(
-                            path_processor.join(
-                                disk.bind,
-                                path_processor.relpath(p, disk.mount_point),
-                            )
+            storage[key] = Storage(
+                mount_point=mount_point,
+                size=disk.size,
+                paths={
+                    path_processor.normpath(
+                        path_processor.join(
+                            disk.bind,
+                            path_processor.relpath(p, disk.mount_point),
                         )
-                        for p in disk.paths
-                    },
-                )
+                    )
+                    for p in disk.paths
+                },
+            )
     return Hardware(cores=hardware.cores, memory=hardware.memory, storage=storage)
 
 

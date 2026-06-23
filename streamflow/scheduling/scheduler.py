@@ -122,8 +122,8 @@ class DefaultScheduler(Scheduler):
                     if loc.name in self.hardware_locations.keys():
                         self.hardware_locations[loc.name] += hardware[key]
                     else:
-                        # Get normalized hardware for the hardware location
-                        self.hardware_locations[loc.name] = Hardware() + hardware[key]
+                        # Normalized hardware for the hardware location
+                        self.hardware_locations[loc.name] = hardware[key].normalize()
                 if loc := loc.wraps if loc.stacked else None:
                     conn = cast(ConnectorWrapper, conn).connector
 
@@ -134,22 +134,23 @@ class DefaultScheduler(Scheduler):
         locations = job_allocation.locations
         job_hardware = job_allocation.hardware
         while locations:
+            if not job_hardware.is_normalized():
+                job_hardware.normalize()
             for loc in locations:
                 if loc.name in self.hardware_locations.keys():
                     try:
-                        job_norm_hw = Hardware() + job_hardware
                         storage_usage = Hardware(
                             storage=(
                                 {
                                     k: Storage(
-                                        mount_point=job_norm_hw.storage[k].mount_point,
+                                        mount_point=job_hardware.storage[k].mount_point,
                                         size=size / 2**20,
                                     )
                                     for k, size in (
                                         await remotepath.get_storage_usages(
                                             self.context,
                                             loc,
-                                            job_norm_hw,
+                                            job_hardware,
                                         )
                                     ).items()
                                 }
