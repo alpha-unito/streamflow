@@ -241,13 +241,15 @@ async def get_location(
     return next(iter(locations.values())).location
 
 
-def get_parameterizable_hardware_deployment_config() -> DeploymentConfig:
+def get_parameterizable_hardware_deployment_config(
+    name: str = "custom-hardware",
+) -> DeploymentConfig:
     workdir = os.path.join(
         os.path.realpath(tempfile.gettempdir()), "streamflow-test", random_name()
     )
     os.makedirs(workdir, exist_ok=True)
     return DeploymentConfig(
-        name="custom-hardware",
+        name=name,
         type="parameterizable-hardware",
         config={},
         external=True,

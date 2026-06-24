@@ -122,8 +122,8 @@ class DefaultScheduler(Scheduler):
                     if loc.name in self.hardware_locations.keys():
                         self.hardware_locations[loc.name] += hardware[key]
                     else:
-                        # Get normalized hardware for the hardware location
-                        self.hardware_locations[loc.name] = Hardware() + hardware[key]
+                        # Normalized hardware for the hardware location
+                        self.hardware_locations[loc.name] = hardware[key].normalized()
                 if loc := loc.wraps if loc.stacked else None:
                     conn = cast(ConnectorWrapper, conn).connector
 
@@ -134,6 +134,8 @@ class DefaultScheduler(Scheduler):
         locations = job_allocation.locations
         job_hardware = job_allocation.hardware
         while locations:
+            if not job_hardware.is_normalized():
+                job_hardware = job_hardware.normalized()
             for loc in locations:
                 if loc.name in self.hardware_locations.keys():
                     try:

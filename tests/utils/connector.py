@@ -308,11 +308,12 @@ class ParameterizableHardwareConnector(LocalConnector):
         self, service: str | None = None
     ) -> MutableMapping[str, AvailableLocation]:
         return {
-            "custom-hardware": AvailableLocation(
-                name="custom-hardware",
+            self.deployment_name: AvailableLocation(
+                name=self.deployment_name,
                 deployment=self.deployment_name,
                 service=service,
                 hostname="localhost",
+                local=True,
                 slots=1,
                 hardware=self.hardware,
             )
