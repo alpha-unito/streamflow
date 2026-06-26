@@ -132,6 +132,7 @@ async def _setup_hardware_test(
     storage: float,
     job_dirs: MutableSequence[tuple[str | None, str | None, str | None]] | None = None,
     inmemory: bool = False,
+    cores: float | None = None,
 ) -> _HardwareTestContext:
     with InjectPlugin(plugin_name="parameterizable-hardware"):
         config = get_parameterizable_hardware_deployment_config(name=random_name())
@@ -140,12 +141,12 @@ async def _setup_hardware_test(
             ParameterizableHardwareConnector,
             context.deployment_manager.get_connector(config.name),
         )
-        disk = Storage(
-            mount_point=os.sep, size=storage, memory_usage=0.0 if inmemory else None
-        )
+        # The allocated in-memory storage must be smaller than the total available memory
+        assert not inmemory or storage < memory
+        disk = Storage(mount_point=os.sep, size=storage, in_memory=inmemory)
         conn.set_hardware(
             hardware=Hardware(
-                cores=float(requirement.cores),
+                cores=cores if cores is not None else float(requirement.cores),
                 memory=memory,
                 storage={os.sep: disk},
             )
@@ -940,11 +941,11 @@ async def test_shared_stacked_locations(context: StreamFlowContext) -> None:
 @pytest.mark.asyncio
 async def test_parallel_in_memory(context: StreamFlowContext) -> None:
     """
-    Verify that in-memory storage prevents parallel job scheduling.
+    Verify that the scheduler accounts for the memory usage of parallel jobs when using in-memory storage.
 
-    Two jobs each need 300 MB effective (100 memory + 200 in_memory storage).
-    With 350 MB total, only one fits at a time. The first job runs, completes,
-    and the second can be scheduled.
+    The location is configured with 4 cores, 500 MB of total memory, and a 400 MB in-memory storage limit.
+    There are two jobs that each require 100 MB of standard memory and 200 MB of in-memory storage.
+    Due to the location's overall memory constraints, only one job can be executed at a time.
     """
     num_jobs = 2
     requirement = CWLHardwareRequirement(
@@ -955,12 +956,13 @@ async def test_parallel_in_memory(context: StreamFlowContext) -> None:
         outdir=100,
     )
     inmemory_ctx = await _setup_hardware_test(
-        context,
-        num_jobs,
-        requirement,
-        memory=350.0,
-        storage=600.0,
+        context=context,
+        num_jobs=num_jobs,
+        requirement=requirement,
+        memory=500.0,
+        storage=400.0,
         inmemory=True,
+        cores=4.0,
     )
     path = None
     try:
@@ -981,8 +983,17 @@ async def test_parallel_in_memory(context: StreamFlowContext) -> None:
         first_job = _get_scheduled_job(context=context, jobs=inmemory_ctx.jobs)
         assert first_job is not None
         second_job = next(j for j in inmemory_ctx.jobs if j is not first_job)
+        # Second job must be blocked (insufficient memory)
+        with pytest.raises(WorkflowExecutionException):
+            context.scheduler.get_allocation(second_job.name)
 
         await context.scheduler.notify_status(first_job.name, Status.RUNNING)
+        _, pending = await asyncio.wait(pending, timeout=2)
+        assert len(pending) == 1
+        # Second job must stay blocked while first runs
+        with pytest.raises(WorkflowExecutionException):
+            context.scheduler.get_allocation(second_job.name)
+
         path = StreamFlowPath(
             first_job.output_directory,
             "persistent.dat",
