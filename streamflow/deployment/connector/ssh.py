@@ -538,9 +538,7 @@ class SSHConnector(BaseConnector):
                                 self.hardware[location].storage[mount_point] = Storage(
                                     mount_point=mount_point,
                                     size=float(size) / 2**10,
-                                    memory_usage=(
-                                        0.0 if fs_type in IN_MEMORY_FS_TYPES else None
-                                    ),
+                                    in_memory=fs_type in IN_MEMORY_FS_TYPES,
                                 )
                         except ValueError as e:
                             logger.warning(
