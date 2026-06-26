@@ -140,9 +140,7 @@ async def _setup_hardware_test(
             ParameterizableHardwareConnector,
             context.deployment_manager.get_connector(config.name),
         )
-        disk = Storage(
-            mount_point=os.sep, size=storage, memory_usage=0.0 if inmemory else None
-        )
+        disk = Storage(mount_point=os.sep, size=storage, in_memory=inmemory)
         conn.set_hardware(
             hardware=Hardware(
                 cores=float(requirement.cores),

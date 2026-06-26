@@ -139,38 +139,35 @@ class DefaultScheduler(Scheduler):
             for loc in locations:
                 if loc.name in self.hardware_locations.keys():
                     try:
-                        storage_usage = Hardware(
+                        storage_usage = await remotepath.get_storage_usages(
+                            self.context, loc, job_hardware
+                        )
+                        hardware_usage = Hardware(
+                            memory=sum(
+                                size / 2**20
+                                for k, size in storage_usage.items()
+                                if job_hardware.storage[k].in_memory
+                            ),
                             storage=(
                                 {
                                     k: Storage(
                                         mount_point=job_hardware.storage[k].mount_point,
                                         size=size / 2**20,
-                                        memory_usage=(
-                                            size / 2**20
-                                            if job_hardware.storage[k].memory_usage
-                                            is not None
-                                            else None
-                                        ),
+                                        in_memory=job_hardware.storage[k].in_memory,
                                     )
-                                    for k, size in (
-                                        await remotepath.get_storage_usages(
-                                            self.context,
-                                            loc,
-                                            job_hardware,
-                                        )
-                                    ).items()
+                                    for k, size in storage_usage.items()
                                 }
-                            )
+                            ),
                         )
                     except WorkflowExecutionException as err:
                         logger.warning(
                             f"Impossible to retrieve the actual storage usage in "
                             f"the {job_allocation.job} job working directories: {err}"
                         )
-                        storage_usage = Hardware()
+                        hardware_usage = Hardware()
                     self.hardware_locations[loc.name] = (
                         self.hardware_locations[loc.name] - job_hardware
-                    ) + storage_usage
+                    ) + hardware_usage
             if locations := [loc.wraps for loc in locations if loc.stacked]:
                 conn = cast(ConnectorWrapper, conn).connector
                 for execution_loc in locations:
@@ -348,7 +345,10 @@ class DefaultScheduler(Scheduler):
                             if key not in hardware_requirements:
                                 hardware_requirements[key] = hardware
                             else:
-                                hardware_requirements[key] |= hardware
+                                # Two stacked locations can have the same location below.
+                                # Thus, the underline location must have enough resources for both.
+                                # TODO: add a test on this
+                                hardware_requirements[key] += hardware
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
@@ -441,7 +441,7 @@ class DefaultScheduler(Scheduler):
                             size=disk.size,
                             paths={path},
                             bind=loc_storage.bind,
-                            memory_usage=loc_storage.memory_usage,
+                            in_memory=loc_storage.in_memory,
                         )
                 current_hw = Hardware(
                     cores=hardware_requirement.cores,
@@ -454,7 +454,7 @@ class DefaultScheduler(Scheduler):
                     cores=hardware_requirement.cores,
                     memory=hardware_requirement.memory,
                     storage={
-                        key: Storage(mount_point=os.sep, size=disk.size)
+                        key: Storage(mount_point=os.sep, size=disk.size)  # paths?
                         for key, disk in hardware_requirement.storage.items()
                     },
                 )
