@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import os
 from abc import ABC, abstractmethod
 from collections.abc import (
@@ -41,6 +40,7 @@ def _reduce_storages(
                 size=disk.size,
                 paths=disk.paths,
                 bind=disk.bind,
+                in_memory=disk.in_memory,
             )
     return storage
 
@@ -93,25 +93,6 @@ class Hardware:
                 Storage.__add__.__call__,
             ),
         )
-
-    def __ior__(self, other: Hardware) -> Self:
-        if not isinstance(other, Hardware):
-            raise NotImplementedError
-        self.cores += other.cores
-        self.memory += other.memory
-        for key, disk in other.storage.items():
-            if key not in self.storage.keys():
-                self.storage[key] = disk
-            else:
-                self.storage[key] |= disk
-        return self
-
-    def __or__(self, other: Hardware) -> Hardware:
-        if not isinstance(other, Hardware):
-            raise NotImplementedError
-        hardware = copy.deepcopy(self)
-        hardware |= other
-        return hardware
 
     def __sub__(self, other: Hardware) -> Hardware:
         if not isinstance(other, Hardware):
@@ -380,7 +361,7 @@ class Scheduler(SchemaEntity):
 
 
 class Storage:
-    __slots__ = ("mount_point", "size", "paths", "bind")
+    __slots__ = ("mount_point", "size", "paths", "bind", "in_memory")
 
     def __init__(
         self,
@@ -388,14 +369,16 @@ class Storage:
         size: float,
         paths: AbstractSet[str] | None = None,
         bind: str | None = None,
+        in_memory: bool = False,
     ):
         """
         The `Storage` class represents a persistent volume
 
         :param mount_point: the path of the volume's mount point
-        :param size: the total size of the volume, expressed in Kilobyte
+        :param size: the total size of the volume, expressed in MB
         :param paths: a list of paths inside the volume
         :param bind: the path bound by the volume, if any
+        :param in_memory: whether the volume is in memory
         """
         self.mount_point: str = mount_point
         self.paths: MutableSet[str] = paths or set()
@@ -405,12 +388,16 @@ class Storage:
             )
         self.size: float = size
         self.bind: str | None = bind
+        self.in_memory: bool = in_memory
 
     def add_path(self, path: str) -> None:
         self.paths.add(path)
 
     def __repr__(self) -> str:
-        return f"Storage(mount_point={self.mount_point}, size={self.size}, bind={self.bind}, paths={self.paths})"
+        return (
+            f"Storage(mount_point={self.mount_point}, size={self.size}, "
+            f"bind={self.bind}, in_memory={self.in_memory}, paths={self.paths})"
+        )
 
     def __add__(self, other: Any) -> Storage:
         if not isinstance(other, Storage):
@@ -424,31 +411,7 @@ class Storage:
             size=self.size + other.size,
             paths=self.paths | other.paths,
             bind=self.bind,
-        )
-
-    def __ior__(self, other: Storage) -> Self:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise ArithmeticError(
-                f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        self.size = max(self.size, other.size)
-        self.paths |= other.paths
-        return self
-
-    def __or__(self, other: Storage) -> Storage:
-        if not isinstance(other, Storage):
-            raise NotImplementedError
-        if self.mount_point != other.mount_point:
-            raise ArithmeticError(
-                f"Cannot merge two storages with different mount points: {self.mount_point} and {other.mount_point}"
-            )
-        return Storage(
-            mount_point=self.mount_point,
-            size=max(self.size, other.size),
-            paths=self.paths | other.paths,
-            bind=self.bind,
+            in_memory=self.in_memory or other.in_memory,
         )
 
     def __sub__(self, other: Any) -> Storage:
@@ -463,4 +426,5 @@ class Storage:
             size=self.size - other.size,
             paths=self.paths | other.paths,
             bind=self.bind,
+            in_memory=self.in_memory,
         )
