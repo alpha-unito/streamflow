@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dependencies
 
 - Bump aiohttp from 3.13.5 to 3.14.1 ([#1079](https://github.com/alpha-unito/streamflow/pull/1079), [#1088](https://github.com/alpha-unito/streamflow/pull/1088))
-- Bump asyncssh from 2.22.0 to 2.23.1 ([#1064](https://github.com/alpha-unito/streamflow/pull/1064), [#1089](https://github.com/alpha-unito/streamflow/pull/1089))
+- Bump asyncssh from 2.22.0 to 2.24.0 ([#1064](https://github.com/alpha-unito/streamflow/pull/1064), [#1089](https://github.com/alpha-unito/streamflow/pull/1089), [#1106](https://github.com/alpha-unito/streamflow/pull/1106))
 - Bump cachebox from 5.2.3 to 6.1.2 ([#1078](https://github.com/alpha-unito/streamflow/pull/1078), [#1083](https://github.com/alpha-unito/streamflow/pull/1083), [#1092](https://github.com/alpha-unito/streamflow/pull/1092), [#1094](https://github.com/alpha-unito/streamflow/pull/1094))
 - Bump cryptography from 46.0.7 to 48.0.1 ([#1096](https://github.com/alpha-unito/streamflow/pull/1096))
 - Bump cwl-utils from 0.41 to 0.42 ([#1080](https://github.com/alpha-unito/streamflow/pull/1080))
