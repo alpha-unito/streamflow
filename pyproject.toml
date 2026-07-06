@@ -44,7 +44,7 @@ dependencies = [
     "psutil==7.2.2",
     "referencing==0.37.0",
     "rdflib==7.6.0",
-    "typing-extensions==4.15.0",
+    "typing-extensions==4.16.0",
     "yattag==1.16.1"
 ]
 version = "0.2.0rc2"
