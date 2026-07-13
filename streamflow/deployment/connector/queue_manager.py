@@ -1258,10 +1258,12 @@ class FluxConnector(QueueManagerConnector):
                     get_option("requires", service.requires),
                     get_option("rlimit", service.rlimit),
                     get_option(
-                        "setattr", ",".join([f"{k}={v}" for k, v in service.setattr])
+                        "setattr",
+                        ",".join([f"{k}={v}" for k, v in service.setattr.items()]),
                     ),
                     get_option(
-                        "setopt", ",".join([f"{k}={v}" for k, v in service.setopt])
+                        "setopt",
+                        ",".join([f"{k}={v}" for k, v in service.setopt.items()]),
                     ),
                     get_option("taskmap", service.taskmap),
                     get_option("tasks-per-core", service.tasksPerCore),
