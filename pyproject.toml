@@ -100,7 +100,7 @@ test = [
     "pytest-xdist==3.8.0"
 ]
 typing = [
-    "mypy==2.2.0",
+    "mypy==2.3.0",
     "pandas-stubs==2.3.3.260113",
     "types-antlr4-python3-runtime==4.13.0.20260518",
     "types-cachetools==7.0.0.20260713",
@@ -185,6 +185,8 @@ select = ["E", "W", "F", "B", "I"]
 ignore = ["E203", "E501", "B904"]
 
 [tool.mypy]
+explicit_package_bases = true
+native_parser = true
 strict = true
 
 [[tool.mypy.overrides]]
