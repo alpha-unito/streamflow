@@ -17,7 +17,11 @@ import psutil
 from streamflow.core import utils
 from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
-from streamflow.deployment.connector.base import FS_TYPES_TO_SKIP, BaseConnector
+from streamflow.deployment.connector.base import (
+    FS_TYPES_TO_SKIP,
+    IN_MEMORY_FS_TYPES,
+    BaseConnector,
+)
 from streamflow.log_handler import logger
 
 
@@ -65,6 +69,7 @@ class LocalConnector(BaseConnector):
                     storage[disk.mountpoint] = Storage(
                         mount_point=disk.mountpoint,
                         size=shutil.disk_usage(disk.mountpoint).free / 2**20,
+                        in_memory=disk.fstype in IN_MEMORY_FS_TYPES,
                     )
                 except (PermissionError, TimeoutError) as e:
                     logger.warning(

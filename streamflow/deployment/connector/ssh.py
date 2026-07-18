@@ -21,6 +21,7 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector.base import (
     FS_TYPES_TO_SKIP,
+    IN_MEMORY_FS_TYPES,
     BaseConnector,
     copy_remote_to_remote,
     copy_same_connector,
@@ -537,6 +538,7 @@ class SSHConnector(BaseConnector):
                                 self.hardware[location].storage[mount_point] = Storage(
                                     mount_point=mount_point,
                                     size=float(size) / 2**10,
+                                    in_memory=fs_type in IN_MEMORY_FS_TYPES,
                                 )
                         except ValueError as e:
                             logger.warning(
