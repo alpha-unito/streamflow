@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump actions/checkout from 6 to 7 ([#1097](https://github.com/alpha-unito/streamflow/pull/1097))
 - Bump actions/setup-node from 6 to 7 ([#1113](https://github.com/alpha-unito/streamflow/pull/1113))
+- Bump actions/setup-python from 6 to 7 ([#1116](https://github.com/alpha-unito/streamflow/pull/1116))
 - Bump azure/setup-helm from 4 to 5 ([#1051](https://github.com/alpha-unito/streamflow/pull/1051))
 - Bump black from 26.3.1 to 26.5.1 ([#1073](https://github.com/alpha-unito/streamflow/pull/1073))
 - Bump codecov/codecov-action from 6 to 7 ([#1087](https://github.com/alpha-unito/streamflow/pull/1087))
