@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump black from 26.5.1 to 26.10.1 ([#1170](https://github.com/alpha-unito/streamflow/pull/1170))
 - Bump docker/login-action from 4 to 4.7.0 ([#1124](https://github.com/alpha-unito/streamflow/pull/1124), [#1176](https://github.com/alpha-unito/streamflow/pull/1176))
 - Bump eWaterCycle/setup-apptainer from 2 to 3 ([#1177](https://github.com/alpha-unito/streamflow/pull/1177))
+- Bump github/codeql-action from 4 to 4.37.3 ([#1123](https://github.com/alpha-unito/streamflow/pull/1123))
 - Bump helm/kind-action from 1.15.0 to 1.15.1 ([#1159](https://github.com/alpha-unito/streamflow/pull/1159))
 - Bump mypy from 2.3.1 to 2.4.0 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157))
 - Bump types-jsonschema from 4.26.0.20260518 to 4.26.0.20261006 ([#1167](https://github.com/alpha-unito/streamflow/pull/1167))
