@@ -1854,11 +1854,11 @@ class SingularityConnector(ContainerConnector):
             )
         # Get inner location mount points
         if self._wraps_local():
-            fs_mounts = [
-                disk.mountpoint
+            fs_mounts = {
+                disk.mountpoint: disk.fstype
                 for disk in psutil.disk_partitions(all=True)
                 if disk.fstype not in FS_TYPES_TO_SKIP
-            ]
+            }
         else:
             stdout, returncode = await self.connector.run(
                 location=self._get_inner_location(),
@@ -1869,11 +1869,12 @@ class SingularityConnector(ContainerConnector):
                 capture_output=True,
             )
             if returncode == 0:
-                fs_mounts = [
-                    line.split()[4]
+                fs_mounts = {
+                    line.split()[4]: _type
                     for line in stdout.splitlines()
-                    if line.split(" - ")[1].split()[0] not in FS_TYPES_TO_SKIP
-                ]
+                    if (_type := line.split(" - ")[1].split()[0])
+                    not in FS_TYPES_TO_SKIP
+                }
             else:
                 raise WorkflowExecutionException(
                     f"FAILED retrieving volume mounts from `/proc/1/mountinfo` "
@@ -1941,11 +1942,15 @@ class SingularityConnector(ContainerConnector):
                 if (
                     (dst := line.split()[4]) != posixpath.sep
                     and dst not in binds
-                    and (line.split(" - ")[1].split()[0]) not in FS_TYPES_TO_SKIP
+                    and (dst_type := line.split(" - ")[1].split()[0])
+                    not in FS_TYPES_TO_SKIP
                 ):
-                    binds[dst] = posixpath.join(
-                        _get_longest_prefix_path(dst, fs_mounts), line.split()[3][1:]
-                    )
+                    host_mount = _get_longest_prefix_path(dst, fs_mounts.keys())
+                    # Singularity can create binds on tmpfs
+                    # TODO: alternative to this mess. retrieve the ${HOME}, if it is not present in the explict bind,
+                    #  means that it is the singularity automatic bind (creating a tmpfs home)
+                    if fs_mounts[host_mount] == dst_type:
+                        binds[dst] = posixpath.join(host_mount, line.split()[3][1:])
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
         else:
@@ -2018,7 +2023,7 @@ class SingularityConnector(ContainerConnector):
                 get_option("network", self.network),
                 get_option("network-args", self.networkArgs),
                 get_option("no-eval", self.noEval),
-                get_option("no-home", self.noHome),
+                get_option("no-home", self.noHome),  # or self.home is None,
                 get_option("no-https", self.noHttps),
                 get_option("no-init", self.noInit),
                 get_option("no-mount", self.noMount),
