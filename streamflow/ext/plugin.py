@@ -8,6 +8,7 @@ from streamflow.config import ext_schemas
 from streamflow.core.data import DataManager
 from streamflow.core.deployment import BindingFilter, Connector, DeploymentManager
 from streamflow.core.persistence import Database
+from streamflow.core.provenance import ProvenanceManager
 from streamflow.core.recovery import CheckpointManager, FailureManager
 from streamflow.core.scheduling import Policy, Scheduler
 from streamflow.cwl.requirement.docker import cwl_docker_translator_classes
@@ -18,6 +19,7 @@ from streamflow.deployment.connector import connector_classes
 from streamflow.deployment.filter import binding_filter_classes
 from streamflow.log_handler import logger
 from streamflow.persistence import database_classes
+from streamflow.provenance import provenance_manager_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
 from streamflow.scheduling.policy import policy_classes
@@ -38,6 +40,7 @@ extension_points: MutableMapping[str, MutableMapping[str, Any]] = {
     "deployment_manager": deployment_manager_classes,
     "failure_manager": failure_manager_classes,
     "policy": policy_classes,
+    "provenance_manager": provenance_manager_classes,
     "scheduler": scheduler_classes,
 }
 
@@ -97,6 +100,11 @@ class StreamFlowPlugin(ABC):
 
     def register_policy(self, name: str, cls: type[Policy]) -> None:
         self._register(name, cls, "policy")
+
+    def register_provenance_manager(
+        self, name: str, cls: type[ProvenanceManager]
+    ) -> None:
+        self._register(name, cls, "provenance_manager")
 
     def register_scheduler(self, name: str, cls: type[Scheduler]) -> None:
         self._register(name, cls, "scheduler")
