@@ -1,7 +1,7 @@
 version: "3.8"
 services:
   slurmctld:
-    image: alphaunito/slurmctld:21.08.5
+    image: alphaunito/slurmctld:23.11.4
     environment:
       SLURMD_HOSTNAME_PREFIX: ${COMPOSE_PROJECT_NAME}-slurmd
       SLURMD_NODES: 2
@@ -13,7 +13,7 @@ services:
       - munge:/etc/munge
       - mysql:/var/lib/mysql
   slurmd:
-    image: alphaunito/slurmd:21.08.5
+    image: alphaunito/slurmd:23.11.4
     deploy:
       mode: replicated
       replicas: 2

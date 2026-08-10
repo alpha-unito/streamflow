@@ -1,0 +1,31 @@
+services:
+  server:
+    image: alphaunito/openpbs-server:23.06.06
+    environment:
+      PBS_EXECUTION_HOST_NAME_PREFIX: ${COMPOSE_PROJECT_NAME}-execution
+      PBS_EXECUTION_NODES: 2
+    hostname: openpbs-server
+    networks:
+      - pbsnet
+    volumes:
+      - home:/home/hpcuser
+      - munge:/etc/munge
+      - pgsql:/usr/local/pgsql/data
+  execution:
+    image: alphaunito/openpbs-execution:23.06.06
+    deploy:
+      mode: replicated
+      replicas: 2
+    environment:
+      PBS_SERVER_HOST_NAME: openpbs-server
+    networks:
+      - pbsnet
+    volumes:
+      - home:/home/hpcuser
+      - munge:/etc/munge
+networks:
+  pbsnet:
+volumes:
+  home:
+  munge:
+  pgsql:
