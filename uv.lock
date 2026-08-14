@@ -3522,7 +3522,7 @@ dev = [
     { name = "sphinx-llms-txt", specifier = "==0.7.1" },
     { name = "sphinx-rtd-theme", specifier = "==3.1.0" },
     { name = "sphinxcontrib-bibtex", specifier = "==2.7.0" },
-    { name = "types-antlr4-python3-runtime", specifier = "==4.13.0.20260518" },
+    { name = "types-antlr4-python3-runtime", specifier = "==4.13.0.20260807" },
     { name = "types-cachetools", specifier = "==7.0.0.20260713" },
     { name = "types-jsonschema", specifier = "==4.26.0.20260518" },
     { name = "types-psutil", specifier = "==7.2.2.20260518" },
@@ -3553,7 +3553,7 @@ test = [
 typing = [
     { name = "mypy", specifier = "==2.3.0" },
     { name = "pandas-stubs", specifier = "==2.3.3.260113" },
-    { name = "types-antlr4-python3-runtime", specifier = "==4.13.0.20260518" },
+    { name = "types-antlr4-python3-runtime", specifier = "==4.13.0.20260807" },
     { name = "types-cachetools", specifier = "==7.0.0.20260713" },
     { name = "types-jsonschema", specifier = "==4.26.0.20260518" },
     { name = "types-psutil", specifier = "==7.2.2.20260518" },
@@ -3620,11 +3620,11 @@ wheels = [
 
 [[package]]
 name = "types-antlr4-python3-runtime"
-version = "4.13.0.20260518"
+version = "4.13.0.20260807"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/93/5d/14f9ffaaaf0398b05dcc5970d66921ad8a32d68ae9ee9e34c4a765fa44f5/types_antlr4_python3_runtime-4.13.0.20260518.tar.gz", hash = "sha256:28306b531aab0160f6d62b5d8d03dfd10cea7f5329237b736500708e20f946cd", size = 25502, upload-time = "2026-05-18T06:01:28.68Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/86/ea587efeda3fdec656645d2bc0427429a48afb2086f4ec55d21cc21d06d1/types_antlr4_python3_runtime-4.13.0.20260807.tar.gz", hash = "sha256:8b77b8055cb43c5382a6981f733dbf67606273544d5637661c2ba4d2736bdd94", size = 25663, upload-time = "2026-08-07T04:16:54.086Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/51/de/37d504cd92cb56b734a975c20e166c9346fe7279dfe405a11140ed27c4c5/types_antlr4_python3_runtime-4.13.0.20260518-py3-none-any.whl", hash = "sha256:f59785f9bd8f3f30063aa41a6ca049c128e3c56ee67ca41e702363922083a4a7", size = 41443, upload-time = "2026-05-18T06:01:27.832Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/3b/3ec7945b9a997630a4fd4f93ab848264b9018b0f365bfab0b4eb2a220f6e/types_antlr4_python3_runtime-4.13.0.20260807-py3-none-any.whl", hash = "sha256:c50afc349c3f84663e05b8bca2eb2d73cdd8c159fe0e182e24f11c57a2da04ed", size = 41492, upload-time = "2026-08-07T04:16:53.043Z" },
 ]
 
 [[package]]
