@@ -1004,17 +1004,15 @@ wheels = [
 
 [[package]]
 name = "cwltest"
-version = "2.6.20251216093331"
+version = "2.7.20260814074913"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "defusedxml" },
     { name = "junit-xml" },
-    { name = "pytest" },
     { name = "schema-salad" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/99/cb/26b497b47f7ce81e7a722bdc86457e2114452fa61a73e84bd323af39a639/cwltest-2.6.20251216093331.tar.gz", hash = "sha256:77865fee9798b3be4b41c53093a3ace79f7f11a1cfda42ea2399fc2467dc7572", size = 73523, upload-time = "2026-01-07T14:13:45.697Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/3e/d2f8d6a1234109eec6bc14be49b8661479e9178a2c365546e1f39faf7be0/cwltest-2.7.20260814074913.tar.gz", hash = "sha256:0ccc338b931f22730c1040b04aead7bafd02dda4ce11163641d026779b5540cd", size = 48419, upload-time = "2026-08-14T07:58:00.894Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/3a/899094660096eec3352b08675cd59352b10256d28d7e5f1c8feff6277600/cwltest-2.6.20251216093331-py3-none-any.whl", hash = "sha256:21171bfe1c4e1c06876265daef4b9afe732dc5b56ceee15d7d3083eae538580f", size = 48501, upload-time = "2026-01-07T14:13:43.747Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/3a/cf2bf7bcccd8c90a8b263c7a557e84c4f0ea88de938107f4ff3ceed4e32a/cwltest-2.7.20260814074913-py3-none-any.whl", hash = "sha256:e820a895d2d41f51e3f607bee8ab941372b28e49817824f460f2bc9e8122ab5b", size = 49049, upload-time = "2026-08-14T07:57:59.201Z" },
 ]
 
 [[package]]
@@ -1042,15 +1040,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/2b/0f/609847864d19457c1104d9a017a75f0386a80aad173a4a22b401ab610923/cwltool-3.2.20260720092025.tar.gz", hash = "sha256:d0671d429f2e35d8009c77c17625a418bceaa8b236ff5ca2cd0bcfc867cf4bf4", size = 1471388, upload-time = "2026-07-20T16:04:39.215Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/19/7f/c7ef818e186e4c68069059ff2eefa56ea7a9d2ec913f31bd01ae085ceaf6/cwltool-3.2.20260720092025-py3-none-any.whl", hash = "sha256:042d37c73cd4e85adb7f55ebb770f87944b2e72d54432437234ffff6be9abb39", size = 1707605, upload-time = "2026-07-20T16:04:36.788Z" },
-]
-
-[[package]]
-name = "defusedxml"
-version = "0.7.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
 ]
 
 [[package]]
@@ -3506,7 +3495,7 @@ dev = [
     { name = "bandit", specifier = "==1.9.4" },
     { name = "black", specifier = "==26.5.1" },
     { name = "codespell", specifier = "==2.4.3" },
-    { name = "cwltest", specifier = "==2.6.20251216093331" },
+    { name = "cwltest", specifier = "==2.7.20260814074913" },
     { name = "cwltool", specifier = "==3.2.20260720092025" },
     { name = "mypy", specifier = "==2.3.0" },
     { name = "pandas-stubs", specifier = "==2.3.3.260113" },
@@ -3543,7 +3532,7 @@ lint = [
     { name = "ruff", specifier = "==0.16.2" },
 ]
 test = [
-    { name = "cwltest", specifier = "==2.6.20251216093331" },
+    { name = "cwltest", specifier = "==2.7.20260814074913" },
     { name = "cwltool", specifier = "==3.2.20260720092025" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-asyncio", specifier = "==1.4.0" },
