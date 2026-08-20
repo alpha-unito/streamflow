@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump black from 26.3.1 to 26.5.1 ([#1073](https://github.com/alpha-unito/streamflow/pull/1073))
 - Bump codecov/codecov-action from 6 to 7 ([#1087](https://github.com/alpha-unito/streamflow/pull/1087))
 - Bump codespell from 2.4.2 to 2.4.3 ([#1114](https://github.com/alpha-unito/streamflow/pull/1114))
+- Bump github/codeql-action from 4 to 4.37.3 ([#1123](https://github.com/alpha-unito/streamflow/pull/1123))
 - Bump mypy from 1.20.2 to 2.3.0 ([#1059](https://github.com/alpha-unito/streamflow/pull/1059), [#1065](https://github.com/alpha-unito/streamflow/pull/1065), [#1108](https://github.com/alpha-unito/streamflow/pull/1108), [#1111](https://github.com/alpha-unito/streamflow/pull/1111))
 - Bump pytest from 9.0.3 to 9.1.1 ([#1095](https://github.com/alpha-unito/streamflow/pull/1095), [#1098](https://github.com/alpha-unito/streamflow/pull/1098))
 - Bump pytest-asyncio from 1.3.0 to 1.4.0 ([#1076](https://github.com/alpha-unito/streamflow/pull/1076))
