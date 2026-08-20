@@ -139,32 +139,35 @@ class DefaultScheduler(Scheduler):
             for loc in locations:
                 if loc.name in self.hardware_locations.keys():
                     try:
-                        storage_usage = Hardware(
+                        storage_usage = await remotepath.get_storage_usages(
+                            self.context, loc, job_hardware
+                        )
+                        hardware_usage = Hardware(
+                            memory=sum(
+                                size / 2**20
+                                for k, size in storage_usage.items()
+                                if job_hardware.storage[k].in_memory
+                            ),
                             storage=(
                                 {
                                     k: Storage(
                                         mount_point=job_hardware.storage[k].mount_point,
                                         size=size / 2**20,
+                                        in_memory=job_hardware.storage[k].in_memory,
                                     )
-                                    for k, size in (
-                                        await remotepath.get_storage_usages(
-                                            self.context,
-                                            loc,
-                                            job_hardware,
-                                        )
-                                    ).items()
+                                    for k, size in storage_usage.items()
                                 }
-                            )
+                            ),
                         )
                     except WorkflowExecutionException as err:
                         logger.warning(
                             f"Impossible to retrieve the actual storage usage in "
                             f"the {job_allocation.job} job working directories: {err}"
                         )
-                        storage_usage = Hardware()
+                        hardware_usage = Hardware()
                     self.hardware_locations[loc.name] = (
                         self.hardware_locations[loc.name] - job_hardware
-                    ) + storage_usage
+                    ) + hardware_usage
             if locations := [loc.wraps for loc in locations if loc.stacked]:
                 conn = cast(ConnectorWrapper, conn).connector
                 for execution_loc in locations:
@@ -342,7 +345,9 @@ class DefaultScheduler(Scheduler):
                             if key not in hardware_requirements:
                                 hardware_requirements[key] = hardware
                             else:
-                                hardware_requirements[key] |= hardware
+                                # Two stacked locations can have the same location below.
+                                # Thus, the underline location must have enough resources for both.
+                                hardware_requirements[key] += hardware
                     valid_locations = {
                         k: loc
                         for k, loc in available_locations.items()
@@ -429,15 +434,18 @@ class DefaultScheduler(Scheduler):
                         mount_point = await utils.get_mount_point(
                             self.context, location, path
                         )
+                        loc_storage = location.hardware.get_storage(mount_point)
                         storage[key] = Storage(
                             mount_point=mount_point,
                             size=disk.size,
                             paths={path},
-                            bind=location.hardware.get_storage(mount_point).bind,
+                            bind=loc_storage.bind,
+                            in_memory=loc_storage.in_memory,
                         )
                 current_hw = Hardware(
                     cores=hardware_requirement.cores,
-                    memory=hardware_requirement.memory,
+                    memory=hardware_requirement.memory
+                    + sum(s.size for s in storage.values() if s.in_memory),
                     storage=storage,
                 )
             # Otherwise, simply add the requirement as is

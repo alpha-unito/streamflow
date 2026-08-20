@@ -23,6 +23,13 @@ from streamflow.deployment.shell import BaseShell
 from streamflow.deployment.stream import BaseStreamWrapper
 from streamflow.log_handler import logger
 
+IN_MEMORY_FS_TYPES = {
+    "devtmpfs",
+    "hugetlbfs",
+    "ramfs",
+    "tmpfs",
+}
+
 FS_TYPES_TO_SKIP = {
     "-",
     "bpf",
@@ -31,16 +38,13 @@ FS_TYPES_TO_SKIP = {
     "configfs",
     "debugfs",
     "devpts",
-    "devtmpfs",
     "fusectl",
-    "hugetlbfs",
     "mqueue",
     "proc",
     "pstore",
     "securityfs",
     "selinuxfs",
     "sysfs",
-    "tmpfs",
     "tracefs",
 }
 
