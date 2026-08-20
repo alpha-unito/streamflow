@@ -523,7 +523,9 @@ class CWLCommandOutputProcessor(CommandOutputProcessor):
                     else glob
                 )
                 globpaths.extend(
-                    globpath if isinstance(globpath, MutableSequence) else [globpath]
+                    (str(g) for g in globpath)
+                    if isinstance(globpath, MutableSequence)
+                    else (str(globpath),)
                 )
             # Resolve glob
             location_globpaths: MutableMapping[str, list[MutableMapping[str, Any]]] = {}

@@ -172,6 +172,17 @@ async def test_glob(
         result = [p async for p in path.glob("*/*.txt")]
         assert len(result) == 1
         assert path / "dir1" / "file1.txt" in result
+        # Test empty pattern argument
+        with pytest.raises(WorkflowExecutionException):
+            _ = [p async for p in path.glob("")]
+        # Test full path as pattern argument
+        with pytest.raises(WorkflowExecutionException):
+            _ = [
+                p
+                async for p in path.glob(
+                    tempfile.gettempdir() if location.local else "/tmp"
+                )
+            ]
     finally:
         await path.rmtree()
 

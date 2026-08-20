@@ -366,6 +366,14 @@ class LocalStreamFlowPath(
     async def glob(
         self, pattern: str, *, case_sensitive: bool | None = None
     ) -> AsyncIterator[LocalStreamFlowPath]:
+        if not pattern:
+            raise WorkflowExecutionException(
+                f"Path `{self}`: Unacceptable pattern {pattern!r}"
+            )
+        if (ppattern := PurePath(pattern)).drive or ppattern.root:
+            raise WorkflowExecutionException(
+                f"Path `{self}`: Non-relative pattern {pattern!r} is unsupported"
+            )
         for path in glob.glob(str(self / pattern)):
             yield self.with_segments(path)
 
@@ -656,7 +664,13 @@ class RemoteStreamFlowPath(
                 )
         else:
             if not pattern:
-                raise ValueError(f"Unacceptable pattern: {pattern!r}")
+                raise WorkflowExecutionException(
+                    f"Path `{self}`: Unacceptable pattern {pattern!r}"
+                )
+            if (ppattern := PurePath(pattern)).drive or ppattern.root:
+                raise WorkflowExecutionException(
+                    f"Path `{self}`: Non-relative pattern {pattern!r} is unsupported"
+                )
             command = [
                 "set",
                 "--",
