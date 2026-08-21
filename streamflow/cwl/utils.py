@@ -765,10 +765,16 @@ async def expand_glob(
     tmp_directory: str,
     path: str,
 ) -> MutableSequence[tuple[str, str]]:
-    outdir = StreamFlowPath(
-        output_directory, context=workflow.context, location=location
+    paths = sorted(
+        [
+            p
+            async for p in StreamFlowPath(
+                os.path.dirname(path) if os.path.isabs(path) else output_directory,
+                context=workflow.context,
+                location=location,
+            ).glob(os.path.basename(path) if os.path.isabs(path) else path)
+        ]
     )
-    paths = sorted([p async for p in outdir.glob(path)])
     effective_paths = await asyncio.gather(
         *(asyncio.create_task(p.resolve()) for p in paths)
     )
