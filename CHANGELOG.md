@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump cachebox from 5.2.3 to 6.2.5 ([#1078](https://github.com/alpha-unito/streamflow/pull/1078), [#1083](https://github.com/alpha-unito/streamflow/pull/1083), [#1092](https://github.com/alpha-unito/streamflow/pull/1092), [#1094](https://github.com/alpha-unito/streamflow/pull/1094), [#1119](https://github.com/alpha-unito/streamflow/pull/1119), [#1122](https://github.com/alpha-unito/streamflow/pull/1122), [#1126](https://github.com/alpha-unito/streamflow/pull/1126), [#1130](https://github.com/alpha-unito/streamflow/pull/1130))
 - Bump cryptography from 46.0.7 to 50.0.0 ([#1096](https://github.com/alpha-unito/streamflow/pull/1096), [#1127](https://github.com/alpha-unito/streamflow/pull/1127))
 - Bump cwltool from 3.2.20260413085819 to 3.2.20260720092025 ([#1117](https://github.com/alpha-unito/streamflow/pull/1117))
-- Bump cwl-utils from 0.41 to 0.42 ([#1080](https://github.com/alpha-unito/streamflow/pull/1080))
+- Bump cwl-utils from 0.41 to 0.43 ([#1080](https://github.com/alpha-unito/streamflow/pull/1080), [#1134](https://github.com/alpha-unito/streamflow/pull/1134))
 - Bump idna from 3.11 to 3.15 ([#1074](https://github.com/alpha-unito/streamflow/pull/1074))
 - Bump kaleido from 1.2.0 to 1.3.0 ([#1055](https://github.com/alpha-unito/streamflow/pull/1055))
 - Bump kubernetes-asyncio from 35.0.1 to 36.1.0 ([#1090](https://github.com/alpha-unito/streamflow/pull/1090))

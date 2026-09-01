@@ -35,7 +35,7 @@ dependencies = [
     "asyncssh==2.24.0",
     "bcrypt==5.0.0",
     "cachebox==6.2.5",
-    "cwl-utils==0.42",
+    "cwl-utils==0.43",
     "importlib-metadata==9.0.0",
     "Jinja2==3.1.6",
     "jsonschema==4.26.0",
