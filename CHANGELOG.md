@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump cwltool from 3.2.20260413085819 to 3.2.20260720092025 ([#1117](https://github.com/alpha-unito/streamflow/pull/1117))
 - Bump cwl-utils from 0.41 to 0.42 ([#1080](https://github.com/alpha-unito/streamflow/pull/1080))
 - Bump idna from 3.11 to 3.15 ([#1074](https://github.com/alpha-unito/streamflow/pull/1074))
+- Bump importlib-metadata from 9.0.0 to 9.0.1 ([#1142](https://github.com/alpha-unito/streamflow/pull/1142))
 - Bump kaleido from 1.2.0 to 1.3.0 ([#1055](https://github.com/alpha-unito/streamflow/pull/1055))
 - Bump kubernetes-asyncio from 35.0.1 to 36.1.0 ([#1090](https://github.com/alpha-unito/streamflow/pull/1090))
 - Bump mistune from 3.1.4 to 3.2.1 ([#1060](https://github.com/alpha-unito/streamflow/pull/1060))
