@@ -21,7 +21,6 @@ from streamflow.core.config import BindingConfig
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.deployment import Target
 from streamflow.core.exception import WorkflowDefinitionException
-from streamflow.core.utils import compare_tags
 from streamflow.core.workflow import Token
 from streamflow.cwl.runner import main
 from streamflow.cwl.step import CWLTransferStep
@@ -418,7 +417,7 @@ async def test_gather_order(context: StreamFlowContext) -> None:
         if prev_tag is None:
             assert token.tag == "0.0"
         else:
-            assert compare_tags(token.tag, prev_tag) > 0
+            assert utils.compare_tags(token.tag, prev_tag) > 0
         prev_tag = token.tag
 
 
@@ -508,9 +507,13 @@ async def test_workdir_inheritance() -> None:
     assert binding_config.targets[3].deployment.name == "wrapper_4"
     assert binding_config.targets[3].deployment.workdir is None
     assert binding_config.targets[3].workdir == (
-        os.path.join(os.path.realpath(tempfile.gettempdir()), "streamflow")
+        os.path.join(
+            os.path.realpath(tempfile.gettempdir()),
+            utils.get_local_username(),
+            "streamflow",
+        )
         if binding_config.targets[3].deployment == "local"
-        else posixpath.join("/tmp", "streamflow")
+        else posixpath.join("/tmp", "${USER}", "streamflow")
     )
 
 
