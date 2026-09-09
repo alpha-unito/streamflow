@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump kubernetes-asyncio from 35.0.1 to 36.1.0 ([#1090](https://github.com/alpha-unito/streamflow/pull/1090))
 - Bump mistune from 3.1.4 to 3.2.1 ([#1060](https://github.com/alpha-unito/streamflow/pull/1060))
 - Bump msgpack from 1.1.2 to 1.2.1 ([#1101](https://github.com/alpha-unito/streamflow/pull/1101))
-- Bump plotly from 6.7.0 to 6.9.0 ([#1081](https://github.com/alpha-unito/streamflow/pull/1081), [#1110](https://github.com/alpha-unito/streamflow/pull/1110))
+- Bump plotly from 6.7.0 to 7.0.0 ([#1081](https://github.com/alpha-unito/streamflow/pull/1081), [#1110](https://github.com/alpha-unito/streamflow/pull/1110), [#1140](https://github.com/alpha-unito/streamflow/pull/1140))
 - Bump typing-extensions from 4.15.0 to 4.16.0 ([#1107](https://github.com/alpha-unito/streamflow/pull/1107))
 - Bump urllib3 from 2.6.3 to 2.7.0 ([#1063](https://github.com/alpha-unito/streamflow/pull/1063))
 
