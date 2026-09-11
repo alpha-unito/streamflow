@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump types-antlr4-python3-runtime from 4.13.0.20260408 to 4.13.0.20260807 ([#1070](https://github.com/alpha-unito/streamflow/pull/1070), [#1129](https://github.com/alpha-unito/streamflow/pull/1129))
 - Bump types-cachetools from 6.2.0.20260408 to 7.0.0.20260713 ([#1052](https://github.com/alpha-unito/streamflow/pull/1052), [#1071](https://github.com/alpha-unito/streamflow/pull/1071), [#1112](https://github.com/alpha-unito/streamflow/pull/1112))
 - Bump types-jsonschema from 4.26.0.20260408 to 4.26.0.20260518 ([#1062](https://github.com/alpha-unito/streamflow/pull/1062), [#1069](https://github.com/alpha-unito/streamflow/pull/1069))
-- Bump types-psutil from 7.2.2.20260408 to 7.2.2.20260827 ([#1061](https://github.com/alpha-unito/streamflow/pull/1061), [#1072](https://github.com/alpha-unito/streamflow/pull/1072), [#1141](https://github.com/alpha-unito/streamflow/pull/1141))
+- Bump types-psutil from 7.2.2.20260408 to 7.2.2.20260906 ([#1061](https://github.com/alpha-unito/streamflow/pull/1061), [#1072](https://github.com/alpha-unito/streamflow/pull/1072), [#1141](https://github.com/alpha-unito/streamflow/pull/1141), [#1147](https://github.com/alpha-unito/streamflow/pull/1147))
 
 ## [0.2.0rc2] - 2026-04-23
 
