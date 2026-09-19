@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0rc3] - 2026-09-19
+
 ### Breaking Changes
 
 - Update HelmConnector to v4 API ([#1046](https://github.com/alpha-unito/streamflow/pull/1046))
@@ -68,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump mypy from 1.20.2 to 2.3.1 ([#1059](https://github.com/alpha-unito/streamflow/pull/1059), [#1065](https://github.com/alpha-unito/streamflow/pull/1065), [#1108](https://github.com/alpha-unito/streamflow/pull/1108), [#1111](https://github.com/alpha-unito/streamflow/pull/1111), [#1133](https://github.com/alpha-unito/streamflow/pull/1133))
 - Bump pytest from 9.0.3 to 9.1.1 ([#1095](https://github.com/alpha-unito/streamflow/pull/1095), [#1098](https://github.com/alpha-unito/streamflow/pull/1098))
 - Bump pytest-asyncio from 1.3.0 to 1.4.0 ([#1076](https://github.com/alpha-unito/streamflow/pull/1076))
-- Bump ruff from 0.15.11 to 0.16.6 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067), [#1075](https://github.com/alpha-unito/streamflow/pull/1075), [#1077](https://github.com/alpha-unito/streamflow/pull/1077), [#1082](https://github.com/alpha-unito/streamflow/pull/1082), [#1093](https://github.com/alpha-unito/streamflow/pull/1093), [#1099](https://github.com/alpha-unito/streamflow/pull/1099), [#1104](https://github.com/alpha-unito/streamflow/pull/1104), [#1105](https://github.com/alpha-unito/streamflow/pull/1105), [#1109](https://github.com/alpha-unito/streamflow/pull/1109), [#1115](https://github.com/alpha-unito/streamflow/pull/1115), [#1121](https://github.com/alpha-unito/streamflow/pull/1121), [#1125](https://github.com/alpha-unito/streamflow/pull/1125), [#1128](https://github.com/alpha-unito/streamflow/pull/1128), [#1132](https://github.com/alpha-unito/streamflow/pull/1132), [#1144](https://github.com/alpha-unito/streamflow/pull/1144), [#1148](https://github.com/alpha-unito/streamflow/pull/1148))
+- Bump ruff from 0.15.11 to 0.16.7 ([#1047](https://github.com/alpha-unito/streamflow/pull/1047), [#1067](https://github.com/alpha-unito/streamflow/pull/1067), [#1075](https://github.com/alpha-unito/streamflow/pull/1075), [#1077](https://github.com/alpha-unito/streamflow/pull/1077), [#1082](https://github.com/alpha-unito/streamflow/pull/1082), [#1093](https://github.com/alpha-unito/streamflow/pull/1093), [#1099](https://github.com/alpha-unito/streamflow/pull/1099), [#1104](https://github.com/alpha-unito/streamflow/pull/1104), [#1105](https://github.com/alpha-unito/streamflow/pull/1105), [#1109](https://github.com/alpha-unito/streamflow/pull/1109), [#1115](https://github.com/alpha-unito/streamflow/pull/1115), [#1121](https://github.com/alpha-unito/streamflow/pull/1121), [#1125](https://github.com/alpha-unito/streamflow/pull/1125), [#1128](https://github.com/alpha-unito/streamflow/pull/1128), [#1132](https://github.com/alpha-unito/streamflow/pull/1132), [#1144](https://github.com/alpha-unito/streamflow/pull/1144), [#1148](https://github.com/alpha-unito/streamflow/pull/1148))
 - Bump sphinxcontrib-bibtex from 2.6.5 to 2.7.0 ([#1057](https://github.com/alpha-unito/streamflow/pull/1057))
 - Bump types-antlr4-python3-runtime from 4.13.0.20260408 to 4.13.0.20260807 ([#1070](https://github.com/alpha-unito/streamflow/pull/1070), [#1129](https://github.com/alpha-unito/streamflow/pull/1129))
 - Bump types-cachetools from 6.2.0.20260408 to 7.0.0.20260713 ([#1052](https://github.com/alpha-unito/streamflow/pull/1052), [#1071](https://github.com/alpha-unito/streamflow/pull/1071), [#1112](https://github.com/alpha-unito/streamflow/pull/1112))
@@ -1268,7 +1270,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed remote-to-remote data movement on Helm connector ([0967668](https://github.com/alpha-unito/streamflow/commit/0967668))
 - Patched WebSocket client `update()` function to handle binary format ([ba48f19](https://github.com/alpha-unito/streamflow/commit/ba48f19))
 
-[Unreleased]: https://github.com/alpha-unito/streamflow/compare/0.2.0rc2...HEAD
+[Unreleased]: https://github.com/alpha-unito/streamflow/compare/0.2.0rc3...HEAD
+[0.2.0rc3]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc3
 [0.2.0rc2]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc2
 [0.2.0rc1]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc1
 [0.2.0.dev14]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0.dev14
