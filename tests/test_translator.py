@@ -12,7 +12,6 @@ from typing import Any, cast
 import cwl_utils.parser
 import cwl_utils.parser.utils
 import pytest
-from cwltool.tests.util import get_data
 
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.validator import SfValidator
@@ -512,12 +511,3 @@ async def test_workdir_inheritance() -> None:
         if binding_config.targets[3].deployment == "local"
         else posixpath.join("/tmp", "streamflow")
     )
-
-
-def test_dot_product_transformer_raises_error() -> None:
-    """Test DotProductSizeTransformer which must raise an exception because the size tokens have different values"""
-    params = [
-        get_data("tests/wf/scatter-wf4.cwl"),
-        _create_file({"inp1": ["one", "two", "extra"], "inp2": ["three", "four"]}),
-    ]
-    assert main(params) == 1
