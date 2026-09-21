@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Dependencies
+
+- Bump plotly from 7.0.0 to 7.1.0 ([#1150](https://github.com/alpha-unito/streamflow/pull/1150))
+
+
 ## [0.2.0rc3] - 2026-09-19
 
 ### Breaking Changes
