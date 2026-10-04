@@ -113,7 +113,6 @@ Both properties are optional. If the ``retry_delay`` is not specified, the failu
 .. jsonschema:: https://streamflow.di.unito.it/schemas/recovery/rollback_failure_manager.json
     :lift_description: true
 
-==========
 References
 ==========
 
