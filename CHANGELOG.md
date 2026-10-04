@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dependencies
 
 - Bump multidict from 6.7.0 to 6.9.1 ([#1161](https://github.com/alpha-unito/streamflow/pull/1161))
+- Bump urllib3 from 2.7.0 to 2.8.0 ([#1155](https://github.com/alpha-unito/streamflow/pull/1155))
 
 ### Dev Dependencies
 
