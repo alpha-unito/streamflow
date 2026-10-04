@@ -49,7 +49,7 @@ exclude_patterns = [
 
 # -- Options for HTML output -------------------------------------------------
 
-html_logo = 'images/streamflow_logo.png'
+html_logo = 'images/streamflow-logo-white.svg'
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
