@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replace PNG logo with white SVG variant in docs ([#1154](https://github.com/alpha-unito/streamflow/pull/1154))
+
 ## [0.2.0rc3] - 2026-09-19
 
 ### Breaking Changes
