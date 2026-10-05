@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace PNG logo with white SVG variant in docs ([#1154](https://github.com/alpha-unito/streamflow/pull/1154))
 
+### Dev Dependencies
+
+- Bump mypy from 2.3.1 to 2.4.0 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157))
+
 ## [0.2.0rc3] - 2026-09-19
 
 ### Breaking Changes
