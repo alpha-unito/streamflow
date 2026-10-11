@@ -711,15 +711,18 @@ class SlurmConnector(QueueManagerConnector):
 
     async def _get_returncode(self, job_id: str, location: ExecutionLocation) -> int:
         command = [
-            "scontrol",
-            "show",
-            "-o",
-            "job",
+            "sacct",
+            "-j",
             job_id,
-            "|",
-            "sed",
+            "-X",
             "-n",
-            "'s/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'",
+            "-P",
+            "-o",
+            "ExitCode",
+            "|",
+            "awk",
+            "-F:",
+            "'NR == 1 {print $1}'",
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
