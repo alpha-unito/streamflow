@@ -684,15 +684,14 @@ class SlurmConnector(QueueManagerConnector):
 
     async def _get_output(self, job_id: str, location: ExecutionLocation) -> str:
         command = [
-            "scontrol",
-            "show",
-            "-o",
-            "job",
+            "sacct",
+            "-j",
             job_id,
-            "|",
-            "sed",
+            "-X",
             "-n",
-            "'s/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'",
+            "-P",
+            "-o",
+            "StdOut",
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
@@ -720,9 +719,11 @@ class SlurmConnector(QueueManagerConnector):
             "-o",
             "ExitCode",
             "|",
-            "awk",
-            "-F:",
-            "'NR == 1 {print $1}'",
+            "cut",
+            "-d",
+            ":",
+            "-f",
+            "1",
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
