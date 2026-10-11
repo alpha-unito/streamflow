@@ -710,20 +710,8 @@ class SlurmConnector(QueueManagerConnector):
 
     async def _get_returncode(self, job_id: str, location: ExecutionLocation) -> int:
         command = [
-            "sacct",
-            "-j",
-            job_id,
-            "-X",
-            "-n",
-            "-P",
-            "-o",
-            "ExitCode",
-            "|",
-            "cut",
-            "-d",
-            ":",
-            "-f",
-            "1",
+            f'( code=$(sacct -j {job_id} -X -n -P -o ExitCode); '
+            'echo "${code%%:*}" )',
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
