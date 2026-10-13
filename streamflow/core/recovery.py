@@ -53,11 +53,16 @@ def recoverable(func):
             logger.exception(e)
             try:
                 await step.workflow.context.failure_manager.recover(job, step, e)
-            # If failure cannot be recovered, fail
+            # If failure cannot be recovered, fail, preserving the original exception
             except Exception as ie:
-                if ie != e:
-                    logger.exception(ie)
-                raise
+                logger.exception(ie)
+                if ie is e:
+                    raise
+                else:
+                    raise ExceptionGroup(
+                        f"Recovery failed for job {job.name} on step {step.name}",
+                        [e, ie],
+                    ) from ie
 
     return wrapper
 

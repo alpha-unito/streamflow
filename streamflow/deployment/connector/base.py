@@ -350,8 +350,9 @@ class SubprocessShell(BaseShell):
             if self._proc.returncode is None:
                 await self._writer.write(b"exit\n")
                 try:
-                    await asyncio.wait_for(self._proc.wait(), timeout=5.0)
-                except asyncio.TimeoutError:
+                    async with asyncio.timeout(5.0):
+                        await self._proc.wait()
+                except TimeoutError:
                     logger.warning(
                         f"Shell with command `{' '.join(self.command)}` "
                         "did not exit gracefully. Killing"

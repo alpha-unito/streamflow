@@ -398,10 +398,9 @@ class DefaultScheduler(Scheduler):
                                 f"but only {len(valid_locations)} are available."
                             )
                 try:
-                    await asyncio.wait_for(
-                        self.wait_queue.wait(), timeout=self.retry_interval
-                    )
-                except (TimeoutError, asyncio.exceptions.TimeoutError):
+                    async with asyncio.timeout(self.retry_interval):
+                        await self.wait_queue.wait()
+                except TimeoutError:
                     if logger.isEnabledFor(logging.DEBUG):
                         target_name = (
                             "/".join([target.deployment.name, target.service])

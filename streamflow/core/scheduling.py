@@ -10,9 +10,7 @@ from collections.abc import (
     MutableSequence,
     MutableSet,
 )
-from typing import TYPE_CHECKING, AbstractSet, cast
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, AbstractSet, Self, cast
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config

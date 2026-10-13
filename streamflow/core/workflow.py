@@ -6,9 +6,7 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from enum import IntEnum
-from typing import TYPE_CHECKING, TypeVar, cast, overload
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, Self, TypeVar, cast, overload
 
 from streamflow.core import utils
 from streamflow.core.exception import WorkflowExecutionException

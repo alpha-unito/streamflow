@@ -14,11 +14,10 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable, MutableMapping, MutableSequence
 from email.message import Message
 from pathlib import Path, PosixPath, PurePath, PurePosixPath, WindowsPath
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Self, cast
 
 import aiohttp
 from aiohttp import ClientResponse
-from typing_extensions import Self
 
 from streamflow.core.data import DataType
 from streamflow.core.exception import WorkflowExecutionException

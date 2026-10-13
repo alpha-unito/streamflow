@@ -12,14 +12,14 @@ coverage-report: testcov
 
 format:
 	ruff check --fix streamflow tests docs/source/conf.py docs/tests
-	black --target-version py310 streamflow tests docs/source/conf.py docs/tests
+	black --target-version py311 streamflow tests docs/source/conf.py docs/tests
 
 format-check:
 	ruff check streamflow tests docs/source/conf.py docs/tests
-	black --target-version py310 --diff --check streamflow tests docs/source/conf.py docs/tests
+	black --target-version py311 --diff --check streamflow tests docs/source/conf.py docs/tests
 
 pyupgrade:
-	pyupgrade --py3-only --py310-plus $(shell git ls-files '*.py' ':!streamflow/cwl/antlr')
+	pyupgrade --py3-only --py311-plus $(shell git ls-files '*.py' ':!streamflow/cwl/antlr')
 
 test:
 	python -m pytest -rs ${PYTEST_EXTRA}

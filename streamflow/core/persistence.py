@@ -4,9 +4,7 @@ from abc import ABC, abstractmethod
 from asyncio import Event
 from collections.abc import MutableMapping, MutableSequence
 from enum import Enum
-from typing import TYPE_CHECKING, Any
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, Any, Self
 
 from streamflow.core.context import SchemaEntity, StreamFlowContext
 

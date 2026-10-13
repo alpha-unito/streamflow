@@ -247,7 +247,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
                 ],
                 "datePublished": (
                     datetime.datetime.utcnow()
-                    .replace(tzinfo=datetime.timezone.utc)
+                    .replace(tzinfo=datetime.UTC)
                     .replace(microsecond=0)
                     .isoformat()
                 ),

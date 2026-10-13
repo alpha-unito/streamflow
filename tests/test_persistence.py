@@ -1,9 +1,8 @@
 import posixpath
 from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, Self
 
 import pytest
-from typing_extensions import Self
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig, Config

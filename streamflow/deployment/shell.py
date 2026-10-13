@@ -66,10 +66,9 @@ class BaseShell(Shell, ABC):
         output = ""
         while True:
             try:
-                chunk = await asyncio.wait_for(
-                    self._reader.read(self.buffer_size), timeout=timeout
-                )
-            except asyncio.TimeoutError:
+                async with asyncio.timeout(timeout):
+                    chunk = await self._reader.read(self.buffer_size)
+            except TimeoutError:
                 raise WorkflowExecutionException("Timeout waiting for command output")
             if not chunk:
                 raise WorkflowExecutionException(
@@ -95,10 +94,9 @@ class BaseShell(Shell, ABC):
         output = ""
         while True:
             try:
-                chunk = await asyncio.wait_for(
-                    self._reader.read(self.buffer_size), timeout=timeout
-                )
-            except asyncio.TimeoutError:
+                async with asyncio.timeout(timeout):
+                    chunk = await self._reader.read(self.buffer_size)
+            except TimeoutError:
                 raise WorkflowExecutionException("Timeout discarding output")
             if not chunk:
                 raise WorkflowExecutionException(
@@ -156,7 +154,7 @@ class BaseShell(Shell, ABC):
             except (BrokenPipeError, ConnectionResetError) as e:
                 await self.close()
                 raise WorkflowExecutionException(f"Shell pipe broken: {e}") from e
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 raise WorkflowExecutionException(
                     f"Command timeout after {timeout}s"
                 ) from e

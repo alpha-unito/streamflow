@@ -15,9 +15,7 @@ import time
 from abc import ABC
 from builtins import open as bltn_open
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, Any, Literal, Protocol, Self, TypeAlias
 
 from streamflow.core.data import StreamWrapper
 from streamflow.deployment.stream import BaseStreamWrapper

@@ -562,8 +562,8 @@ class KubernetesBaseConnector(BaseConnector, ABC):
         )
         pod, container = location.name.split(":")
         # noinspection PyUnresolvedReferences
-        result = await asyncio.wait_for(
-            cast(
+        async with asyncio.timeout(timeout):
+            result = await cast(
                 Awaitable,
                 self.client_ws.connect_get_namespaced_pod_exec(
                     name=pod,
@@ -576,9 +576,7 @@ class KubernetesBaseConnector(BaseConnector, ABC):
                     tty=False,
                     _preload_content=not capture_output,
                 ),
-            ),
-            timeout=timeout,
-        )
+            )
         if capture_output:
             with io.StringIO() as out_buffer, io.StringIO() as err_buffer:
                 async with result as response:
@@ -871,15 +869,13 @@ class KubernetesConnector(KubernetesBaseConnector):
                         if stateful_objects := [
                             obj for obj in self.k8s_objects[f] if hasattr(obj, "status")
                         ]:
-                            await asyncio.wait_for(
-                                asyncio.gather(
+                            async with asyncio.timeout(self.timeout):
+                                await asyncio.gather(
                                     *(
                                         asyncio.create_task(self._wait(obj))
                                         for obj in stateful_objects
                                     )
-                                ),
-                                timeout=self.timeout,
-                            )
+                                )
                     if logger.isEnabledFor(logging.DEBUG):
                         logger.debug(f"COMPLETED deployment of {f}")
             except Exception as e:

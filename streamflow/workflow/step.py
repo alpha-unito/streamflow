@@ -13,9 +13,7 @@ from collections.abc import (
 )
 from functools import cmp_to_key
 from types import ModuleType
-from typing import Any, cast
-
-from typing_extensions import Self
+from typing import Any, Self, cast
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig
@@ -725,7 +723,7 @@ class ExecuteStep(BaseStep):
         self, job: Job, connectors: MutableMapping[str, Connector]
     ) -> None:
         command_task = asyncio.create_task(self.command.execute(job))
-        output_tasks = (
+        output_tasks = [
             asyncio.create_task(
                 self._retrieve_output(
                     job=job,
@@ -736,7 +734,7 @@ class ExecuteStep(BaseStep):
                 )
             )
             for output_name, output_port in self.output_ports.items()
-        )
+        ]
         if (
             command_output := await command_task
         ).status == Status.COMPLETED and not self.terminated:

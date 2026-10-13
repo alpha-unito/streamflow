@@ -6,9 +6,7 @@ import posixpath
 import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, AsyncContextManager, cast
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, AsyncContextManager, Self, cast
 
 from streamflow.core import utils
 from streamflow.core.config import Config

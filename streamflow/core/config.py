@@ -4,10 +4,9 @@ import asyncio
 import json
 import posixpath
 from collections.abc import MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from referencing import Registry, Resource
-from typing_extensions import Self
 
 from streamflow.core.exception import WorkflowDefinitionException
 

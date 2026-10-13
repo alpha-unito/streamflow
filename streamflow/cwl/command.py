@@ -11,12 +11,11 @@ from asyncio.subprocess import STDOUT
 from collections.abc import MutableMapping, MutableSequence, Sequence
 from decimal import Decimal
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import cwl_utils.types
 from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
-from typing_extensions import Self
 
 from streamflow.core.data import DataLocation
 from streamflow.core.deployment import Connector
