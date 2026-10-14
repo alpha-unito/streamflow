@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dev Dependencies
 
 - Bump mypy from 2.3.1 to 2.4.0 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157))
+- Bump types-jsonschema from 4.26.0.20260518 to 4.26.0.20261006 ([#1167](https://github.com/alpha-unito/streamflow/pull/1167))
 
 ## [0.2.0rc3] - 2026-09-19
 
