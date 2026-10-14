@@ -6,9 +6,7 @@ import os
 import posixpath
 from collections.abc import Iterable, MutableMapping, MutableSequence, MutableSet
 from pathlib import PurePath
-from typing import TYPE_CHECKING, Any, cast
-
-from typing_extensions import Self
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from streamflow.core import utils
 from streamflow.core.config import BindingConfig

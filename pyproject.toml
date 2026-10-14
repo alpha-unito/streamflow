@@ -9,7 +9,7 @@ authors = [
 ]
 description = "StreamFlow framework"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "LGPL-3.0-or-later"}
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -20,7 +20,6 @@ classifiers = [
     "Operating System :: MacOS",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -178,7 +177,7 @@ exclude = "streamflow/cwl/antlr"
 [tool.ruff]
 exclude = ["streamflow/cwl/antlr"]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "B", "I"]

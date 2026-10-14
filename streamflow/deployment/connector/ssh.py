@@ -121,10 +121,10 @@ class SSHContext:
                 self._connecting = True
                 try:
                     self._ssh_connection = await self._get_connection(self._config)
-                except (ConnectionError, asyncssh.Error, asyncio.TimeoutError) as err:
+                except (ConnectionError, asyncssh.Error, TimeoutError) as err:
                     await self.close()
-                    if isinstance(err, asyncio.TimeoutError):
-                        raise asyncio.TimeoutError(
+                    if isinstance(err, TimeoutError):
+                        raise TimeoutError(
                             f"SSH connection to {self.get_hostname()} failed: connection timed out"
                         )
                     else:
@@ -221,7 +221,7 @@ class SSHContextManager:
                             ConnectionError,
                             ConnectionLost,
                             DisconnectError,
-                            asyncio.TimeoutError,
+                            TimeoutError,
                         ) as err:
                             if logger.isEnabledFor(logging.WARNING):
                                 logger.warning(

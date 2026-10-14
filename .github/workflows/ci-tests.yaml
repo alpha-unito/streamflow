@@ -45,7 +45,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04" ]
-        python: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
+        python: [ "3.11", "3.12", "3.13", "3.14" ]
         version: [ "v1.0", "v1.1", "v1.2", "v1.3" ]
         docker: [ "docker" ]
         include:
@@ -173,7 +173,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04" ]
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v7
@@ -204,7 +204,7 @@ jobs:
         run: uv sync --locked --no-dev --group docs --group test
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "43cc296523f6831c3af86feed4c27ec583dbf0ab07f1a66b3a58466c25d3bb79"
+          CHECKSUM: "d460dad4108977ef13f75e0ebc929a66d01c1799d2243491b5fac629c2b2c708"
         run: |
           cd docs
           HASH="$(uv run --no-sync make checksum | tail -n1)"
@@ -290,7 +290,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-24.04" ]
-        python: [ "3.10", "3.11", "3.12", "3.13", "3.14" ]
+        python: [ "3.11", "3.12", "3.13", "3.14" ]
         include:
           - on: "macos-15-intel"
             python: "3.14"

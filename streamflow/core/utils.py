@@ -197,7 +197,7 @@ def get_class_from_name(name: str) -> type:
 def get_date_from_ns(timestamp: int) -> str:
     base = datetime.datetime(1970, 1, 1)
     delta = datetime.timedelta(microseconds=round(timestamp / 1000))
-    return (base + delta).replace(tzinfo=datetime.timezone.utc).isoformat()
+    return (base + delta).replace(tzinfo=datetime.UTC).isoformat()
 
 
 def get_entity_ids(
@@ -356,10 +356,12 @@ async def run_in_subprocess(
         ),
     )
     if capture_output:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        async with asyncio.timeout(timeout):
+            stdout, _ = await proc.communicate()
         return stdout.decode().strip(), proc.returncode
     else:
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
+        async with asyncio.timeout(timeout):
+            await proc.wait()
         return None
 
 

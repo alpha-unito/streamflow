@@ -3,9 +3,7 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any, cast
-
-from typing_extensions import Self
+from typing import Any, Self, cast
 
 from streamflow.core import utils
 from streamflow.core.deployment import Connector, ExecutionLocation, Target

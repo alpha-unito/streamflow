@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import MutableMapping, MutableSet
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, AsyncContextManager, cast
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Self, cast
 
 from rdflib import Graph
-from typing_extensions import Self
 
 from streamflow.core.data import DataLocation
 from streamflow.core.persistence import Database, DatabaseLoadingContext

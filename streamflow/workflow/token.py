@@ -4,9 +4,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any
-
-from typing_extensions import Self
+from typing import Any, Self
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType

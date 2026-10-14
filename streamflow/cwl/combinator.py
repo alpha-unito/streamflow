@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterable, MutableMapping, MutableSequence
-from typing import Any, cast
-
-from typing_extensions import Self
+from typing import Any, Self, cast
 
 from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.utils import get_tag

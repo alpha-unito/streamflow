@@ -3,12 +3,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import cwl_utils.file_formats
 import cwl_utils.types
 from schema_salad.exceptions import ValidationException
-from typing_extensions import Self
 
 from streamflow.core.deployment import Connector, Target
 from streamflow.core.exception import (

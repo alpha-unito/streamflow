@@ -3,10 +3,9 @@ from __future__ import annotations
 import math
 import os
 from collections.abc import MutableMapping, MutableSequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 import cwl_utils.types
-from typing_extensions import Self
 
 from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement, Storage

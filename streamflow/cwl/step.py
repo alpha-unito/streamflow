@@ -5,10 +5,9 @@ import logging
 import urllib.parse
 from abc import ABC
 from collections.abc import MutableMapping, MutableSequence
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import cwl_utils.types
-from typing_extensions import Self
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType

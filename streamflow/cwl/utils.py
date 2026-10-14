@@ -10,7 +10,7 @@ from enum import Enum
 from pathlib import PurePath
 from shutil import which
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, Self, cast
 
 import cwl_utils.expression
 import cwl_utils.parser
@@ -18,7 +18,7 @@ import cwl_utils.parser.utils
 import cwl_utils.types
 from cachebox import FIFOCache, cached
 from cwl_utils.parser.cwl_v1_2_utils import CONTENT_LIMIT
-from typing_extensions import Self, TypeIs
+from typing_extensions import TypeIs
 
 from streamflow.core.context import StreamFlowContext
 from streamflow.core.data import DataLocation, DataType

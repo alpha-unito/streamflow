@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Drop support for Python 3.10 ([#1165](https://github.com/alpha-unito/streamflow/pull/1165))
+
 ### Changed
 
 - Replace PNG logo with white SVG variant in docs ([#1154](https://github.com/alpha-unito/streamflow/pull/1154))
