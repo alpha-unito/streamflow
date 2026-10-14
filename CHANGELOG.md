@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump mypy from 2.3.1 to 2.4.0 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157))
 
+### Fixed
+
+- Fix Slurm job exit code retrieval ([#1160](https://github.com/alpha-unito/streamflow/pull/1160))
+
 ## [0.2.0rc3] - 2026-09-19
 
 ### Breaking Changes
