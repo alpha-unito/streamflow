@@ -695,11 +695,30 @@ class SlurmConnector(QueueManagerConnector):
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
-        stdout, _ = await super().run(
+        stdout, returncode = await super().run(
             location=location,
             command=command,
             capture_output=True,
         )
+        if returncode == 3:
+            command = [
+                "scontrol",
+                "show",
+                "-o",
+                "job",
+                job_id,
+                "|",
+                "sed",
+                "-n",
+                "'s/^.*StdOut=\\([^[:space:]]*\\).*/\\1/p'",
+            ]
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Running command {' '.join(command)}")
+            stdout, _ = await super().run(
+                location=location,
+                command=command,
+                capture_output=True,
+            )
         if output_path := stdout.strip():
             stdout, _ = await super().run(
                 location=location, command=["cat", output_path], capture_output=True
@@ -710,18 +729,43 @@ class SlurmConnector(QueueManagerConnector):
 
     async def _get_returncode(self, job_id: str, location: ExecutionLocation) -> int:
         command = [
-            f'( code=$(sacct -j {job_id} -X -n -P -o ExitCode); '
-            'echo "${code%%:*}" )',
+            "sacct",
+            "-j",
+            job_id,
+            "-X",
+            "-n",
+            "-P",
+            "-o",
+            "ExitCode",
         ]
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f"Running command {' '.join(command)}")
-        stdout, _ = await super().run(
+        stdout, returncode = await super().run(
             location=location,
             command=command,
             capture_output=True,
         )
+        if returncode == 3:
+            command = [
+                "scontrol",
+                "show",
+                "-o",
+                "job",
+                job_id,
+                "|",
+                "sed",
+                "-n",
+                "'s/^.*ExitCode=\\([0-9]\\+\\):.*/\\1/p'",
+            ]
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Running command {' '.join(command)}")
+            stdout, _ = await super().run(
+                location=location,
+                command=command,
+                capture_output=True,
+            )
         try:
-            return int(stdout.strip())
+            return int(stdout.strip().split(":", maxsplit=1)[0])
         except ValueError:
             raise WorkflowExecutionException(
                 f"Error while retrieving return code for job {job_id}: {stdout.strip()}"
