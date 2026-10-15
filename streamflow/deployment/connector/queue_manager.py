@@ -745,7 +745,7 @@ class SlurmConnector(QueueManagerConnector):
             command=command,
             capture_output=True,
         )
-        if returncode == 3:
+        if returncode != 0:
             command = [
                 "scontrol",
                 "show",
