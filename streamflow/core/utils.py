@@ -295,11 +295,7 @@ async def get_remote_to_remote_write_command(
 
 
 def get_tag(tokens: Iterable[Token]) -> str:
-    output_tag = "0"
-    for tag in [t.tag for t in tokens]:
-        if len(tag) > len(output_tag):
-            output_tag = tag
-    return output_tag
+    return max((t.tag for t in tokens), key=len, default="0")
 
 
 def make_future(obj: T) -> asyncio.Future[T]:
