@@ -45,7 +45,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-26.04" ]
-        python: [ "3.11", "3.12", "3.13", "3.14" ]
+        python: [ "3.11", "3.12", "3.13", "3.14", "3.15" ]
         version: [ "v1.0", "v1.1", "v1.2", "v1.3" ]
         docker: [ "docker" ]
         include:
@@ -65,16 +65,16 @@ jobs:
             commit: "d2501954c0f832c13a7d6883289f242446aa962d"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
             on: "ubuntu-26.04"
-            python: "3.14"
+            python: "3.15"
             version: "v1.3"
           - docker: "kubernetes"
             commit: "d2501954c0f832c13a7d6883289f242446aa962d"
             exclude: "docker_entrypoint,modify_file_content"
             on: "ubuntu-26.04"
-            python: "3.14"
+            python: "3.15"
             version: "v1.3"
           - on: "macos-26-intel"
-            python: "3.14"
+            python: "3.15"
             commit: "d2501954c0f832c13a7d6883289f242446aa962d"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
@@ -90,7 +90,7 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
-          version: "0.9.16"
+          version: "0.13.7"
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -104,18 +104,18 @@ jobs:
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v3
         with:
-          apptainer-version: 1.4.2
+          apptainer-version: 1.5.5
         if: ${{ matrix.docker == 'singularity' }}
       - name: "Install KinD"
         uses: helm/kind-action@v1.15.2
         with:
           config: .github/kind/config.yaml
-          kubectl_version: v1.35.0
-          version: v0.31.0
+          kubectl_version: v1.37.2
+          version: v0.33.0
         if: ${{ matrix.docker == 'kubernetes' }}
       - name: "Configure Calico on KinD"
         run: |
-          kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+          kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ matrix.docker == 'kubernetes' }}
       - name: "Install dependencies on RISC-V"
@@ -156,7 +156,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           build-args: |
-            HELM_VERSION=v4.1.1
+            HELM_VERSION=v4.3.1
           load: true
           tags: alphaunito/streamflow:latest
       - name: "Run test with Docker"
@@ -173,7 +173,7 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-26.04" ]
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
     runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v7
@@ -181,7 +181,7 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
-          version: "0.9.16"
+          version: "0.13.7"
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -190,16 +190,16 @@ jobs:
         uses: helm/kind-action@v1.15.2
         with:
           config: .github/kind/config.yaml
-          kubectl_version: v1.35.0
-          version: v0.31.0
+          kubectl_version: v1.37.2
+          version: v0.33.0
       - name: "Configure Calico on KinD"
         run: |
-          kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+          kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
       - name: "Install Helm"
         uses: azure/setup-helm@v5
         with:
-          version: v4.1.1
+          version: v4.3.1
       - name: "Install Python Dependencies"
         run: uv sync --locked --no-dev --group docs --group test
       - name: "Build documentation and check for consistency"
@@ -279,8 +279,8 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: "3.14"
-          version: "0.9.16"
+          python-version: "3.15"
+          version: "0.13.7"
       - name: "Install Tox"
         run: uv tool install tox --with tox-uv
       - name: "Run StreamFlow static analysis via Tox"
@@ -290,10 +290,10 @@ jobs:
     strategy:
       matrix:
         on: [ "ubuntu-26.04" ]
-        python: [ "3.11", "3.12", "3.13", "3.14" ]
+        python: [ "3.11", "3.12", "3.13", "3.14", "3.15" ]
         include:
           - on: "macos-26-intel"
-            python: "3.14"
+            python: "3.15"
     runs-on: ${{ matrix.on }}
     env:
       TOXENV: ${{ format('py{0}-unit', matrix.python) }}
@@ -303,7 +303,7 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python }}
-          version: "0.9.16"
+          version: "0.13.7"
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
@@ -320,18 +320,18 @@ jobs:
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v3
         with:
-          apptainer-version: 1.4.2
+          apptainer-version: 1.5.5
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install KinD"
         uses: helm/kind-action@v1.15.2
         with:
           config: .github/kind/config.yaml
-          kubectl_version: v1.35.0
-          version: v0.31.0
+          kubectl_version: v1.37.2
+          version: v0.33.0
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Configure Calico on KinD"
         run: |
-          kubectl apply -f https://docs.projectcalico.org/v3.25/manifests/calico.yaml
+          kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.33.0/manifests/calico.yaml
           kubectl -n kube-system set env daemonset/calico-node FELIX_IGNORELOOSERPF=true
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Tox"
