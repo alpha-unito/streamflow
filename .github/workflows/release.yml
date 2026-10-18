@@ -23,7 +23,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: "3.14"
+          python-version: "3.15"
           version: "0.9.16"
       - name: "Install StreamFlow"
         run: uv sync --locked --no-dev
@@ -54,7 +54,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: "3.14"
+          python-version: "3.15"
           version: "0.9.16"
       - name: "Install StreamFlow"
         run: uv sync --locked --no-dev
@@ -92,7 +92,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: "3.14"
+          python-version: "3.15"
           version: "0.9.16"
       - name: "Install StreamFlow"
         run: uv sync --locked --no-dev
