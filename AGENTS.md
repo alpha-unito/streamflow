@@ -1,6 +1,6 @@
 # StreamFlow Agent Guidelines
 
-StreamFlow is a container-native Workflow Management System implementing CWL (v1.0-v1.3) for multi-cloud/HPC hybrid workflow executions. Written in Python 3.11-3.14. Package manager: **`uv`**.
+StreamFlow is a container-native Workflow Management System implementing CWL (v1.0-v1.3) for multi-cloud/HPC hybrid workflow executions. Written in Python 3.11-3.15. Package manager: **`uv`**.
 
 ## Mandatory Rules
 
