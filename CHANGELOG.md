@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Dev Dependencies
 
+- Bump black from 26.5.1 to 26.10.1 ([#1170](https://github.com/alpha-unito/streamflow/pull/1170))
 - Bump mypy from 2.3.1 to 2.4.0 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157))
 
 ### Fixed
