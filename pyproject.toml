@@ -85,7 +85,7 @@ docs = [
     "sphinxcontrib-bibtex==2.7.0"
 ]
 lint = [
-    "black==26.5.1",
+    "black==26.10.1",
     "codespell==2.4.3",
     "pyupgrade==3.21.2",
     "ruff==0.16.7"
