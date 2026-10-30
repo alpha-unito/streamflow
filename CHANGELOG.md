@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump asyncssh from 2.24.0 to 2.24.1 ([#1163](https://github.com/alpha-unito/streamflow/pull/1163))
 - Bump cachebox from 6.2.7 to 6.2.8 ([#1166](https://github.com/alpha-unito/streamflow/pull/1166))
 - Bump certifi from 2025.11.12 to 2026.10.19 ([#1171](https://github.com/alpha-unito/streamflow/pull/1171))
+- Bump importlib-metadata from 9.0.1 to 10.1.0 ([#1172](https://github.com/alpha-unito/streamflow/pull/1172))
 - Bump multidict from 6.7.0 to 6.9.1 ([#1161](https://github.com/alpha-unito/streamflow/pull/1161))
 - Bump plotly from 7.0.0 to 7.1.0 ([#1150](https://github.com/alpha-unito/streamflow/pull/1150))
 - Bump urllib3 from 2.7.0 to 2.8.0 ([#1155](https://github.com/alpha-unito/streamflow/pull/1155))
