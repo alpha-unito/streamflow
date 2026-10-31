@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump certifi from 2025.11.12 to 2026.10.19 ([#1171](https://github.com/alpha-unito/streamflow/pull/1171))
 - Bump importlib-metadata from 9.0.1 to 10.1.0 ([#1172](https://github.com/alpha-unito/streamflow/pull/1172))
 - Bump multidict from 6.7.0 to 6.9.1 ([#1161](https://github.com/alpha-unito/streamflow/pull/1161))
+- Bump pandas from 2.3.3 to 3.1.0 ([#1174](https://github.com/alpha-unito/streamflow/pull/1174))
 - Bump plotly from 7.0.0 to 7.1.0 ([#1150](https://github.com/alpha-unito/streamflow/pull/1150))
 - Bump urllib3 from 2.7.0 to 2.8.0 ([#1155](https://github.com/alpha-unito/streamflow/pull/1155))
 
