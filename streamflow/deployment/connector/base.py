@@ -551,6 +551,7 @@ class BaseConnector(Connector, FutureAware, ABC):
             command=[command_str],
             capture_output=capture_output,
             timeout=timeout,
+            environment=os.environ if job_name is None else None,
         )
 
     async def undeploy(self, external: bool) -> None:
