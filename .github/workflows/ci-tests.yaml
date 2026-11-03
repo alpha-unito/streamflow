@@ -102,7 +102,7 @@ jobs:
       - uses: docker/setup-qemu-action@v4
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
-        uses: eWaterCycle/setup-apptainer@v2
+        uses: eWaterCycle/setup-apptainer@v3
         with:
           apptainer-version: 1.4.2
         if: ${{ matrix.docker == 'singularity' }}
@@ -318,7 +318,7 @@ jobs:
       - uses: docker/setup-qemu-action@v4
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
-        uses: eWaterCycle/setup-apptainer@v2
+        uses: eWaterCycle/setup-apptainer@v3
         with:
           apptainer-version: 1.4.2
         if: ${{ startsWith(matrix.on, 'ubuntu-') }}
