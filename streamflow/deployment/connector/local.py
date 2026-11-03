@@ -194,6 +194,7 @@ class LocalConnector(BaseConnector):
                     else shlex.quote(command)
                 ),
             ],
+            environment=os.environ if job_name is None else None,
             capture_output=capture_output,
             timeout=timeout,
         )
