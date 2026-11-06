@@ -47,10 +47,7 @@ def _check_status(
 
 def _file_checksum_local(path: str) -> str:
     with open(path, "rb") as f:
-        sha1_checksum = hashlib.new("sha1", usedforsecurity=False)
-        while data := f.read(2**16):
-            sha1_checksum.update(data)
-        return sha1_checksum.hexdigest()
+        return hashlib.file_digest(f, "sha1").hexdigest()
 
 
 def _get_filename_from_response(response: ClientResponse, url: str) -> str:
