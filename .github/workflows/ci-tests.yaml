@@ -12,7 +12,7 @@ concurrency:
 jobs:
   check-changelog:
     name: "Enforce CHANGELOG updates"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout
@@ -30,7 +30,7 @@ jobs:
           fi
   code-ql-check:
     name: "StreamFlow CodeQL check"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       security-events: write
     steps:
@@ -44,7 +44,7 @@ jobs:
     name: "CWL conformance tests"
     strategy:
       matrix:
-        on: [ "ubuntu-24.04" ]
+        on: [ "ubuntu-26.04" ]
         python: [ "3.11", "3.12", "3.13", "3.14" ]
         version: [ "v1.0", "v1.1", "v1.2", "v1.3" ]
         docker: [ "docker" ]
@@ -64,16 +64,16 @@ jobs:
           - docker: "singularity"
             commit: "d2501954c0f832c13a7d6883289f242446aa962d"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
-            on: "ubuntu-24.04"
+            on: "ubuntu-26.04"
             python: "3.14"
             version: "v1.3"
           - docker: "kubernetes"
             commit: "d2501954c0f832c13a7d6883289f242446aa962d"
             exclude: "docker_entrypoint,modify_file_content"
-            on: "ubuntu-24.04"
+            on: "ubuntu-26.04"
             python: "3.14"
             version: "v1.3"
-          - on: "macos-15-intel"
+          - on: "macos-26-intel"
             python: "3.14"
             commit: "d2501954c0f832c13a7d6883289f242446aa962d"
             exclude: "docker_entrypoint,modify_file_content"
@@ -147,7 +147,7 @@ jobs:
           if-no-files-found: error
   docker-image:
     name: "StreamFlow Docker image tests"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -172,7 +172,7 @@ jobs:
     name: "Build and Test Sphinx documentation"
     strategy:
       matrix:
-        on: [ "ubuntu-24.04" ]
+        on: [ "ubuntu-26.04" ]
         python: ["3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.on }}
     steps:
@@ -230,7 +230,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
   test-flux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       packages: read
     strategy:
@@ -268,7 +268,7 @@ jobs:
           flux start streamflow run streamflow.yml
   static-checks:
     name: "StreamFlow static checks"
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       matrix:
         step: [ "bandit", "lint" ]
@@ -289,10 +289,10 @@ jobs:
     name: "StreamFlow unit tests"
     strategy:
       matrix:
-        on: [ "ubuntu-24.04" ]
+        on: [ "ubuntu-26.04" ]
         python: [ "3.11", "3.12", "3.13", "3.14" ]
         include:
-          - on: "macos-15-intel"
+          - on: "macos-26-intel"
             python: "3.14"
     runs-on: ${{ matrix.on }}
     env:
@@ -356,7 +356,7 @@ jobs:
   upload-to-codecov:
     name: "Codecov report upload"
     needs: ["cwl-conformance", "documentation", "unit-tests"]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - name: "Download conformance tests artifacts"
