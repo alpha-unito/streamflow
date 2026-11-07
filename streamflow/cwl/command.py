@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import posixpath
 import shlex
 import time
@@ -18,7 +19,7 @@ from ruamel.yaml import RoundTripRepresenter
 from ruamel.yaml.scalarfloat import ScalarFloat
 
 from streamflow.core.data import DataLocation
-from streamflow.core.deployment import Connector
+from streamflow.core.deployment import Connector, ExecutionLocation
 from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
@@ -63,6 +64,27 @@ from streamflow.workflow.command import (
 )
 from streamflow.workflow.step import ExecuteStep
 from streamflow.workflow.utils import get_job_token, get_token_value
+
+
+def set_local_env_path(
+    locations: MutableSequence[ExecutionLocation],
+) -> None:
+    """
+    Set the ``PATH`` of local execution locations to the parent environment.
+
+    This traverses the stacked execution locations and sets the ``PATH`` of the
+    local ones, so that host-side commands can be resolved.
+
+    :param locations: Execution locations to check and update
+    """
+    if path := os.environ.get("PATH"):
+        while locations:
+            for location in locations:
+                if location.local and "PATH" not in location.environment:
+                    location.environment["PATH"] = path
+            locations = [
+                loc.wraps for loc in locations if loc.stacked and loc.wraps is not None
+            ]
 
 
 def _adjust_cwl_output(
@@ -836,6 +858,7 @@ class CWLCommand(TokenizedCommand):
         # Get execution target
         connector = self.step.workflow.context.scheduler.get_connector(job.name)
         locations = self.step.workflow.context.scheduler.get_locations(job.name)
+        set_local_env_path(locations)
         cmd_string = " \\\n\t".join(
             ["/bin/sh", "-c", '"{cmd}"'.format(cmd=" ".join(cmd))]
             if self.is_shell_command

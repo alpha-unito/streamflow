@@ -343,10 +343,11 @@ async def run_in_subprocess(
     command: MutableSequence[str],
     capture_output: bool,
     timeout: int | None,
+    environment: MutableMapping[str, str] | None = None,
 ) -> tuple[str, int] | None:
     proc = await asyncio.create_subprocess_exec(
         *shlex.split(" ".join(command)),
-        env=os.environ | location.environment,
+        env=(environment or {}) | location.environment,
         stdin=None,
         stdout=(
             asyncio.subprocess.PIPE if capture_output else asyncio.subprocess.DEVNULL

@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix environment of `CommandLineTool` ([#1181](https://github.com/alpha-unito/streamflow/pull/1181))
 - Fix Slurm job exit code retrieval ([#1160](https://github.com/alpha-unito/streamflow/pull/1160))
 
 ## [0.2.0rc3] - 2026-09-19
