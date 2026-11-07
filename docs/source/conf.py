@@ -23,7 +23,7 @@ from urllib.parse import urljoin
 import streamflow.config.schema
 
 project = "StreamFlow"
-copyright = "2023, Alpha Research Group, Computer Science Dept., University of Torino"
+copyright = "2026, Alpha Research Group, Computer Science Dept., University of Torino"
 author = "Iacopo Colonnelli"
 version = "0.2"
 release = "0.2.0"
