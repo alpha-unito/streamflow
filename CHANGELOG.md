@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace PNG logo with white SVG variant in docs ([#1154](https://github.com/alpha-unito/streamflow/pull/1154))
 - Update Workflows Community info ([#1156](https://github.com/alpha-unito/streamflow/pull/1156))
 - Improve local SHA1 checksum computation ([#1184](https://github.com/alpha-unito/streamflow/pull/1184)))
+- Update CI runners to newer Ubuntu images ([#1183](https://github.com/alpha-unito/streamflow/pull/1183))
 
 ### Dependencies
 
