@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bump aiohttp from 3.14.3 to 3.14.5 ([#1169](https://github.com/alpha-unito/streamflow/pull/1169), [#1178](https://github.com/alpha-unito/streamflow/pull/1178))
 - Bump asyncssh from 2.24.0 to 2.24.1 ([#1163](https://github.com/alpha-unito/streamflow/pull/1163))
-- Bump cachebox from 6.2.7 to 6.2.8 ([#1166](https://github.com/alpha-unito/streamflow/pull/1166))
+- Bump cachebox from 6.2.7 to 6.2.10 ([#1166](https://github.com/alpha-unito/streamflow/pull/1166), [#1187](https://github.com/alpha-unito/streamflow/pull/1187))
 - Bump certifi from 2025.11.12 to 2026.10.19 ([#1171](https://github.com/alpha-unito/streamflow/pull/1171))
 - Bump cwl-utils from 0.42 to 0.46 ([#1188](https://github.com/alpha-unito/streamflow/pull/1188)))
 - Bump importlib-metadata from 9.0.1 to 10.1.0 ([#1172](https://github.com/alpha-unito/streamflow/pull/1172))
