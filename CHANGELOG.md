@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump github/codeql-action from 4 to 4.37.3 ([#1123](https://github.com/alpha-unito/streamflow/pull/1123))
 - Bump helm/kind-action from 1.15.0 to 1.15.2 ([#1159](https://github.com/alpha-unito/streamflow/pull/1159), [#1182](https://github.com/alpha-unito/streamflow/pull/1182))
 - Bump mypy from 2.3.1 to 2.4.0 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157))
+- Bump pytest from 9.1.1 to 9.2.0 ([#1186](https://github.com/alpha-unito/streamflow/pull/1186))
 - Bump sphinx from 8.1.3 to 9.0.4 ([#1180](https://github.com/alpha-unito/streamflow/pull/1180))
 - Bump types-jsonschema from 4.26.0.20260518 to 4.26.0.20261006 ([#1167](https://github.com/alpha-unito/streamflow/pull/1167))
 
