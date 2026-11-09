@@ -569,7 +569,7 @@ class RunCrateProvenanceManager(ProvenanceManager, ABC):
     ) -> None:
         for tag, property_value in property_values.items():
             if isinstance(property_value["exampleOfWork"], MutableSequence):
-                params = [p for p in property_value["exampleOfWork"]]
+                params = [*property_value["exampleOfWork"]]
             else:
                 params = [property_value["exampleOfWork"]]
             for param in params:

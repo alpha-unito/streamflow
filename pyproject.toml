@@ -87,7 +87,7 @@ docs = [
 lint = [
     "black==26.10.1",
     "codespell==2.4.3",
-    "pyupgrade==3.21.2",
+    "pyupgrade==3.22.0",
     "ruff==0.16.7"
 ]
 test = [
