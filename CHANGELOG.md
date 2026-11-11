@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump eWaterCycle/setup-apptainer from 2 to 3 ([#1177](https://github.com/alpha-unito/streamflow/pull/1177))
 - Bump github/codeql-action from 4 to 4.39.3 ([#1123](https://github.com/alpha-unito/streamflow/pull/1123), [#1190](https://github.com/alpha-unito/streamflow/pull/1190))
 - Bump helm/kind-action from 1.15.0 to 1.15.2 ([#1159](https://github.com/alpha-unito/streamflow/pull/1159), [#1182](https://github.com/alpha-unito/streamflow/pull/1182))
-- Bump mypy from 2.3.1 to 2.4.0 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157))
+- Bump mypy from 2.3.1 to 2.4.1 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157), [#1194](https://github.com/alpha-unito/streamflow/pull/1194))
 - Bump pandas-stubs from 2.3.3.260113 to 3.1.0.261029 ([#1185](https://github.com/alpha-unito/streamflow/pull/1185))
 - Bump pytest from 9.1.1 to 9.2.0 ([#1186](https://github.com/alpha-unito/streamflow/pull/1186))
 - Bump sphinx from 8.1.3 to 9.0.4 ([#1180](https://github.com/alpha-unito/streamflow/pull/1180))

@@ -99,7 +99,7 @@ test = [
     "pytest-xdist==3.8.0"
 ]
 typing = [
-    "mypy==2.4.0",
+    "mypy==2.4.1",
     "pandas-stubs==3.1.0.261029",
     "types-antlr4-python3-runtime==4.13.0.20260807",
     "types-cachetools==7.0.0.20260713",
