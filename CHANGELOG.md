@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dev Dependencies
 
 - Bump black from 26.5.1 to 26.10.1 ([#1170](https://github.com/alpha-unito/streamflow/pull/1170))
+- Bump cwltest from 2.7.20260814150058 to 2.7.20261106145043 ([#1196](https://github.com/alpha-unito/streamflow/pull/1196))
 - Bump docker/login-action from 4 to 4.8.0 ([#1124](https://github.com/alpha-unito/streamflow/pull/1124), [#1176](https://github.com/alpha-unito/streamflow/pull/1176), [#1189](https://github.com/alpha-unito/streamflow/pull/1189))
 - Bump eWaterCycle/setup-apptainer from 2 to 3 ([#1177](https://github.com/alpha-unito/streamflow/pull/1177))
 - Bump github/codeql-action from 4 to 4.39.3 ([#1123](https://github.com/alpha-unito/streamflow/pull/1123), [#1190](https://github.com/alpha-unito/streamflow/pull/1190))
