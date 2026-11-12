@@ -511,21 +511,22 @@ class SSHConnector(BaseConnector):
             async with self._get_ssh_client_process(
                 location=location,
                 command="nproc && "
-                "free | grep Mem | awk '{print $2}' && "
+                "cat /proc/meminfo | grep MemTotal | awk '{print $2}' && "
                 "df -aT | tail -n +2 | awk 'NF == 1 {device = $1; getline; $0 = device $0} {print $7, $2, $5}'",
                 stderr=asyncio.subprocess.STDOUT,
             ) as proc:
                 result = await proc.wait()
                 if result.returncode == 0:
-                    cores, memory, *dir_info_list = str(result.stdout.strip()).split(
-                        "\n"
-                    )
+                    stdout_lines = str(result.stdout.strip()).split("\n")
                     try:
-                        self.hardware[location] = Hardware(float(cores), float(memory))
+                        cores, memory, *dir_info_list = stdout_lines
+                        self.hardware[location] = Hardware(
+                            float(cores), float(memory) / 2**10
+                        )
                     except ValueError:
                         raise WorkflowExecutionException(
                             f"Impossible to retrieve available hardware for location {self.deployment_name}. "
-                            f"An error message occurred: {cores}"
+                            f"An error message occurred: {stdout_lines}"
                         ) from None
                     for line in dir_info_list:
                         try:
