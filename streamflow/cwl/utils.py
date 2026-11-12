@@ -382,21 +382,25 @@ def build_context(
     hardware: Hardware | None = None,
     self: Token | None = None,
 ) -> cwl_utils.types.CWLParameterContext:
-    context = cwl_utils.types.CWLParameterContext(
+    runtime = cwl_utils.types.CWLRuntimeParameterContext()
+    if output_directory:
+        runtime["outdir"] = output_directory
+    if tmp_directory:
+        runtime["tmpdir"] = tmp_directory
+    if hardware:
+        runtime.update(
+            {
+                "cores": hardware.cores,
+                "ram": hardware.memory,
+                "tmpdirSize": hardware.storage["__tmpdir__"].size,
+                "outdirSize": hardware.storage["__outdir__"].size,
+            }
+        )
+    return cwl_utils.types.CWLParameterContext(
         inputs={name: get_token_value(token) for name, token in inputs.items()},
         self=get_token_value(self) if self is not None else None,
-        runtime=cwl_utils.types.CWLRuntimeParameterContext(),
+        runtime=runtime,
     )
-    if output_directory:
-        context["runtime"]["outdir"] = output_directory
-    if tmp_directory:
-        context["runtime"]["tmpdir"] = tmp_directory
-    if hardware:
-        context["runtime"]["cores"] = hardware.cores
-        context["runtime"]["ram"] = hardware.memory
-        context["runtime"]["tmpdirSize"] = hardware.storage["__tmpdir__"].size
-        context["runtime"]["outdirSize"] = hardware.storage["__outdir__"].size
-    return context
 
 
 async def _process_file_token(
