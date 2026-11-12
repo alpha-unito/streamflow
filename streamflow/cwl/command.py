@@ -63,7 +63,7 @@ from streamflow.workflow.command import (
     TokenizedCommand,
 )
 from streamflow.workflow.step import ExecuteStep
-from streamflow.workflow.utils import get_job_token, get_token_value
+from streamflow.workflow.utils import get_token_value
 
 
 def set_local_env_path(
@@ -879,9 +879,7 @@ class CWLCommand(TokenizedCommand):
                 )
             )
         # Persist command
-        job_token = get_job_token(
-            job.name, cast(ExecuteStep, self.step).get_job_port().token_list
-        )
+        job_token = cast(ExecuteStep, self.step).get_job_port().get_job_token(job.name)
         execution_id = await self.step.workflow.context.database.add_execution(
             step_id=self.step.persistent_id,
             job_token_id=job_token.persistent_id,
@@ -1313,9 +1311,7 @@ class CWLExpressionCommand(Command):
                 f"Evaluating expression for step {self.step.name} (job {job.name})"
             )
         # Persist command
-        job_token = get_job_token(
-            job.name, cast(ExecuteStep, self.step).get_job_port().token_list
-        )
+        job_token = cast(ExecuteStep, self.step).get_job_port().get_job_token(job.name)
         execution_id = await self.step.workflow.context.database.add_execution(
             step_id=self.step.persistent_id,
             job_token_id=job_token.persistent_id,

@@ -6,12 +6,10 @@ from collections.abc import Iterable, MutableMapping, MutableSequence
 from typing import Any
 
 from streamflow.config.config import WorkflowConfig
-from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import (
     IterationTerminationToken,
-    JobToken,
     ListToken,
     ObjectToken,
     TerminationToken,
@@ -86,12 +84,3 @@ def get_token_value(token: Token) -> Any:
         return {k: get_token_value(v) for k, v in token.value.items()}
     else:
         return token.value
-
-
-def get_job_token(job_name: str, token_list: MutableSequence[Token]) -> JobToken:
-    for token in token_list:
-        if isinstance(token, JobToken) and token.value.name == job_name:
-            return token
-    raise WorkflowExecutionException(
-        f"Impossible to find job {job_name} in token_list {token_list}"
-    )

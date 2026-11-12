@@ -266,10 +266,10 @@ async def test_cwl_execute_step(context: StreamFlowContext) -> None:
     executor = StreamFlowExecutor(workflow)
     await executor.run()
 
-    job_token = execute_step.get_input_port("__job__").token_list[0]
+    job_token = execute_step.get_job_port().token_list[0]
     await verify_dependency_tokens(
         token=job_token,
-        port=execute_step.get_input_port("__job__"),
+        port=execute_step.get_job_port(),
         context=context,
         expected_depender=[execute_step.get_output_port(out_port_name).token_list[0]],
         expected_dependee=[deploy_step.get_output_port().token_list[0], token_list[0]],
@@ -584,7 +584,7 @@ async def test_cwl_transfer_step(context: StreamFlowContext) -> None:
         token_list=token_list,
         port_name=port_name,
     )
-    job_token = transfer_step.get_input_port("__job__").token_list[0]
+    job_token = transfer_step.get_job_port().token_list[0]
     await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
     token_list.append(job_token)
     assert len(out_port.token_list) == 2
@@ -615,7 +615,7 @@ async def test_cwl_input_injector_step(context: StreamFlowContext) -> None:
         },
         token_list=token_list,
     )
-    job_token = injector.get_input_port("__job__").token_list[0]
+    job_token = injector.get_job_port().token_list[0]
     await context.scheduler.notify_status(job_token.value.name, Status.COMPLETED)
     token_list.append(job_token)
     assert len(out_port.token_list) == 2

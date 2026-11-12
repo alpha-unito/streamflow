@@ -24,7 +24,12 @@ from streamflow.main import build_context
 from streamflow.recovery import RollbackFailureManager
 from streamflow.workflow.combinator import LoopCombinator
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.step import GatherStep, LoopCombinatorStep, ScatterStep
+from streamflow.workflow.step import (
+    ExecuteStep,
+    GatherStep,
+    LoopCombinatorStep,
+    ScatterStep,
+)
 from streamflow.workflow.token import (
     FileToken,
     IterationTerminationToken,
@@ -229,7 +234,7 @@ async def test_execute(
         context=fault_tolerant_context,
         save_input_token=False,
     )
-    execute_steps = []
+    execute_steps: list[ExecuteStep] = []
     for i in range(num_of_steps):
         input_port = next(iter(input_ports.keys()))
         execute_steps.append(
@@ -266,7 +271,7 @@ async def test_execute(
             lambda t: t.value.name,
             filter(
                 lambda t: isinstance(t, JobToken),
-                step.get_input_port("__job__").token_list,
+                step.get_job_port().token_list,
             ),
         ):
             expected_failures = num_of_failures
@@ -356,9 +361,7 @@ async def test_exceed_max_retries_poison_pill(
     assert step.status == Status.FAILED
     for job_name in map(
         lambda t: t.value.name,
-        filter(
-            lambda t: isinstance(t, JobToken), step.get_input_port("__job__").token_list
-        ),
+        filter(lambda t: isinstance(t, JobToken), step.get_job_port().token_list),
     ):
         assert (
             cast(RollbackFailureManager, fault_tolerant_context.failure_manager)
@@ -642,7 +645,7 @@ async def test_scatter(fault_tolerant_context: StreamFlowContext) -> None:
         lambda t: t.value.name,
         filter(
             lambda t: isinstance(t, JobToken),
-            b_step.get_input_port("__job__").token_list,
+            b_step.get_job_port().token_list,
         ),
     ):
         assert (
@@ -744,7 +747,7 @@ async def test_loop(
         lambda t: t.value.name,
         filter(
             lambda t: isinstance(t, JobToken),
-            execute_step.get_input_port("__job__").token_list,
+            execute_step.get_job_port().token_list,
         ),
     ):
         attempts = 1  # every job starts from 1

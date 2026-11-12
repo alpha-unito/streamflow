@@ -43,7 +43,6 @@ from streamflow.workflow.step import (
     TransferStep,
 )
 from streamflow.workflow.token import IterationTerminationToken, ListToken
-from streamflow.workflow.utils import get_job_token
 
 
 async def _download_file(job: Job, url: str, context: StreamFlowContext) -> str:
@@ -331,9 +330,7 @@ class CWLExecuteStep(ExecuteStep):
                 job, command_output, connector, self._is_recoverable(job)
             )
         ) is not None:
-            job_token = get_job_token(
-                job.name, self.get_input_port("__job__").token_list
-            )
+            job_token = self.get_job_port().get_job_token(job.name)
             output_port.put(
                 await self._persist_token(
                     token=token,

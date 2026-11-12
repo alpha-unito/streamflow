@@ -24,7 +24,15 @@ from streamflow.workflow.port import (
     JobPort,
 )
 from streamflow.workflow.token import JobToken
-from streamflow.workflow.utils import get_job_token
+
+
+def _get_job_token(job_name: str, token_list: MutableSequence[JobToken]) -> JobToken:
+    try:
+        return next(token for token in token_list if token.value.name == job_name)
+    except StopIteration:
+        raise FailureHandlingException(
+            f"Impossible to find job {job_name} in token_list {token_list}"
+        )
 
 
 def _get_recovery_port(
@@ -172,7 +180,7 @@ class RollbackFailureManager(FailureManager):
     async def _synchronize_workflows(
         self,
         failed_job: str,
-        job_tokens: MutableSequence[Token],
+        job_tokens: MutableSequence[JobToken],
         mapper: GraphMapper,
         retry_requests: MutableSequence[RecoveryRequest],
         workflow: Workflow,
@@ -180,7 +188,7 @@ class RollbackFailureManager(FailureManager):
         for retry_request in retry_requests:
             job_name = retry_request.name
             if await self.is_recovering(job_name):
-                job_token = get_job_token(job_name, job_tokens)
+                job_token = _get_job_token(job_name, job_tokens)
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
                         f"Synchronizing rollbacks for failed job {failed_job}: Job {job_name} is currently executing."
@@ -231,7 +239,7 @@ class RollbackFailureManager(FailureManager):
                     if isinstance(p, ConnectorPort)
                 ),
                 *(
-                    get_job_token(failed_job.name, p.token_list)
+                    p.get_job_token(failed_job.name)
                     for p in failed_step.get_input_ports().values()
                     if isinstance(p, JobPort)
                 ),
