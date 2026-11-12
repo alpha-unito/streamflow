@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix `SSHConnector` memory retrieval ([#1197](https://github.com/alpha-unito/streamflow/pull/1197))
 - Fix environment of `CommandLineTool` ([#1181](https://github.com/alpha-unito/streamflow/pull/1181))
 - Fix Slurm job exit code retrieval ([#1160](https://github.com/alpha-unito/streamflow/pull/1160))
 
