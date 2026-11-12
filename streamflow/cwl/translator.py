@@ -1307,7 +1307,7 @@ def _get_path(element_id: str) -> str:
 
 
 def _get_schedule_step(step: Step) -> ScheduleStep:
-    if job_port := step.get_input_port("__job__"):
+    if job_port := step.get_job_port():
         return cast(ScheduleStep, next(iter(job_port.get_input_steps())))
     else:
         raise WorkflowDefinitionException(f"Step {step.name} has no job input")

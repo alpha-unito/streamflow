@@ -20,7 +20,6 @@ from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.data.remotepath import StreamFlowPath
 from streamflow.workflow.executor import StreamFlowExecutor
 from streamflow.workflow.token import ListToken, ObjectToken
-from streamflow.workflow.utils import get_job_token
 from tests.utils.cwl import get_cwl_parser
 from tests.utils.deployment import get_local_deployment_config, get_location
 from tests.utils.utils import inject_tokens
@@ -186,10 +185,11 @@ async def test_initial_workdir(
         executor = StreamFlowExecutor(workflow)
         await executor.run()
         token = next(iter(execute_step.get_output_port(out_port_name).token_list))
-        job = get_job_token(
-            posixpath.join(execute_step.name, "0"),
-            schedule_step.get_output_port().token_list,
-        ).value
+        job = (
+            schedule_step.get_output_port()
+            .get_job_token(posixpath.join(execute_step.name, "0"))
+            .value
+        )
         outdir = StreamFlowPath(
             job.output_directory, context=context, location=execution_location
         )

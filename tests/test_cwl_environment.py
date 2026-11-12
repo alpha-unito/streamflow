@@ -14,7 +14,6 @@ from streamflow.cwl.step import CWLExecuteStep, CWLScheduleStep
 from streamflow.cwl.translator import create_command_output_processor_base
 from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.utils import get_job_token
 from tests.utils.cwl import get_cwl_parser
 from tests.utils.deployment import get_deployment_config
 from tests.utils.workflow import (
@@ -77,10 +76,11 @@ async def _run_env_tool(
     await workflow.save(context.database)
     executor = StreamFlowExecutor(workflow)
     await executor.run()
-    job = get_job_token(
-        posixpath.join(execute_step.name, "0"),
-        schedule_step.get_output_port().token_list,
-    ).value
+    job = (
+        schedule_step.get_output_port()
+        .get_job_token(posixpath.join(execute_step.name, "0"))
+        .value
+    )
     stdout = next(iter(execute_step.get_output_port(out_port_name).token_list)).value
     return (
         (job.output_directory or "", job.tmp_directory or ""),

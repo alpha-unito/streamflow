@@ -33,7 +33,7 @@ from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.processor import CommandOutputProcessor
 from streamflow.core.recovery import recoverable
 from streamflow.core.scheduling import HardwareRequirement
-from streamflow.core.utils import compare_tags, get_entity_ids, get_job_tag
+from streamflow.core.utils import compare_tags, get_entity_ids
 from streamflow.core.workflow import (
     Command,
     CommandOutput,
@@ -54,7 +54,6 @@ from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
     check_iteration_termination,
     check_termination,
-    get_job_token,
 )
 
 
@@ -631,11 +630,7 @@ class ExecuteStep(BaseStep):
         connectors: MutableMapping[str, Connector],
         unfinished: MutableSet[asyncio.Task[MutableMapping[str, Token] | Status]],
     ) -> None:
-        if (
-            job := await cast(JobPort, self.get_input_port("__job__")).get_job(
-                self.name
-            )
-        ) is not None:
+        if (job := await self.get_job_port().get_job(self.name)) is not None:
             # Group inputs by tag
             _group_by_tag(inputs, inputs_map)
             # Process tags
@@ -702,9 +697,7 @@ class ExecuteStep(BaseStep):
                 job, command_output, connector, recoverable=True
             )
         ) is not None:
-            job_token = get_job_token(
-                job.name, self.get_input_port("__job__").token_list
-            )
+            job_token = self.get_job_port().get_job_token(job.name)
             output_port.put(
                 await self._persist_token(
                     token=token,
@@ -801,7 +794,7 @@ class ExecuteStep(BaseStep):
         self, database: Database
     ) -> MutableMapping[str, Any]:
         return cast(dict[str, Any], await super()._save_additional_params(database)) | {
-            "job_port": self.get_input_port("__job__").persistent_id,
+            "job_port": self.get_job_port().persistent_id,
             "output_connectors": self.output_connectors,
             "output_processors": {
                 k: v
@@ -830,8 +823,8 @@ class ExecuteStep(BaseStep):
             output_processor or DefaultCommandOutputProcessor(name, self.workflow)
         )
 
-    def get_job_port(self) -> Port:
-        return self.get_input_port("__job__")
+    def get_job_port(self) -> JobPort:
+        return cast(JobPort, self.get_input_port("__job__"))
 
     async def run(self) -> None:
         # If there are input connector ports, retrieve connectors
@@ -905,11 +898,7 @@ class ExecuteStep(BaseStep):
         # Otherwise simply run job
         else:
             # Retrieve job
-            if (
-                job := await cast(JobPort, self.get_input_port("__job__")).get_job(
-                    self.name
-                )
-            ) is not None:
+            if (job := await self.get_job_port().get_job(self.name)) is not None:
                 statuses = [await self._run_job(job, {}, connectors)]
             else:
                 statuses = [Status.SKIPPED]
@@ -1106,7 +1095,7 @@ class InputInjectorStep(BaseStep, ABC):
         self, database: Database
     ) -> MutableMapping[str, Any]:
         return cast(dict[str, Any], await super()._save_additional_params(database)) | {
-            "job_port": self.get_input_port("__job__").persistent_id
+            "job_port": self.get_job_port().persistent_id
         }
 
     def add_output_port(self, name: str, port: Port) -> None:
@@ -1116,6 +1105,9 @@ class InputInjectorStep(BaseStep, ABC):
             raise WorkflowDefinitionException(
                 f"{self.name} step must contain a single output port."
             )
+
+    def get_job_port(self) -> JobPort:
+        return cast(JobPort, self.get_input_port("__job__"))
 
     @abstractmethod
     async def process_input(self, job: Job, token_value: Any) -> Token: ...
@@ -1146,9 +1138,7 @@ class InputInjectorStep(BaseStep, ABC):
                         port_id=self.get_input_port(key_port).persistent_id,
                     )
                 # Retrieve job
-                job = await cast(JobPort, self.get_input_port("__job__")).get_job(
-                    self.name
-                )
+                job = await self.get_job_port().get_job(self.name)
                 # Check for termination
                 if check_termination(token) or job is None:
                     status = token.value
@@ -1158,9 +1148,7 @@ class InputInjectorStep(BaseStep, ABC):
                         job.name, Status.RUNNING
                     )
                     in_list = [
-                        get_job_token(
-                            job.name, self.get_input_port("__job__").token_list
-                        ),
+                        self.get_job_port().get_job_token(job.name),
                         token,
                     ]
                     # Process value and inject token in the output port
@@ -1541,7 +1529,7 @@ class ScheduleStep(BaseStep):
                         token_inputs.append(t)
         self.get_output_port().put(
             await self._persist_token(
-                token=JobToken(value=job, tag=get_job_tag(job.name)),
+                token=JobToken(value=job, tag=utils.get_job_tag(job.name)),
                 port=self.get_output_port(),
                 input_token_ids=get_entity_ids(token_inputs),
             )
@@ -1833,10 +1821,7 @@ class TransferStep(BaseStep, ABC):
                 port=self.get_output_port(port_name),
                 input_token_ids=get_entity_ids(
                     [
-                        get_job_token(
-                            job.name,
-                            self.get_input_port("__job__").token_list,
-                        ),
+                        self.get_job_port().get_job_token(job.name),
                         *inputs.values(),
                     ]
                 ),
@@ -1847,8 +1832,11 @@ class TransferStep(BaseStep, ABC):
         self, database: Database
     ) -> MutableMapping[str, Any]:
         return cast(dict[str, Any], await super()._save_additional_params(database)) | {
-            "job_port": self.get_input_port("__job__").persistent_id
+            "job_port": self.get_job_port().persistent_id
         }
+
+    def get_job_port(self) -> JobPort:
+        return cast(JobPort, self.get_input_port("__job__"))
 
     async def run(self) -> None:
         # Set default status as SKIPPED
@@ -1864,9 +1852,7 @@ class TransferStep(BaseStep, ABC):
                     # Retrieve input tokens
                     inputs = await self._get_inputs(input_ports)
                     # Retrieve job
-                    job = await cast(JobPort, self.get_input_port("__job__")).get_job(
-                        self.name
-                    )
+                    job = await self.get_job_port().get_job(self.name)
                     # Check for termination
                     if check_termination(inputs.values()) or job is None:
                         status = _reduce_statuses(

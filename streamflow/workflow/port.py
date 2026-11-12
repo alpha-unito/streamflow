@@ -5,9 +5,10 @@ from collections.abc import Callable, MutableSequence
 from enum import Flag, auto
 
 from streamflow.core.deployment import Connector
+from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Job, Port, Status, Token, Workflow
 from streamflow.log_handler import logger
-from streamflow.workflow.token import TerminationToken
+from streamflow.workflow.token import JobToken, TerminationToken
 
 
 class BoundaryAction(Flag):
@@ -43,15 +44,29 @@ class ConnectorPort(Port):
 
 
 class JobPort(Port):
+
+    def __init__(self, workflow: Workflow, name: str):
+        super().__init__(workflow, name)
+        self.token_map: dict[str, JobToken] = {}
+
     async def get_job(self, consumer: str) -> Job | None:
         token = await self.get(consumer)
-        if isinstance(token, TerminationToken):
-            return None
-        else:
+        if isinstance(token, JobToken):
             return token.value
+        return None
 
-    def put_job(self, job: Job) -> None:
-        self.put(Token(value=job))
+    def get_job_token(self, job_name: str) -> JobToken:
+        try:
+            return self.token_map[job_name]
+        except KeyError:
+            raise WorkflowExecutionException(
+                f"Impossible to find job {job_name} in token_list {self.token_list}"
+            )
+
+    def put(self, token: Token) -> None:
+        if isinstance(token, JobToken):
+            self.token_map[token.value.name] = token
+        super().put(token)
 
 
 class FilterTokenPort(Port):

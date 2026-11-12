@@ -67,7 +67,6 @@ from streamflow.workflow.token import (
     ListToken,
     ObjectToken,
 )
-from streamflow.workflow.utils import get_job_token
 from tests.utils.deployment import get_docker_deployment_config
 from tests.utils.utils import get_full_instantiation
 
@@ -707,9 +706,7 @@ class InjectorFailureCommand(Command):
             except Exception as err:
                 logger.error(f"Failed command evaluation: {err}")
                 raise FailureHandlingException(err)
-        job_token = get_job_token(
-            job.name, cast(ExecuteStep, self.step).get_job_port().token_list
-        )
+        job_token = cast(ExecuteStep, self.step).get_job_port().get_job_token(job.name)
         await context.database.update_execution(
             await context.database.add_execution(
                 self.step.persistent_id, job_token.persistent_id, self.command
