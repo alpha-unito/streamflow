@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import os
 import re
@@ -17,6 +18,7 @@ from streamflow.core.exception import (
     WorkflowDefinitionException,
     WorkflowExecutionException,
 )
+from streamflow.cwl.command import set_local_env_path
 from streamflow.deployment.connector import SSHConnector
 from streamflow.deployment.future import FutureConnector
 from streamflow.deployment.template import CommandTemplateMap
@@ -81,6 +83,8 @@ async def test_connector_run_command(
     curr_location: ExecutionLocation,
 ) -> None:
     """Test connector run method"""
+    curr_location = copy.copy(curr_location)
+    set_local_env_path([curr_location])
     _, returncode = await curr_connector.run(
         location=curr_location, command=["ls"], capture_output=True, job_name="job_test"
     )
