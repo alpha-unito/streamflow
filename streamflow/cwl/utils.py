@@ -904,7 +904,9 @@ def get_name(
     element_id: Any,
     preserve_cwl_prefix: bool = False,
 ) -> str:
-    name = (element_id if isinstance(element_id, str) else element_id.id).split("#")[-1]
+    name = (element_id if isinstance(element_id, str) else element_id.id).rpartition(
+        "#"
+    )[-1]
     return (
         posixpath.join(posixpath.sep, name)
         if preserve_cwl_prefix
@@ -1004,7 +1006,7 @@ def process_embedded_tool(
         # Process `stdout` and `stderr` directives
         cwl_utils.parser.utils.convert_stdstreams_to_files(run_command)
         # Compute the prefix of the inner CWL element
-        if ":" in run_command.id.split("#")[-1]:
+        if ":" in run_command.id.rpartition("#")[-1]:
             cwl_step_name = get_name(
                 name_prefix,
                 cwl_name_prefix,
@@ -1387,11 +1389,7 @@ async def search_in_parent_locations(
                     data_locations,
                     key=lambda loc: 0 if loc.data_type == DataType.PRIMARY else 1,
                 )
-        path_tokens = [path_processor.sep]
-        path_tokens.extend(
-            current_path.lstrip(path_processor.sep).split(path_processor.sep)[:-1]
-        )
-        current_path = path_processor.normpath(path_processor.join(*path_tokens))
+        current_path = path_processor.normpath(path_processor.dirname(current_path))
     return []
 
 

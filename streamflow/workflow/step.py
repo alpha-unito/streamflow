@@ -1218,7 +1218,7 @@ class LoopCombinatorStep(CombinatorStep):
                 if len(parent_tag.split(".")) != len(token.tag.split(".")):
                     tags |= {parent_tag, token.tag}
                 else:
-                    tags |= {parent_tag, ".".join(parent_tag.split(".")[:-1])}
+                    tags |= {parent_tag, parent_tag.rpartition(".")[0]}
                 from_tags[name] = sorted(tags, key=cmp_to_key(compare_tags))
         await self.combinator.restore(from_tags)
 
@@ -1272,7 +1272,7 @@ class LoopCombinatorStep(CombinatorStep):
                                 f"on port {task_name}"
                             )
                         if (
-                            ".".join(token.tag.split(".")[:-1])
+                            token.tag.rpartition(".")[0]
                             not in self.iteration_termination_checklist[task_name]
                         ):
                             self.iteration_termination_checklist[task_name].add(
@@ -1351,7 +1351,7 @@ class LoopOutputStep(BaseStep, ABC):
             token = await input_port.get(
                 posixpath.join(self.name, next(iter(self.input_ports)))
             )
-            prefix = ".".join(token.tag.split(".")[:-1])
+            prefix = token.tag.rpartition(".")[0]
             # If a TerminationToken is received, terminate the step
             if check_termination(token):
                 status = _reduce_statuses([status, token.value])
@@ -1374,7 +1374,7 @@ class LoopOutputStep(BaseStep, ABC):
                     logger.debug(
                         f"Step {self.name} received iteration termination token {token.tag}."
                     )
-                self.size_map[prefix] = int(token.tag.split(".")[-1])
+                self.size_map[prefix] = int(token.tag.rpartition(".")[-1])
             # Otherwise, store the new token in the map
             else:
                 if logger.isEnabledFor(logging.DEBUG):

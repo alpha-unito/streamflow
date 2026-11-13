@@ -659,11 +659,10 @@ class KubernetesConnector(KubernetesBaseConnector):
         self.k8s_objects: MutableMapping[str, MutableSequence[Any]] = {}
 
     def _get_api(self, k8s_object: Any) -> Any:
-        group, _, version = k8s_object.api_version.partition("/")
-        if version == "":
-            version = group
+        group, sep, version = k8s_object.api_version.rpartition("/")
+        if not sep:
             group = "core"
-        group = "".join(group.rsplit(".k8s.io", 1))
+        group = group.removesuffix(".k8s.io")
         group = "".join(word.capitalize() for word in group.split("."))
         fcn_to_call = f"{group}{version.capitalize()}Api"
         return getattr(client, fcn_to_call)(self.client.api_client)

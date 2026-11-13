@@ -79,9 +79,9 @@ def _get_action_status(status: Status) -> str:
 def _get_cwl_entity_id(entity_id: str) -> str:
     tokens = entity_id.split("#")
     if len(tokens) > 1:
-        return "#".join([tokens[0].split("/")[-1], tokens[1]])
+        return "#".join([tokens[0].rpartition("/")[-1], tokens[1]])
     else:
-        return tokens[0].split("/")[-1]
+        return tokens[0].rpartition("/")[-1]
 
 
 def _get_cwl_param(
@@ -93,7 +93,7 @@ def _get_cwl_param(
         | cwl_utils.parser.WorkflowOutputParameter
     ),
 ) -> MutableMapping[str, Any]:
-    name = "#".join(cwl_param.id.split("#")[1:])
+    name = cwl_param.id.partition("#")[2]
     jsonld_param = {
         "@id": _get_cwl_entity_id(cwl_param.id),
         "@type": "FormalParameter",
@@ -1149,14 +1149,14 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
         entity_id = _get_cwl_entity_id(cwl_tool.id)
         jsonld_tool = {
             "@id": entity_id,
-            "name": entity_id.split("#")[-1],
+            "name": entity_id.rpartition("#")[-1],
             "input": [],
             "output": [],
         }
         if entity_id.startswith("_:"):
             jsonld_tool["@type"] = "SoftwareApplication"
         else:
-            if (path := cwl_tool.id.split("#")[0][7:]) not in self.files_map:
+            if (path := cwl_tool.id.partition("#")[0][7:]) not in self.files_map:
                 self.graph["./"]["hasPart"].append({"@id": entity_id})
                 self.files_map[path] = os.path.basename(path)
             jsonld_tool["sha1"] = _file_checksum(
@@ -1177,9 +1177,11 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
     ) -> MutableMapping[str, Any]:
         # Create entity
         entity_id = _get_cwl_entity_id(cwl_workflow.id)
-        jsonld_workflow = _get_workflow_template(entity_id, entity_id.split("#")[-1])
+        jsonld_workflow = _get_workflow_template(
+            entity_id, entity_id.rpartition("#")[-1]
+        )
         if not entity_id.startswith("_:"):
-            if (path := cwl_workflow.id.split("#")[0][7:]) not in self.files_map:
+            if (path := cwl_workflow.id.partition("#")[0][7:]) not in self.files_map:
                 self.graph["./"]["hasPart"].append({"@id": entity_id})
                 self.files_map[path] = os.path.basename(path)
             jsonld_workflow["sha1"] = _file_checksum(
@@ -1416,9 +1418,9 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             if "#" in self.cwl_definition.id
             else posixpath.sep
         )
-        path = self.cwl_definition.id.split("#")[0][7:]
+        path = self.cwl_definition.id.partition("#")[0][7:]
         self.files_map[path] = os.path.basename(path)
-        entity_id = _get_cwl_entity_id(self.cwl_definition.id).split("#")[0]
+        entity_id = _get_cwl_entity_id(self.cwl_definition.id).partition("#")[0]
         main_entity = _get_workflow_template(entity_id, entity_id)
         main_entity["@type"].append("File")
         main_entity["sha1"] = _file_checksum(

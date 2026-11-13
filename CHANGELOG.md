@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve local SHA1 checksum computation ([#1184](https://github.com/alpha-unito/streamflow/pull/1184)))
 - Update CI runners to newer Ubuntu images ([#1183](https://github.com/alpha-unito/streamflow/pull/1183))
 - Improve job token retrieval performance ([#1195](https://github.com/alpha-unito/streamflow/pull/1195))
+- Improve string splitting performance with partition helpers ([#1198](https://github.com/alpha-unito/streamflow/pull/1198))
 
 ### Dependencies
 

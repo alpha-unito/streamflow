@@ -13,7 +13,7 @@ from streamflow.workflow.token import IterationTerminationToken, ListToken
 
 def _flatten_token_list(outputs: MutableSequence[Token]) -> MutableSequence[Token]:
     flattened_list: list[Token] = []
-    for token in sorted(outputs, key=lambda t: int(t.tag.split(".")[-1])):
+    for token in sorted(outputs, key=lambda t: int(t.tag.rpartition(".")[-1])):
         if isinstance(token, ListToken):
             flattened_list.extend(_flatten_token_list(token.value))
         else:

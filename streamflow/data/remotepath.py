@@ -56,7 +56,7 @@ def _get_filename_from_response(response: ClientResponse, url: str) -> str:
         message["content-disposition"] = cd_header
         if filename := message.get_param("filename", header="content-disposition"):
             return filename
-    return url.rsplit("/", 1)[-1]
+    return url.rpartition("/")[-1]
 
 
 def _get_outer_path(

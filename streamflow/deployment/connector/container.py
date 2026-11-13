@@ -1436,7 +1436,7 @@ class DockerComposeConnector(DockerBaseConnector):
             if version.startswith("v"):
                 version = version[1:]
             # Check version compatibility
-            major = int(version.split(".")[0])
+            major = int(version.partition(".")[0])
             if not major >= 2:
                 raise WorkflowExecutionException(
                     f"Docker Compose {version} is not compatible with DockerComposeConnector. "
