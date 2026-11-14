@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING
 
+from streamflow.core.context import SchemaEntity
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Workflow
 
 
-class ProvenanceManager(ABC):
+class ProvenanceManager(SchemaEntity):
     def __init__(
         self,
         context: StreamFlowContext,

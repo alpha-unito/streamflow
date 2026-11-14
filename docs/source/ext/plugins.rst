@@ -55,6 +55,7 @@ Base Class                                                                      
 :ref:`streamflow.core.deployment.DeploymentManager <DeploymentManager>`                           ``register_deployment_manager``
 :ref:`streamflow.core.recovery.FailureManager <FailureManager>`                                   ``register_failure_manager``
 :ref:`streamflow.core.scheduling.Policy <Policy>`                                                 ``register_policy``
+:ref:`streamflow.core.provenance.ProvenanceManager <ProvenanceManager>`                           ``register_provenance_manager``
 :ref:`streamflow.core.scheduling.Scheduler <Scheduler>`                                           ``register_scheduler``
 =============================================================================================     ===================================
 

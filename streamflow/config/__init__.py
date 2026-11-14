@@ -27,4 +27,8 @@ ext_schemas: MutableSequence[Traversable] = [
     .joinpath("schemas")
     .joinpath("base")
     .joinpath("ssh.json"),
+    files("streamflow.provenance")
+    .joinpath("schemas")
+    .joinpath("run_crate")
+    .joinpath("cwl.json"),
 ]
