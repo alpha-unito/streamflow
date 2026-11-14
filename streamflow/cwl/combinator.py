@@ -7,7 +7,7 @@ from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.utils import get_tag
 from streamflow.core.workflow import Token
 from streamflow.cwl.workflow import CWLWorkflow
-from streamflow.workflow.combinator import DotProductCombinator
+from streamflow.workflow.combinator import CombinatorSchema, DotProductCombinator
 from streamflow.workflow.token import IterationTerminationToken, ListToken
 
 
@@ -62,35 +62,35 @@ class ListMergeCombinator(DotProductCombinator):
         }
 
     async def combine(
-        self, port_name: str, token: Token
-    ) -> AsyncIterable[MutableMapping[str, Token]]:
-        if not isinstance(token, IterationTerminationToken):
-            async for schema in super().combine(port_name, token):
+        self, port_name: str, schema: CombinatorSchema
+    ) -> AsyncIterable[MutableMapping[str, CombinatorSchema]]:
+        if not isinstance(schema.token, IterationTerminationToken):
+            async for schemas in super().combine(port_name, schema):
                 # If there is only one input, merge its value
                 if len(self.input_names) == 1:
                     if isinstance(
-                        outputs := schema[self.input_names[0]]["token"], ListToken
+                        outputs := schemas[self.input_names[0]].token, ListToken
                     ):
                         outputs = outputs.value
                     else:
                         outputs = [outputs]
-                    tag = schema[self.input_names[0]]["token"].tag
-                    input_token_ids = schema[self.input_names[0]]["input_ids"]
+                    tag = schemas[self.input_names[0]].token.tag
+                    input_token_ids = schemas[self.input_names[0]].input_ids
                 # Otherwise, merge multiple inputs in a single list
                 else:
-                    outputs = [schema[name]["token"] for name in self.input_names]
+                    outputs = [schemas[name].token for name in self.input_names]
                     input_token_ids = [
                         id
                         for name in self.input_names
-                        for id in schema[name]["input_ids"]
+                        for id in schemas[name].input_ids
                     ]
                     tag = get_tag(outputs)
                 # Flatten if needed
                 if self.flatten:
                     outputs = _flatten_token_list(outputs)
                 yield {
-                    self.output_name: {
-                        "token": ListToken(value=outputs, tag=tag),
-                        "input_ids": input_token_ids,
-                    }
+                    self.output_name: CombinatorSchema(
+                        token=ListToken(value=outputs, tag=tag),
+                        input_ids=input_token_ids,
+                    )
                 }

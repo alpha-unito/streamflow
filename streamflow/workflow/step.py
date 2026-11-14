@@ -4,7 +4,6 @@ import asyncio
 import logging
 import posixpath
 from abc import ABC, abstractmethod
-from collections import deque
 from collections.abc import (
     AsyncIterable,
     MutableMapping,
@@ -49,6 +48,7 @@ from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
 from streamflow.persistence.utils import load_dependee_tokens
+from streamflow.workflow.combinator import Combinator, CombinatorSchema
 from streamflow.workflow.port import ConnectorPort, FilterTokenPort, JobPort
 from streamflow.workflow.token import JobToken, ListToken, TerminationToken
 from streamflow.workflow.utils import (
@@ -71,11 +71,6 @@ def _group_by_tag(
         if token.tag not in inputs_map:
             inputs_map[token.tag] = {}
         inputs_map[token.tag][name] = token
-
-
-def _is_parent_tag(tag: str, parent: str) -> bool:
-    parent_idx = parent.split(".")
-    return tag.split(".")[: len(parent_idx)] == parent_idx
 
 
 def _reduce_statuses(statuses: MutableSequence[Status]) -> Status:
@@ -183,151 +178,6 @@ class BaseStep(Step, ABC):
             )
 
 
-class Combinator(ABC):
-    def __init__(self, name: str, workflow: Workflow):
-        self.name: str = name
-        self.workflow: Workflow = workflow
-        self.items: MutableSequence[str] = []
-        self.combinators: MutableMapping[str, Combinator] = {}
-        self.combinators_map: MutableMapping[str, str] = {}
-        self._token_values: MutableMapping[
-            str, MutableMapping[str, MutableSequence[Any]]
-        ] = {}
-
-    @classmethod
-    async def _load(
-        cls,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        return cls(
-            name=row["name"],
-            workflow=await loading_context.load_workflow(row["workflow"]),
-        )
-
-    async def _save_additional_params(
-        self, database: Database
-    ) -> MutableMapping[str, Any]:
-        return {
-            "name": self.name,
-            "combinators": {
-                k: v
-                for k, v in zip(
-                    self.combinators.keys(),
-                    await asyncio.gather(
-                        *(
-                            asyncio.create_task(comb.save(database))
-                            for comb in self.combinators.values()
-                        )
-                    ),
-                    strict=True,
-                )
-            },
-            "combinators_map": self.combinators_map,
-            "items": self.items,
-            "workflow": self.workflow.persistent_id,
-        }
-
-    def add_combinator(self, combinator: Combinator, items: set[str]) -> None:
-        self.combinators[combinator.name] = combinator
-        self.items.append(combinator.name)
-        self.combinators_map |= {p: combinator.name for p in items}
-
-    def add_item(self, item: str) -> None:
-        self.items.append(item)
-
-    def get_combinator(self, item: str) -> Combinator | None:
-        return self.combinators.get(self.combinators_map.get(item, ""))
-
-    def get_items(self, recursive: bool = False) -> set[str]:
-        items = set(self.items)
-        if recursive:
-            for combinator in self.combinators.values():
-                items.update(combinator.get_items(recursive))
-        return items
-
-    @abstractmethod
-    async def combine(
-        self, port_name: str, token: Token
-    ) -> AsyncIterable[MutableMapping[str, Token]]: ...
-
-    @classmethod
-    async def load(
-        cls,
-        row: MutableMapping[str, Any],
-        loading_context: DatabaseLoadingContext,
-    ) -> Self:
-        type_ = cast(Self, utils.get_class_from_name(row["type"]))
-        combinator = await type_._load(row["params"], loading_context)
-        combinator.items = row["params"]["items"]
-        combinator.combinators_map = row["params"]["combinators_map"]
-        combinator.combinators = dict(
-            zip(
-                row["params"]["combinators"].keys(),
-                await asyncio.gather(
-                    *(
-                        asyncio.create_task(Combinator.load(c, loading_context))
-                        for c in row["params"]["combinators"].values()
-                    )
-                ),
-                strict=True,
-            )
-        )
-        return combinator
-
-    async def restore(
-        self, from_tags: MutableMapping[str, MutableSequence[str]]
-    ) -> None:
-        """
-        Restore the combinator's internal state based on the provided tags.
-        """
-        return
-
-    async def save(self, database: Database) -> MutableMapping[str, Any]:
-        return {
-            "type": utils.get_class_fullname(type(self)),
-            "params": await self._save_additional_params(database),
-        }
-
-    def _add_to_list(
-        self,
-        token: Token | MutableMapping[str, Token],
-        port_name: str,
-        depth: int = 0,
-        propagate: bool = True,
-    ) -> None:
-        tag = (
-            utils.get_tag([t["token"] for t in token.values()])
-            if isinstance(token, MutableMapping)
-            else token.tag
-        )
-        if depth:
-            tag = ".".join(tag.split(".")[:-depth])
-        if propagate:
-            for key in list(self._token_values.keys()):
-                if tag == key:
-                    continue
-                elif _is_parent_tag(key, tag):
-                    self._add_to_port(token, self._token_values[key], port_name)
-                elif _is_parent_tag(tag, key):
-                    for p in self._token_values[key]:
-                        for t in self._token_values[key][p]:
-                            self._add_to_port(
-                                t, self._token_values.setdefault(tag, {}), p
-                            )
-        self._add_to_port(token, self._token_values.setdefault(tag, {}), port_name)
-
-    def _add_to_port(
-        self,
-        token: Token | MutableMapping[str, Token],
-        tag_values: MutableMapping[str, MutableSequence[Any]],
-        port_name: str,
-    ) -> None:
-        if port_name not in tag_values:
-            tag_values[port_name] = deque()
-        tag_values[port_name].append(token)
-
-
 class CombinatorStep(BaseStep):
     def __init__(self, name: str, workflow: Workflow, combinator: Combinator):
         super().__init__(name, workflow)
@@ -392,17 +242,20 @@ class CombinatorStep(BaseStep):
                         status = Status.COMPLETED
                         async for schema in cast(
                             AsyncIterable,
-                            self.combinator.combine(task_name, token),
+                            self.combinator.combine(
+                                task_name,
+                                CombinatorSchema(
+                                    token=token, input_ids=[token.persistent_id]
+                                ),
+                            ),
                         ):
                             ins = [
-                                in_id
-                                for t in schema.values()
-                                for in_id in t["input_ids"]
+                                in_id for s in schema.values() for in_id in s.input_ids
                             ]
-                            for port_name, new_token in schema.items():
+                            for port_name, s in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=new_token["token"],
+                                        token=s.token,
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )
@@ -1279,16 +1132,19 @@ class LoopCombinatorStep(CombinatorStep):
                                 token.tag
                             )
 
-                        async for schema in self.combinator.combine(task_name, token):
+                        async for schema in self.combinator.combine(
+                            task_name,
+                            CombinatorSchema(
+                                token=token, input_ids=[token.persistent_id]
+                            ),
+                        ):
                             ins = [
-                                in_id
-                                for t in schema.values()
-                                for in_id in t["input_ids"]
+                                in_id for s in schema.values() for in_id in s.input_ids
                             ]
-                            for port_name, new_token in schema.items():
+                            for port_name, s in schema.items():
                                 self.get_output_port(port_name).put(
                                     await self._persist_token(
-                                        token=new_token["token"],
+                                        token=s.token,
                                         port=self.get_output_port(port_name),
                                         input_token_ids=ins,
                                     )
