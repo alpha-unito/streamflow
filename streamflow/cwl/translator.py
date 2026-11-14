@@ -345,7 +345,7 @@ def _create_command_output_processor(
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
         # Optional type (e.g. ['null', Type]) -> Equivalent to Type?
-        if len(types := [t for t in filter(lambda x: x != "null", port_type)]) == 1:
+        if len(types := [*filter(lambda x: x != "null", port_type)]) == 1:
             return _create_command_output_processor(
                 port_name=port_name,
                 workflow=workflow,
@@ -531,7 +531,7 @@ def _get_command_token_processor_from_input(
             processors=processors,
         )
     elif isinstance(port_type, MutableSequence):
-        types = [t for t in filter(lambda x: x != "null", port_type)]
+        types = [*filter(lambda x: x != "null", port_type)]
         # Optional type (e.g. ['null', Type]) -> propagate
         if len(types) == 1:
             return _get_command_token_processor_from_input(
@@ -894,7 +894,7 @@ def _create_token_processor(
         )
     elif isinstance(port_type, MutableSequence):
         optional = "null" in port_type
-        types = [t for t in filter(lambda x: x != "null", port_type)]
+        types = [*filter(lambda x: x != "null", port_type)]
         # Optional type (e.g. ['null', Type]) -> Equivalent to Type?
         if len(types) == 1:
             return _create_token_processor(

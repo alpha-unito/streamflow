@@ -1025,7 +1025,7 @@ class RecoveryTranslator:
         return create_schedule_step(
             workflow=workflow,
             cls=cls,
-            deploy_steps=[d for d in deploy_steps.values()],
+            deploy_steps=[*deploy_steps.values()],
             binding_config=binding_config,
             name_prefix=step_name,
             **arguments,
