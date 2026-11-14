@@ -511,7 +511,7 @@ class BaseLoopOutputLastStep(LoopOutputStep):
     async def _process_output(self, tag: str) -> Token:
         return sorted(
             self.token_map.get(tag, [Token(value=None)]),
-            key=lambda t: int(t.tag.split(".")[-1]),
+            key=lambda t: int(t.tag.rpartition(".")[-1]),
         )[-1].retag(tag=tag)
 
 

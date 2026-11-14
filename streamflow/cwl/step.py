@@ -412,7 +412,8 @@ class CWLLoopOutputAllStep(LoopOutputStep):
         return ListToken(
             tag=tag,
             value=sorted(
-                self.token_map.get(tag, []), key=lambda t: int(t.tag.split(".")[-1])
+                self.token_map.get(tag, []),
+                key=lambda t: int(t.tag.rpartition(".")[-1]),
             ),
         )
 
@@ -421,7 +422,7 @@ class CWLLoopOutputLastStep(LoopOutputStep):
     async def _process_output(self, tag: str) -> Token:
         return sorted(
             self.token_map.get(tag, [Token(value=None)]),
-            key=lambda t: int(t.tag.split(".")[-1]),
+            key=lambda t: int(t.tag.rpartition(".")[-1]),
         )[-1].retag(tag=tag)
 
 

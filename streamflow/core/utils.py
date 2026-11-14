@@ -190,7 +190,7 @@ def get_class_fullname(cls: type) -> str:
 
 
 def get_class_from_name(name: str) -> type:
-    module_name, class_name = name.rsplit(".", 1)
+    module_name, _, class_name = name.rpartition(".")
     return getattr(importlib.import_module(module_name), class_name)
 
 

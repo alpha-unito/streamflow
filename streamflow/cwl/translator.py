@@ -1300,7 +1300,7 @@ def _get_output_binding(
 def _get_path(element_id: str) -> str:
     path = element_id
     if "#" in path:
-        path = path.split("#")[0]
+        path = path.partition("#")[0]
     if path.startswith("file://"):
         path = urllib.parse.unquote(path[7:])
     return path

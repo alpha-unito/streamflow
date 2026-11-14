@@ -51,7 +51,7 @@ class CartesianProductCombinator(Combinator):
                         schema |= config[key]
                     else:
                         schema[key] = config[key]
-                suffix = [t.tag.split(".")[-1] for t in schema.values()]
+                suffix = [t.tag.rpartition(".")[-1] for t in schema.values()]
                 yield {
                     k: {
                         "token": t.retag(".".join(t.tag.split(".")[:-1] + suffix)),
@@ -172,13 +172,13 @@ class LoopCombinator(DotProductCombinator):
     async def _product(self) -> AsyncIterable[MutableMapping[str, Token]]:
         async for schema in super()._product():
             tag = utils.get_tag([t["token"] for t in schema.values()])
-            prefix = ".".join(tag.split(".")[:-1])
+            prefix = tag.rpartition(".")[0]
             if prefix not in self.iteration_map:
                 self.iteration_map[tag] = 0
-                tag = ".".join(tag.split(".") + ["0"])
+                tag = f"{tag}.0"
             else:
                 self.iteration_map[prefix] += 1
-                tag = ".".join(tag.split(".")[:-1] + [str(self.iteration_map[prefix])])
+                tag = f"{prefix}.{self.iteration_map[prefix]}"
             yield {
                 k: {"token": t["token"].retag(tag), "input_ids": t["input_ids"]}
                 for k, t in schema.items()
@@ -191,7 +191,7 @@ class LoopCombinator(DotProductCombinator):
         and the second tag contains the iteration from which the execution must be resumed.
         """
         for prefix, iteration in from_tags.values():
-            iteration_num = int(iteration.split(".")[-1])
+            iteration_num = int(iteration.rpartition(".")[-1])
             self.iteration_map[prefix] = max(
                 self.iteration_map.get(prefix, iteration_num), iteration_num
             )
