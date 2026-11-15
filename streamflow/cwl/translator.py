@@ -100,13 +100,13 @@ from streamflow.deployment.utils import get_binding_config
 from streamflow.log_handler import logger
 from streamflow.workflow.combinator import (
     CartesianProductCombinator,
+    Combinator,
     DotProductCombinator,
     LoopCombinator,
     LoopTerminationCombinator,
 )
 from streamflow.workflow.command import UnionCommandTokenProcessor
 from streamflow.workflow.step import (
-    Combinator,
     CombinatorStep,
     DeployStep,
     GatherStep,

@@ -27,8 +27,8 @@ from streamflow.persistence.loading_context import (
     WorkflowBuilder,
 )
 from streamflow.persistence.utils import load_dependee_tokens, load_depender_tokens
+from streamflow.workflow.combinator import Combinator
 from streamflow.workflow.executor import StreamFlowExecutor
-from streamflow.workflow.step import Combinator
 from streamflow.workflow.token import TerminationToken
 from tests.conftest import are_equals
 from tests.utils.connector import (
