@@ -1146,15 +1146,15 @@ wheels = [
 
 [[package]]
 name = "cwltest"
-version = "2.7.20260814150058"
+version = "2.7.20261106145043"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "junit-xml" },
     { name = "schema-salad" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3b/91/ade3860434736c5414dec6e9a08488183e5e1335b261a71a5ce5cdfd6c02/cwltest-2.7.20260814150058.tar.gz", hash = "sha256:8aeeccfcc22be3b5ada5611c63e721c7f3251477959bcdc1e006e2fdbd27b967", size = 48393, upload-time = "2026-08-14T15:09:30.153Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ea/85/f59b02fdcfba4c6d628e71bf477bfe6574b93fe31c650b27f8fc7387148f/cwltest-2.7.20261106145043.tar.gz", hash = "sha256:af324f0414ff366639e6a295561575a50b694450f487ae55098806c73e3c7208", size = 50205, upload-time = "2026-11-06T15:32:51.394Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d3/3b/31678548c937c3c1a9d8586ad6421709d7283ac5a693fd0835339949869b/cwltest-2.7.20260814150058-py3-none-any.whl", hash = "sha256:fa3120ef366d35ef837c04e807966c9f3c135f214837afa7d17bd9ed579d2a52", size = 49052, upload-time = "2026-08-14T15:09:28.525Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/2f/e586675e6fa260e1c57bf1a675ebfcc67fd3e72e1782f30892a5dddef763/cwltest-2.7.20261106145043-py3-none-any.whl", hash = "sha256:7a2c0fc1c6398bd64783ccb478f016e836ce15ee45843712dddf58a7d154849a", size = 49766, upload-time = "2026-11-06T15:32:49.793Z" },
 ]
 
 [[package]]
@@ -3693,7 +3693,7 @@ dev = [
     { name = "bandit", specifier = "==1.9.4" },
     { name = "black", specifier = "==26.10.1" },
     { name = "codespell", specifier = "==2.4.3" },
-    { name = "cwltest", specifier = "==2.7.20260814150058" },
+    { name = "cwltest", specifier = "==2.7.20261106145043" },
     { name = "cwltool", specifier = "==3.2.20260720092025" },
     { name = "mypy", specifier = "==2.4.0" },
     { name = "pandas-stubs", specifier = "==3.1.0.261029" },
@@ -3730,7 +3730,7 @@ lint = [
     { name = "ruff", specifier = "==0.16.7" },
 ]
 test = [
-    { name = "cwltest", specifier = "==2.7.20260814150058" },
+    { name = "cwltest", specifier = "==2.7.20261106145043" },
     { name = "cwltool", specifier = "==3.2.20260720092025" },
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-asyncio", specifier = "==1.4.0" },
