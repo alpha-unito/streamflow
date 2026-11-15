@@ -255,7 +255,7 @@ The ``Database`` interface, defined in the ``streamflow.core.persistence`` modul
         ...
 
     async def update_target(
-        self, target_id: str, updates: MutableMapping[str, Any]
+        self, target_id: int, updates: MutableMapping[str, Any]
     ) -> int:
         ...
 
