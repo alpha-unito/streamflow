@@ -1159,7 +1159,7 @@ wheels = [
 
 [[package]]
 name = "cwltool"
-version = "3.2.20260720092025"
+version = "3.3.20261106131234"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "argcomplete" },
@@ -1179,9 +1179,9 @@ dependencies = [
     { name = "spython" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2b/0f/609847864d19457c1104d9a017a75f0386a80aad173a4a22b401ab610923/cwltool-3.2.20260720092025.tar.gz", hash = "sha256:d0671d429f2e35d8009c77c17625a418bceaa8b236ff5ca2cd0bcfc867cf4bf4", size = 1471388, upload-time = "2026-07-20T16:04:39.215Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/c4/490ee6e8c2aaa5f046f5a864dc24cc8833f66b442efe7ef302ba9fc69cec/cwltool-3.3.20261106131234.tar.gz", hash = "sha256:a69be4f0f90a16e9ebb2674844610528a76811c4725e8c457138c98e9c6edde2", size = 1486836, upload-time = "2026-11-06T14:43:01.663Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/7f/c7ef818e186e4c68069059ff2eefa56ea7a9d2ec913f31bd01ae085ceaf6/cwltool-3.2.20260720092025-py3-none-any.whl", hash = "sha256:042d37c73cd4e85adb7f55ebb770f87944b2e72d54432437234ffff6be9abb39", size = 1707605, upload-time = "2026-07-20T16:04:36.788Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/b9/1749bfa7644de4e36b0aad2f6e7ad14c6ac50c332ea0a9cfb55ddd0497c7/cwltool-3.3.20261106131234-py3-none-any.whl", hash = "sha256:35c48a80758380b409b933118fc5c806111b0c064726c8c6fa651f9c9dc37cb8", size = 1721411, upload-time = "2026-11-06T14:42:59.384Z" },
 ]
 
 [[package]]
@@ -3696,7 +3696,7 @@ dev = [
     { name = "black", specifier = "==26.10.1" },
     { name = "codespell", specifier = "==2.4.3" },
     { name = "cwltest", specifier = "==2.7.20261106145043" },
-    { name = "cwltool", specifier = "==3.2.20260720092025" },
+    { name = "cwltool", specifier = "==3.3.20261106131234" },
     { name = "mypy", specifier = "==2.4.1" },
     { name = "pandas-stubs", specifier = "==3.1.0.261029" },
     { name = "pytest", specifier = "==9.2.0" },
@@ -3733,7 +3733,7 @@ lint = [
 ]
 test = [
     { name = "cwltest", specifier = "==2.7.20261106145043" },
-    { name = "cwltool", specifier = "==3.2.20260720092025" },
+    { name = "cwltool", specifier = "==3.3.20261106131234" },
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-asyncio", specifier = "==1.4.0" },
     { name = "pytest-cov", specifier = "==7.1.0" },
