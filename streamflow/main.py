@@ -130,6 +130,10 @@ async def _async_prov(args: argparse.Namespace) -> None:
                 )
             )
         )
+        if not workflows:
+            raise WorkflowProvenanceException(
+                f"Workflow {args.workflow} is not present in the database."
+            )
         if len(wf_type := {w.type for w in workflows}) != 1:
             raise WorkflowProvenanceException(
                 "Cannot mix different provenance types in the same file. "

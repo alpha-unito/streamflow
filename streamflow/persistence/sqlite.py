@@ -527,11 +527,11 @@ class SqliteDatabase(CachedDatabase):
                 "SELECT * FROM workflow WHERE name = :name ORDER BY id desc",
                 {"name": workflow_name},
             ) as cursor:
-                return (
-                    [_load_keys(dict(await cursor.fetchone()))]
-                    if last_only
-                    else [_load_keys(dict(r)) for r in await cursor.fetchall()]
-                )
+                if last_only:
+                    row = await cursor.fetchone()
+                    return [_load_keys(dict(row))] if row is not None else []
+                else:
+                    return [_load_keys(dict(r)) for r in await cursor.fetchall()]
 
     async def get_workflows_list(
         self, name: str | None
