@@ -114,8 +114,7 @@ async def _async_plugin(args: argparse.Namespace) -> None:
 
 
 async def _async_prov(args: argparse.Namespace) -> None:
-    load_extensions()
-    context = _get_context_from_config(args.file)
+    context = _get_context_from_config(args.file, require_extensions=True)
     try:
         db_context = DefaultDatabaseLoadingContext(database=context.database)
         workflows = await asyncio.gather(
@@ -182,13 +181,17 @@ async def _async_run(args: argparse.Namespace) -> None:
         await context.close()
 
 
-def _get_context_from_config(streamflow_file: str | None) -> StreamFlowContext:
+def _get_context_from_config(
+    streamflow_file: str | None, require_extensions: bool = False
+) -> StreamFlowContext:
     if streamflow_file is not None and os.path.exists(streamflow_file):
         load_extensions()
         streamflow_config = SfValidator().validate_file(streamflow_file)
         streamflow_config["path"] = streamflow_file
         return build_context(streamflow_config)
     else:
+        if require_extensions:
+            load_extensions()
         return build_context({"path": os.getcwd()})
 
 
