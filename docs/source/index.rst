@@ -80,6 +80,7 @@ For LaTeX users, the following BibTeX entry can be used:
    ext/database.rst
    ext/deployment-manager.rst
    ext/fault-tolerance.rst
+   ext/provenance-manager.rst
    ext/scheduling.rst
 
 .. toctree::

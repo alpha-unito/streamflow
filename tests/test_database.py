@@ -42,3 +42,14 @@ async def test_get_steps_queries(context: StreamFlowContext) -> None:
     assert input_steps_port_c[0]["step"] == step_2.persistent_id
     output_steps_port_c = await context.database.get_output_steps(port_c.persistent_id)
     assert len(output_steps_port_c) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_workflows_by_name_not_found(context: StreamFlowContext) -> None:
+    """Test get_workflows_by_name returns an empty list for an unknown workflow name"""
+    assert (
+        await context.database.get_workflows_by_name("never-run", last_only=True) == []
+    )
+    assert (
+        await context.database.get_workflows_by_name("never-run", last_only=False) == []
+    )

@@ -64,8 +64,16 @@ To generate a provenance archive containing the last execution of a given workfl
 
     streamflow prov <name>
 
+The ``--add-file`` option adds an external file to the provenance archive. File properties are specified as comma-separated ``key=value`` pairs. The mandatory ``src`` property states where the file is located, while the optional ``dst`` property (default ``/``) contains a POSIX path stating where the file will be placed in the archive. Additional properties can be specified as strings or JSON objects, and their meaning depends on the selected provenance type.
+
+The ``--add-property`` option adds a property to the archive manifest (when present). Properties are specified as comma-separated ``key=value`` pairs and can be expressed as strings or JSON objects. The way in which property keys map to manifest objects depends on the selected provenance type.
+
 The ``--all`` option can instead be used to include the whole history of workflow execution inside a single archive.
+
+The ``--file`` option specifies the path of the StreamFlow file describing the workflow execution (by default, ``streamflow.yml``). The StreamFlow file serves a twofold goal: it is used to retrieve the database configuration, and it can be added to the archive as metadata.
 
 The ``--name`` option defines the name of the archive. By default, the archive will take the workflow name as basename and ``.crate.zip`` as extension.
 
 The ``--outdir`` option states in which location the archive will be placed (by default, it will be created in the current directory).
+
+The ``--type`` option defines the type of provenance archive to generate (by default, ``cwl_run_crate``). Additional provenance types can be implemented by the community through the :ref:`plugins <Plugins>` mechanism, as described in the :ref:`ProvenanceManager <ProvenanceManager>` section.

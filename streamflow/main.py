@@ -35,7 +35,7 @@ from streamflow.log_handler import CustomFormatter, HighlitingFilter, logger
 from streamflow.parser import parser
 from streamflow.persistence import database_classes
 from streamflow.persistence.loading_context import DefaultDatabaseLoadingContext
-from streamflow.provenance import prov_classes
+from streamflow.provenance import provenance_manager_classes
 from streamflow.recovery import checkpoint_manager_classes, failure_manager_classes
 from streamflow.scheduling import scheduler_classes
 from streamflow.version import VERSION
@@ -117,7 +117,7 @@ async def _async_plugin(args: argparse.Namespace) -> None:
 
 
 async def _async_prov(args: argparse.Namespace) -> None:
-    context = _get_context_from_config(args.file)
+    context = _get_context_from_config(args.file, require_extensions=True)
     try:
         db_context = DefaultDatabaseLoadingContext(database=context.database)
         workflows = await asyncio.gather(
@@ -133,34 +133,37 @@ async def _async_prov(args: argparse.Namespace) -> None:
                 )
             )
         )
-        wf_type = {w.type for w in workflows}
-        if len(wf_type) != 1:
+        if not workflows:
+            raise WorkflowProvenanceException(
+                f"Workflow {args.workflow} is not present in the database."
+            )
+        elif len(wf_types := {w.type for w in workflows}) != 1:
             raise WorkflowProvenanceException(
                 "Cannot mix different provenance types in the same file. "
-                f"Workflow {args.workflow} is associated to the following types: {','.join(wf_type)}"
+                f"Workflow {args.workflow} is associated to the following types: "
+                f"{','.join(sorted(str(w) for w in wf_types))}"
             )
-        wf_type = next(iter(wf_type))
-        if args.type not in prov_classes:
+        elif args.type not in provenance_manager_classes:
             raise WorkflowProvenanceException(
                 f"{args.type} provenance format is not supported."
             )
-        elif wf_type not in prov_classes[args.type]:
+        elif not provenance_manager_classes[args.type].supports(
+            wf_type=next(iter(wf_types))
+        ):
             raise WorkflowProvenanceException(
-                "{} provenance format is not supported for workflows of type {}.".format(
-                    args.type, wf_type
-                )
+                f"{args.type} provenance format is not supported for workflows of type "
+                f"{next(iter(wf_types))}."
             )
-        else:
-            provenance_manager: ProvenanceManager = prov_classes[args.type][wf_type](
-                context, db_context, workflows
-            )
-            await provenance_manager.create_archive(
-                outdir=args.outdir,
-                filename=args.name,
-                config=args.file if os.path.exists(args.file) else None,
-                additional_files=args.add_file,
-                additional_properties=args.add_property,
-            )
+        provenance_manager: ProvenanceManager = provenance_manager_classes[args.type](
+            context, db_context, workflows
+        )
+        await provenance_manager.create_archive(
+            outdir=args.outdir,
+            filename=args.name,
+            config=args.file if os.path.exists(args.file) else None,
+            additional_files=args.add_file,
+            additional_properties=args.add_property,
+        )
     finally:
         await context.close()
 
@@ -192,13 +195,17 @@ async def _async_run(args: argparse.Namespace) -> None:
         await context.close()
 
 
-def _get_context_from_config(streamflow_file: str | None) -> StreamFlowContext:
+def _get_context_from_config(
+    streamflow_file: str | None, require_extensions: bool = False
+) -> StreamFlowContext:
     if streamflow_file is not None and os.path.exists(streamflow_file):
         load_extensions()
         streamflow_config = SfValidator().validate_file(streamflow_file)
         streamflow_config["path"] = streamflow_file
         return build_context(streamflow_config)
     else:
+        if require_extensions:
+            load_extensions()
         return build_context({"path": os.getcwd()})
 
 

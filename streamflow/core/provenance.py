@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import MutableMapping, MutableSequence
 from typing import TYPE_CHECKING
 
+from streamflow.core.context import SchemaEntity
 from streamflow.core.persistence import DatabaseLoadingContext
 
 if TYPE_CHECKING:
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
     from streamflow.core.workflow import Workflow
 
 
-class ProvenanceManager(ABC):
+class ProvenanceManager(SchemaEntity):
     def __init__(
         self,
         context: StreamFlowContext,
@@ -31,3 +32,9 @@ class ProvenanceManager(ABC):
         additional_files: MutableSequence[MutableMapping[str, str]] | None,
         additional_properties: MutableSequence[MutableMapping[str, str]] | None,
     ) -> None: ...
+
+    @classmethod
+    @abstractmethod
+    def supports(cls, wf_type: str) -> bool:
+        """Check if the class supports the given workflow type."""
+        ...

@@ -166,10 +166,9 @@ prov_parser.add_argument(
 prov_parser.add_argument(
     "--type",
     "-t",
-    default="run_crate",
+    default="cwl_run_crate",
     type=str,
-    choices=["run_crate"],
-    help="The type of provenance archive to generate (default: run_crate)",
+    help="The type of provenance archive to generate (default: cwl_run_crate)",
 )
 
 # streamflow report
