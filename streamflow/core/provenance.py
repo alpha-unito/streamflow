@@ -32,3 +32,9 @@ class ProvenanceManager(SchemaEntity):
         additional_files: MutableSequence[MutableMapping[str, str]] | None,
         additional_properties: MutableSequence[MutableMapping[str, str]] | None,
     ) -> None: ...
+
+    @classmethod
+    @abstractmethod
+    def supports(cls, wf_type: str) -> bool:
+        """Check if the class supports the given workflow type."""
+        ...

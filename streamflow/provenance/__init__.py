@@ -6,5 +6,5 @@ from streamflow.core.provenance import ProvenanceManager
 from streamflow.provenance.run_crate import CWLRunCrateProvenanceManager
 
 provenance_manager_classes: MutableMapping[str, type[ProvenanceManager]] = {
-    "run_crate/cwl": CWLRunCrateProvenanceManager
+    "cwl_run_crate": CWLRunCrateProvenanceManager
 }

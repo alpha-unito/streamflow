@@ -76,4 +76,4 @@ The ``--name`` option defines the name of the archive. By default, the archive w
 
 The ``--outdir`` option states in which location the archive will be placed (by default, it will be created in the current directory).
 
-The ``--type`` option defines the type of provenance archive to generate (by default, ``run_crate/cwl``). Additional provenance types can be implemented by the community through the :ref:`plugins <Plugins>` mechanism, as described in the :ref:`ProvenanceManager <ProvenanceManager>` section.
+The ``--type`` option defines the type of provenance archive to generate (by default, ``cwl_run_crate``). Additional provenance types can be implemented by the community through the :ref:`plugins <Plugins>` mechanism, as described in the :ref:`ProvenanceManager <ProvenanceManager>` section.

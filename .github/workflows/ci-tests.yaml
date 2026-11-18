@@ -204,7 +204,7 @@ jobs:
         run: uv sync --locked --no-dev --group docs --group test
       - name: "Build documentation and check for consistency"
         env:
-          CHECKSUM: "0630b0ce8f352a1d62022ebe948d8f6eac11978e61a30100482f6a94f2d66da6"
+          CHECKSUM: "91766d921436efa914093d3d0491d97239b252655cfb10200238136a59f8dea1"
         run: |
           cd docs
           HASH="$(uv run --no-sync make checksum | tail -n1)"

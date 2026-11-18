@@ -1541,3 +1541,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
             }
         else:
             return None
+
+    @classmethod
+    def supports(cls, wf_type: str) -> bool:
+        return wf_type == "cwl"

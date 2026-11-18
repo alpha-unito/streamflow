@@ -3,17 +3,31 @@ from __future__ import annotations
 import asyncio
 import logging
 import zipfile
+from collections.abc import MutableMapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
 from streamflow.config.validator import SfValidator
-from streamflow.core.workflow import Status
+from streamflow.core.context import StreamFlowContext
+from streamflow.core.workflow import Status, Workflow
+from streamflow.cwl.workflow import CWLWorkflow
 from streamflow.main import build_context, main
 from tests.utils.data import get_data_path
-from tests.utils.workflow import create_workflow
+from tests.utils.workflow import CWL_VERSION
+
+
+class DummyWorkflow(Workflow):
+    def __init__(
+        self,
+        context: StreamFlowContext,
+        config: MutableMapping[str, Any],
+        name: str | None = None,
+    ):
+        super().__init__(context=context, config=config, name=name)
+        self.type = "dummy"
 
 
 def _write_streamflow_file(tmp_path: Path) -> Path:
@@ -30,14 +44,27 @@ def _write_streamflow_file(tmp_path: Path) -> Path:
 
 
 async def _seed_executed_workflow(
-    streamflow_file: Path, name: str, cwl_file: str
+    streamflow_file: Path,
+    name: str,
+    cwl_file: str | None = None,
 ) -> None:
     """Create a COMPLETED workflow execution in the StreamFlow database."""
     context = build_context(SfValidator().validate_file(str(streamflow_file)))
     try:
-        workflow, _ = await create_workflow(context, num_port=0, save=False)
-        workflow.name = name
-        workflow.config["file"] = cwl_file
+        if cwl_file is not None:
+            workflow = CWLWorkflow(
+                context=context,
+                name=name,
+                config={},
+                cwl_version=CWL_VERSION,
+            )
+            workflow.config["file"] = cwl_file
+        else:
+            workflow = DummyWorkflow(
+                context=context,
+                name=name,
+                config={},
+            )
         await workflow.save(context.database)
         timestamp = int(datetime.now(timezone.utc).timestamp() * 1_000_000_000)
         await context.database.update_workflow(
@@ -52,7 +79,7 @@ async def _seed_executed_workflow(
         await context.close()
 
 
-def test_create_archive(tmp_path: Path) -> None:
+def test_prov(tmp_path: Path) -> None:
     """Test that the prov CLI archives a completed workflow into an RO-Crate."""
     streamflow_file = _write_streamflow_file(tmp_path)
     asyncio.run(
@@ -70,7 +97,7 @@ def test_create_archive(tmp_path: Path) -> None:
             "-f",
             str(streamflow_file),
             "-t",
-            "run_crate/cwl",
+            "cwl_run_crate",
             "--outdir",
             str(archive_path.parent),
             "--name",
@@ -82,7 +109,7 @@ def test_create_archive(tmp_path: Path) -> None:
     assert "ro-crate-metadata.json" in zipfile.ZipFile(archive_path).namelist()
 
 
-def test_create_archive_missing_workflow(
+def test_prov_missing_workflow(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that the prov CLI rejects a workflow that was never executed."""
@@ -95,16 +122,16 @@ def test_create_archive_missing_workflow(
             "-f",
             str(streamflow_file),
             "-t",
-            "run_crate/cwl",
+            "cwl_run_crate",
             "--outdir",
             str(tmp_path / "out"),
         ]
     )
     assert ret != 0
-    assert "is not present in the database" in caplog.text
+    assert "missing-workflow is not present in the database" in caplog.text
 
 
-def test_create_archive_unsupported_type(
+def test_prov_unsupported_type(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Test that the prov CLI rejects an unsupported provenance type."""
@@ -130,4 +157,61 @@ def test_create_archive_unsupported_type(
         ]
     )
     assert ret != 0
-    assert "provenance format is not supported" in caplog.text
+    assert "not-prov-type provenance format is not supported." in caplog.text
+
+
+def test_prov_wf_mixed_types(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Test that the prov CLI rejects multi workflows with sane name but different workflow types."""
+    streamflow_file = _write_streamflow_file(tmp_path)
+    asyncio.run(
+        _seed_executed_workflow(
+            streamflow_file,
+            "test-workflow",
+            str(get_data_path("cwl", "example", "main.cwl")),
+        )
+    )
+
+    asyncio.run(_seed_executed_workflow(streamflow_file, "test-workflow"))
+    caplog.set_level(logging.ERROR)
+    ret = main(
+        [
+            "prov",
+            "test-workflow",
+            "-f",
+            str(streamflow_file),
+            "-t",
+            "cwl_run_crate",
+            "--outdir",
+            str(tmp_path / "out"),
+            "--all",
+        ]
+    )
+    assert ret != 0
+    assert (
+        "Cannot mix different provenance types in the same file. "
+        "Workflow test-workflow is associated to the following types: cwl,dummy"
+    ) in caplog.text
+
+
+def test_prov_mismatch_types(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Test that the prov CLI rejects mismatch between workflow type and provenance type"""
+    streamflow_file = _write_streamflow_file(tmp_path)
+    asyncio.run(_seed_executed_workflow(streamflow_file, "test-workflow"))
+    caplog.set_level(logging.ERROR)
+    ret = main(
+        [
+            "prov",
+            "test-workflow",
+            "-f",
+            str(streamflow_file),
+            "-t",
+            "cwl_run_crate",
+            "--outdir",
+            str(tmp_path / "out"),
+        ]
+    )
+    assert ret != 0
+    assert (
+        "cwl_run_crate provenance format is not supported for workflows of type dummy"
+        in caplog.text
+    )

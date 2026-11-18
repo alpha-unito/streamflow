@@ -134,26 +134,33 @@ async def _async_prov(args: argparse.Namespace) -> None:
             raise WorkflowProvenanceException(
                 f"Workflow {args.workflow} is not present in the database."
             )
-        if len(wf_type := {w.type for w in workflows}) != 1:
+        elif len(wf_types := {w.type for w in workflows}) != 1:
             raise WorkflowProvenanceException(
                 "Cannot mix different provenance types in the same file. "
-                f"Workflow {args.workflow} is associated to the following types: {','.join(wf_type)}"
+                f"Workflow {args.workflow} is associated to the following types: "
+                f"{','.join(sorted(str(w) for w in wf_types))}"
             )
-        if args.type not in provenance_manager_classes:
+        elif args.type not in provenance_manager_classes:
             raise WorkflowProvenanceException(
                 f"{args.type} provenance format is not supported."
             )
-        else:
-            provenance_manager: ProvenanceManager = provenance_manager_classes[
-                args.type
-            ](context, db_context, workflows)
-            await provenance_manager.create_archive(
-                outdir=args.outdir,
-                filename=args.name,
-                config=args.file if os.path.exists(args.file) else None,
-                additional_files=args.add_file,
-                additional_properties=args.add_property,
+        elif not provenance_manager_classes[args.type].supports(
+            wf_type=next(iter(wf_types))
+        ):
+            raise WorkflowProvenanceException(
+                f"{args.type} provenance format is not supported for workflows of type "
+                f"{next(iter(wf_types))}."
             )
+        provenance_manager: ProvenanceManager = provenance_manager_classes[args.type](
+            context, db_context, workflows
+        )
+        await provenance_manager.create_archive(
+            outdir=args.outdir,
+            filename=args.name,
+            config=args.file if os.path.exists(args.file) else None,
+            additional_files=args.add_file,
+            additional_properties=args.add_property,
+        )
     finally:
         await context.close()
 
