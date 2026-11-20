@@ -34,7 +34,7 @@ dependencies = [
     "asyncssh==2.24.1",
     "bcrypt==5.0.0",
     "cachebox==6.2.10",
-    "cwl-utils==0.46",
+    "cwl-utils==0.47",
     "Jinja2==3.1.6",
     "jsonschema==4.26.0",
     "kubernetes_asyncio==36.1.0",
