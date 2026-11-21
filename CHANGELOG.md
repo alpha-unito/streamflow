@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve `Combinator` tag handling with a children tree ([#1199](https://github.com/alpha-unito/streamflow/pull/1199))
 - Integrate `uvloop` async engine ([#531](https://github.com/alpha-unito/streamflow/pull/531))
 - Confine the `uvloop` async engine to macOS ([#1205](https://github.com/alpha-unito/streamflow/pull/1205))
+- Refactor token value extraction into `get_data()` ([#1207](https://github.com/alpha-unito/streamflow/pull/1207))
 
 ### Removed
 

@@ -10,7 +10,6 @@ import cwl_utils.types
 from streamflow.core.persistence import Database, DatabaseLoadingContext
 from streamflow.core.scheduling import Hardware, HardwareRequirement, Storage
 from streamflow.cwl.utils import eval_expression
-from streamflow.workflow.utils import get_token_value
 
 if TYPE_CHECKING:
     from streamflow.core.workflow import Job
@@ -90,7 +89,7 @@ class CWLHardwareRequirement(HardwareRequirement):
 
     def eval(self, job: Job) -> Hardware:
         context = cwl_utils.types.CWLParameterContext(
-            inputs={name: get_token_value(t) for name, t in job.inputs.items()}
+            inputs={name: t.get_data() for name, t in job.inputs.items()}
         )
         return Hardware(
             cores=self.get_cores(context),
