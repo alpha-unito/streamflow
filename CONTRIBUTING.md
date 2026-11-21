@@ -57,7 +57,7 @@ However, all connectors are always tested in the CI pipeline.
 
 
 ### Code style
-StreamFlow supports Python 3.11 to 3.14, so use compatible code features.
+StreamFlow supports Python 3.11 to 3.15, so use compatible code features.
 
 The StreamFlow code style complies with [PEP 8](https://peps.python.org/pep-0008/). You can verify that your PR respects the code style with the following command
 ```bash

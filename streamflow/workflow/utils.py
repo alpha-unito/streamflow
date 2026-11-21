@@ -78,9 +78,10 @@ def check_token_class(inputs: Token | Iterable[Token], cls: type[Token]) -> bool
 
 
 def get_token_value(token: Token) -> Any:
-    if isinstance(token, ListToken):
-        return [get_token_value(t) for t in token.value]
-    elif isinstance(token, ObjectToken):
-        return {k: get_token_value(v) for k, v in token.value.items()}
-    else:
-        return token.value
+    match token:
+        case ListToken():
+            return [get_token_value(t) for t in token.value]
+        case ObjectToken():
+            return {k: get_token_value(v) for k, v in token.value.items()}
+        case _:
+            return token.value
