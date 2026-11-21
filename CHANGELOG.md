@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve string splitting performance with partition helpers ([#1198](https://github.com/alpha-unito/streamflow/pull/1198))
 - Improve `Combinator` tag handling with a children tree ([#1199](https://github.com/alpha-unito/streamflow/pull/1199))
 - Integrate `uvloop` async engine ([#531](https://github.com/alpha-unito/streamflow/pull/531))
+- Confine the `uvloop` async engine to macOS ([#1205](https://github.com/alpha-unito/streamflow/pull/1205))
 
 ### Dependencies
 

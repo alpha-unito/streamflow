@@ -11,8 +11,6 @@ from collections.abc import MutableMapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import uvloop
-
 from streamflow import report
 from streamflow.config.config import WorkflowConfig
 from streamflow.config.schema import SfSchema
@@ -255,7 +253,9 @@ def build_context(config: MutableMapping[str, Any]) -> StreamFlowContext:
 def main(args: Sequence[str]) -> int:
     try:
         parsed_args = parser.parse_args(args)
-        if sys.platform != "win32" and platform.python_implementation() == "CPython":
+        if sys.platform == "darwin" and platform.python_implementation() == "CPython":
+            import uvloop
+
             logger.info("CPython detected: using uvloop EventLoop implementation")
             engine = uvloop
         else:
