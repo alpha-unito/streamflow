@@ -10,7 +10,6 @@ from streamflow.core.exception import WorkflowExecutionException
 from streamflow.core.workflow import Executor, Status, Token
 from streamflow.log_handler import logger
 from streamflow.workflow.token import TerminationToken
-from streamflow.workflow.utils import get_token_value
 
 if TYPE_CHECKING:
     from typing import Any
@@ -83,7 +82,7 @@ class StreamFlowExecutor(Executor):
                         await self.close()
             else:
                 # Collect result
-                output_tokens[task_name] = get_token_value(token)
+                output_tokens[task_name] = token.get_data()
                 # Create a new task in place of the completed one if not terminated
                 if task_name not in self.received:
                     self.output_tasks[task_name] = asyncio.create_task(

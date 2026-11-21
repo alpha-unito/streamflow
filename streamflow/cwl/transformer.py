@@ -21,15 +21,12 @@ from streamflow.workflow.transformer import (
     OneToManyTransformer,
     OneToOneTransformer,
 )
-from streamflow.workflow.utils import get_token_value
 
 
 class AllNonNullTransformer(OneToOneTransformer):
     def _transform(self, name: str, token: Token) -> Token:
         if isinstance(token, ListToken):
-            return token.update(
-                [t for t in token.value if get_token_value(t) is not None]
-            )
+            return token.update([t for t in token.value if t.get_data() is not None])
         else:
             raise WorkflowExecutionException(f"Invalid value for token {name}")
 
@@ -225,7 +222,7 @@ class DefaultTransformer(ManyToOneTransformer):
                 f"{self.name} step must contain a default port."
             )
         primary_token = next(iter(inputs[k] for k in inputs))
-        if get_token_value(primary_token) is not None:
+        if primary_token.get_data() is not None:
             return {self.get_output_name(): primary_token.update(primary_token.value)}
         else:
             if not self.default_token:
@@ -359,7 +356,7 @@ class FirstNonNullTransformer(OneToOneTransformer):
     def _transform(self, name: str, token: Token) -> Token:
         if isinstance(token, ListToken):
             for t in token.value:
-                if get_token_value(t) is not None:
+                if t.get_data() is not None:
                     return t.update(t.value)
             raise WorkflowExecutionException(f"All sources are null in token {name}")
         else:
@@ -402,7 +399,7 @@ class OnlyNonNullTransformer(OneToOneTransformer):
         if isinstance(token, ListToken):
             ret = None
             for t in token.value:
-                if get_token_value(t) is not None:
+                if t.get_data() is not None:
                     if ret is not None:
                         raise WorkflowExecutionException(
                             f"Expected only one source to be non-null in token {name}"

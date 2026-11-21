@@ -16,7 +16,6 @@ from streamflow.core.workflow import (
     Token,
 )
 from streamflow.workflow.token import ListToken, ObjectToken
-from streamflow.workflow.utils import get_token_value
 
 
 class ListCommandToken(CommandToken):
@@ -293,7 +292,7 @@ class UnionCommandTokenProcessor(CommandTokenProcessor):
     ) -> CommandToken:
         if (command_token := self._get_processor(token)) is None:
             raise WorkflowDefinitionException(
-                f"No suitable command token for input {self.name} value {get_token_value(token)}"
+                f"No suitable command token for input {self.name} value {token.get_data()}"
             )
         return command_token.bind(token, position, self._update_options(options, token))
 

@@ -538,6 +538,9 @@ class Token(PersistableEntity):
     async def _save_value(self, context: StreamFlowContext):
         return self.value
 
+    def get_data(self) -> Any:
+        return self.value
+
     async def get_weight(self, context: StreamFlowContext) -> int:
         return sys.getsizeof(self.value)
 
