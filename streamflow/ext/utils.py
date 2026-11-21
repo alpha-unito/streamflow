@@ -4,10 +4,10 @@ import json
 import logging
 import sys
 from collections.abc import MutableMapping, MutableSequence
+from importlib.metadata import entry_points
 from pathlib import PurePosixPath
 from typing import Any
 
-from importlib_metadata import entry_points
 from referencing import Resource
 from referencing._core import Resolver
 

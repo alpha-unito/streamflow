@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve `Combinator` tag handling with a children tree ([#1199](https://github.com/alpha-unito/streamflow/pull/1199))
 - Integrate `uvloop` async engine ([#531](https://github.com/alpha-unito/streamflow/pull/531))
 
+### Removed
+
+- Remove `importlib-metadata` dependency ([#1204](https://github.com/alpha-unito/streamflow/pull/1204))
+
 ### Dependencies
 
 - Bump aiohttp from 3.14.3 to 3.14.5 ([#1169](https://github.com/alpha-unito/streamflow/pull/1169), [#1178](https://github.com/alpha-unito/streamflow/pull/1178))
