@@ -157,18 +157,8 @@ class ListToken(Token):
         )
         return [t.persistent_id for t in self.value]
 
-    @property
-    def recoverable(self) -> bool:
-        return all(t.recoverable for t in self.value)
-
-    @recoverable.setter
-    def recoverable(self, recoverable: bool) -> None:
-        if self.persistent_id is not None and self.recoverable != recoverable:
-            raise WorkflowExecutionException(
-                "The `recoverable` property can't be changed after the `Token` has been persisted."
-            )
-        for t in self.value:
-            t.recoverable = recoverable
+    def get_data(self) -> MutableSequence[Any]:
+        return [t.get_data() for t in self.value]
 
     async def get_weight(self, context: StreamFlowContext) -> int:
         return sum(
@@ -183,6 +173,19 @@ class ListToken(Token):
                 *(asyncio.create_task(t.is_available(context)) for t in self.value)
             )
         )
+
+    @property
+    def recoverable(self) -> bool:
+        return all(t.recoverable for t in self.value)
+
+    @recoverable.setter
+    def recoverable(self, recoverable: bool) -> None:
+        if self.persistent_id is not None and self.recoverable != recoverable:
+            raise WorkflowExecutionException(
+                "The `recoverable` property can't be changed after the `Token` has been persisted."
+            )
+        for t in self.value:
+            t.recoverable = recoverable
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value)
@@ -226,18 +229,8 @@ class ObjectToken(Token):
         )
         return {k: t.persistent_id for k, t in self.value.items()}
 
-    @property
-    def recoverable(self) -> bool:
-        return all(t.recoverable for t in self.value.values())
-
-    @recoverable.setter
-    def recoverable(self, recoverable: bool) -> None:
-        if self.persistent_id is not None and self.recoverable != recoverable:
-            raise WorkflowExecutionException(
-                "The `recoverable` property can't be changed after the `Token` has been persisted."
-            )
-        for t in self.value.values():
-            t.recoverable = recoverable
+    def get_data(self) -> MutableMapping[str, Any]:
+        return {k: v.get_data() for k, v in self.value.items()}
 
     async def get_weight(self, context: StreamFlowContext) -> int:
         return sum(
@@ -258,6 +251,19 @@ class ObjectToken(Token):
                 )
             )
         )
+
+    @property
+    def recoverable(self) -> bool:
+        return all(t.recoverable for t in self.value.values())
+
+    @recoverable.setter
+    def recoverable(self, recoverable: bool) -> None:
+        if self.persistent_id is not None and self.recoverable != recoverable:
+            raise WorkflowExecutionException(
+                "The `recoverable` property can't be changed after the `Token` has been persisted."
+            )
+        for t in self.value.values():
+            t.recoverable = recoverable
 
     def update(self, value: Any) -> Token:
         return self.__class__(tag=self.tag, value=value)

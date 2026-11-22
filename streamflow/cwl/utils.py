@@ -37,7 +37,6 @@ from streamflow.data.remotepath import StreamFlowPath
 from streamflow.deployment.utils import get_path_processor
 from streamflow.log_handler import logger
 from streamflow.workflow.token import ListToken, ObjectToken
-from streamflow.workflow.utils import get_token_value
 
 
 async def _check_glob_path(
@@ -397,8 +396,8 @@ def build_context(
             }
         )
     return cwl_utils.types.CWLParameterContext(
-        inputs={name: get_token_value(token) for name, token in inputs.items()},
-        self=get_token_value(self) if self is not None else None,
+        inputs={name: token.get_data() for name, token in inputs.items()},
+        self=self.get_data() if self is not None else None,
         runtime=runtime,
     )
 

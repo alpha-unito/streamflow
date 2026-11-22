@@ -10,8 +10,6 @@ from streamflow.core.workflow import Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.workflow.token import (
     IterationTerminationToken,
-    ListToken,
-    ObjectToken,
     TerminationToken,
 )
 
@@ -75,13 +73,3 @@ def check_token_class(inputs: Token | Iterable[Token], cls: type[Token]) -> bool
             elif isinstance(token, cls):
                 return True
         return False
-
-
-def get_token_value(token: Token) -> Any:
-    match token:
-        case ListToken():
-            return [get_token_value(t) for t in token.value]
-        case ObjectToken():
-            return {k: get_token_value(v) for k, v in token.value.items()}
-        case _:
-            return token.value

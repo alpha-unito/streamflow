@@ -63,7 +63,6 @@ from streamflow.workflow.command import (
     TokenizedCommand,
 )
 from streamflow.workflow.step import ExecuteStep
-from streamflow.workflow.utils import get_token_value
 
 
 def set_local_env_path(
@@ -1079,7 +1078,7 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
                     ]
                 )
             else:
-                value = get_token_value(token)
+                value = token.get_data()
         else:
             value = self.expression
         # If token value is an empty array, skip the command token
@@ -1111,7 +1110,7 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
                         expression=self.position,
                         context=options.context
                         | cwl_utils.types.CWLParameterContext(
-                            self=get_token_value(token) if token else None
+                            self=token.get_data() if token else None
                         ),
                         full_js=options.full_js,
                         expression_lib=options.expression_lib,
@@ -1136,7 +1135,7 @@ class CWLCommandTokenProcessor(CommandTokenProcessor):
             return self.processor.check_type(token)
         else:
             if self.token_type != (
-                inferred_type := utils.infer_type_from_token(get_token_value(token))
+                inferred_type := utils.infer_type_from_token(token.get_data())
             ):
                 # In CWL, long is considered as a subtype of double
                 return inferred_type != "long" or self.token_type != "double"  # nosec
@@ -1218,7 +1217,7 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
     def bind(
         self, token: Token, position: int | None, options: CommandOptions
     ) -> CommandToken:
-        value = get_token_value(token)
+        value = token.get_data()
         return CommandToken(
             name=self.name,
             position=position,
@@ -1227,7 +1226,7 @@ class CWLForwardCommandTokenProcessor(CommandTokenProcessor):
 
     def check_type(self, token: Token) -> bool:
         if self.token_type != (
-            inferred_type := utils.infer_type_from_token(get_token_value(token))
+            inferred_type := utils.infer_type_from_token(token.get_data())
         ):
             # In CWL, long is considered as a subtype of double
             return inferred_type != "long" or self.token_type != "double"  # nosec
@@ -1243,7 +1242,7 @@ class CWLObjectCommandTokenProcessor(ObjectCommandTokenProcessor):
                 "The `options` argument must be a `CWLCommandOptions` instance"
             )
         return CWLCommandOptions(
-            context=options.context | {"inputs": {self.name: get_token_value(token)}},
+            context=options.context | {"inputs": {self.name: token.get_data()}},
             expression_lib=options.expression_lib,
             full_js=options.full_js,
         )
@@ -1257,7 +1256,7 @@ class CWLMapCommandTokenProcessor(MapCommandTokenProcessor):
             raise TypeError(
                 "The `options` argument must be a `CWLCommandOptions` instance"
             )
-        value = get_token_value(token)
+        value = token.get_data()
         return CWLCommandOptions(
             context=options.context | {"inputs": {self.name: value}, "self": value},
             expression_lib=options.expression_lib,

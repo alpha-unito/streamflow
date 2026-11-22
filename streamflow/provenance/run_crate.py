@@ -32,7 +32,6 @@ from streamflow.core.workflow import Port, Status, Token, Workflow
 from streamflow.log_handler import logger
 from streamflow.version import VERSION
 from streamflow.workflow.token import FileToken, ListToken, ObjectToken
-from streamflow.workflow.utils import get_token_value
 
 ESCAPED_COMMA = re.compile(r"\\,")
 ESCAPED_DOT = re.compile(r"\\.")
@@ -1521,7 +1520,7 @@ class CWLRunCrateProvenanceManager(RunCrateProvenanceManager):
                 "name": name,
                 "value": value,
             }
-        elif (value := get_token_value(token)) is not None:
+        elif (value := token.get_data()) is not None:
             return {
                 "@id": "#" + str(uuid.uuid4()),
                 "@type": "PropertyValue",
