@@ -38,7 +38,8 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           build-args: |
-            HELM_VERSION=v4.3.1
+            HELM_VERSION=v4.3.2
+          platforms: linux/amd64, linux/arm64, linux/riscv64
           push: true
           tags: |
             alphaunito/streamflow:${{ env.STREAMFLOW_VERSION }}

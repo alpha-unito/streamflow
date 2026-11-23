@@ -99,8 +99,6 @@ jobs:
         env:
           LIMA_START_ARGS: '--vm-type=vz --mount-type=virtiofs --mount /private/var/folders:w'
         if: ${{ startsWith(matrix.on, 'macos-') }}
-      - uses: docker/setup-qemu-action@v4
-        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v3
         with:
@@ -120,8 +118,8 @@ jobs:
         if: ${{ matrix.docker == 'kubernetes' }}
       - name: "Install dependencies on RISC-V"
         run: |
-          sudo apt update
-          sudo apt install -yq libffi-dev gcc-14
+          sudo apt-get update
+          sudo apt-get install -yq libffi-dev gcc-14
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
         if: ${{ endsWith(matrix.on, '-riscv') }}
       - name: "Test CWL ${{ matrix.version }} conformance"
@@ -148,17 +146,26 @@ jobs:
           if-no-files-found: error
   docker-image:
     name: "StreamFlow Docker image tests"
-    runs-on: ubuntu-26.04
+    strategy:
+      matrix:
+        include:
+          - on: "ubuntu-26.04"
+            platform: "linux/amd64"
+          - on: "ubuntu-26.04-arm"
+            platform: "linux/arm64"
+          - on: "ubuntu-24.04-riscv"
+            platform: "linux/riscv64"
+    runs-on: ${{ matrix.on }}
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - name: "Build Docker image"
         uses: docker/build-push-action@v7
         with:
           build-args: |
-            HELM_VERSION=v4.3.1
+            HELM_VERSION=v4.3.2
           load: true
+          platforms: ${{ matrix.platform }}
           tags: alphaunito/streamflow:latest
       - name: "Run test with Docker"
         run: |
@@ -186,7 +193,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
-      - uses: docker/setup-qemu-action@v4
       - name: "Install KinD"
         uses: helm/kind-action@v1.15.2
         with:
@@ -251,8 +257,8 @@ jobs:
         uses: actions/checkout@v7
       - name: Install Python modules
         run: |
-          apt update
-          apt install -yq python3-pip python3-venv
+          apt-get update
+          apt-get install -yq python3-pip python3-venv
           su fluxuser
       - name: Install StreamFlow
         run: |
@@ -316,8 +322,6 @@ jobs:
       - name: "Install Docker Compose (MacOS X)"
         uses: docker/setup-compose-action@v2
         if: ${{ startsWith(matrix.on, 'macos-') }}
-      - uses: docker/setup-qemu-action@v4
-        if: ${{ startsWith(matrix.on, 'ubuntu-') }}
       - name: "Install Apptainer"
         uses: eWaterCycle/setup-apptainer@v3
         with:
