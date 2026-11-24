@@ -13,7 +13,7 @@ from asyncssh import SSHClient, SSHClientConnection
 
 from streamflow.core.data import StreamWrapper
 from streamflow.core.deployment import Connector, ExecutionLocation, Shell
-from streamflow.core.scheduling import AvailableLocation, Hardware
+from streamflow.core.scheduling import AvailableLocation, Hardware, Storage
 from streamflow.deployment.connector import LocalConnector, SSHConnector
 from streamflow.deployment.connector.base import BaseConnector
 from streamflow.deployment.connector.ssh import (
@@ -23,6 +23,7 @@ from streamflow.deployment.connector.ssh import (
     parse_hostname,
 )
 from streamflow.deployment.stream import BaseStreamWrapper
+from streamflow.deployment.wrapper import ConnectorWrapper
 from streamflow.log_handler import logger
 
 
@@ -316,6 +317,133 @@ class ParameterizableHardwareConnector(LocalConnector):
                 local=True,
                 slots=1,
                 hardware=self.hardware,
+            )
+        }
+
+
+class StackedTestConnector(ConnectorWrapper):
+    def __init__(
+        self,
+        deployment_name: str,
+        config_dir: str,
+        connector: Connector,
+        service: str | None,
+        locations: int,
+        transferBufferSize: int = 2**16,
+        outer_cores: float | None = None,
+        outer_memory: float | None = None,
+        outer_storage_size: float | None = None,
+        outer_storage_paths: MutableSequence[str] | None = None,
+        outer_storage_in_memory: bool | None = None,
+        outer_bind: str | None = None,
+    ) -> None:
+        super().__init__(
+            deployment_name=deployment_name,
+            config_dir=config_dir,
+            connector=connector,
+            service=service,
+            transferBufferSize=transferBufferSize,
+        )
+        self.locations: int = locations
+        if outer_cores is None:
+            if any(
+                value is not None
+                for value in (
+                    outer_memory,
+                    outer_storage_size,
+                    outer_storage_paths,
+                    outer_storage_in_memory,
+                )
+            ):
+                raise ValueError("Outer hardware configuration is incomplete")
+            self.outer_hardware: Hardware | None = None
+        else:
+            if (
+                outer_memory is None
+                or outer_storage_size is None
+                or outer_storage_paths is None
+                or outer_storage_in_memory is None
+            ):
+                raise ValueError("Outer hardware configuration is incomplete")
+            self.outer_hardware = Hardware(
+                cores=outer_cores,
+                memory=outer_memory,
+                storage={
+                    os.sep: Storage(
+                        mount_point=os.sep,
+                        size=outer_storage_size,
+                        paths=set(outer_storage_paths),
+                        bind=outer_bind,
+                        in_memory=outer_storage_in_memory,
+                    )
+                },
+            )
+
+    @classmethod
+    def get_schema(cls) -> str:
+        return json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://streamflow.di.unito.it/schemas/tests/utils/connector/stacked_test_connector.json",
+                "type": "object",
+                "properties": {
+                    "locations": {"type": "integer", "minimum": 1},
+                    "outer_cores": {"type": "number"},
+                    "outer_memory": {"type": "number"},
+                    "outer_storage_size": {"type": "number"},
+                    "outer_storage_paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "outer_storage_in_memory": {"type": "boolean"},
+                    "outer_bind": {"type": ["string", "null"]},
+                },
+                "required": ["locations"],
+                "allOf": [
+                    {
+                        "if": {
+                            "anyOf": [
+                                {"required": ["outer_cores"]},
+                                {"required": ["outer_memory"]},
+                                {"required": ["outer_storage_size"]},
+                                {"required": ["outer_storage_paths"]},
+                                {"required": ["outer_storage_in_memory"]},
+                            ]
+                        },
+                        "then": {
+                            "required": [
+                                "outer_cores",
+                                "outer_memory",
+                                "outer_storage_size",
+                                "outer_storage_paths",
+                                "outer_storage_in_memory",
+                            ]
+                        },
+                    },
+                ],
+                "additionalProperties": False,
+            }
+        )
+
+    async def get_available_locations(
+        self, service: str | None = None
+    ) -> MutableMapping[str, AvailableLocation]:
+        inner_locations = await self.connector.get_available_locations(service=service)
+        inner_location = next(iter(inner_locations.values()))
+        return {
+            name: AvailableLocation(
+                name=name,
+                deployment=self.deployment_name,
+                hostname=inner_location.hostname,
+                local=inner_location.local,
+                service=service,
+                slots=1,
+                stacked=True,
+                hardware=self.outer_hardware,
+                wraps=inner_location,
+            )
+            for name in (
+                f"{self.deployment_name}-{index}" for index in range(self.locations)
             )
         }
 

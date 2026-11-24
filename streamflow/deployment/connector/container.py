@@ -34,6 +34,7 @@ from streamflow.core.utils import (
 )
 from streamflow.deployment.connector.base import (
     FS_TYPES_TO_SKIP,
+    IN_MEMORY_FS_TYPES,
     BatchConnector,
     copy_local_to_remote,
     copy_remote_to_local,
@@ -87,6 +88,7 @@ async def _get_storage_from_binds(
                     storage[mount_point] = Storage(
                         mount_point=mount_point,
                         size=float(size) / 2**10,
+                        in_memory=fs_type in IN_MEMORY_FS_TYPES,
                     )
                     if mount_point in binds:
                         storage[mount_point].bind = binds[mount_point]
@@ -1852,11 +1854,11 @@ class SingularityConnector(ContainerConnector):
             )
         # Get inner location mount points
         if self._wraps_local():
-            fs_mounts = [
-                disk.mountpoint
+            fs_mounts = {
+                disk.mountpoint: disk.fstype
                 for disk in psutil.disk_partitions(all=True)
                 if disk.fstype not in FS_TYPES_TO_SKIP
-            ]
+            }
         else:
             stdout, returncode = await self.connector.run(
                 location=self._get_inner_location(),
@@ -1867,11 +1869,12 @@ class SingularityConnector(ContainerConnector):
                 capture_output=True,
             )
             if returncode == 0:
-                fs_mounts = [
-                    line.split()[4]
+                fs_mounts = {
+                    line.split()[4]: _type
                     for line in stdout.splitlines()
-                    if line.split(" - ")[1].split()[0] not in FS_TYPES_TO_SKIP
-                ]
+                    if (_type := line.split(" - ")[1].split()[0])
+                    not in FS_TYPES_TO_SKIP
+                }
             else:
                 raise WorkflowExecutionException(
                     f"FAILED retrieving volume mounts from `/proc/1/mountinfo` "
@@ -1939,11 +1942,13 @@ class SingularityConnector(ContainerConnector):
                 if (
                     (dst := line.split()[4]) != posixpath.sep
                     and dst not in binds
-                    and (line.split(" - ")[1].split()[0]) not in FS_TYPES_TO_SKIP
+                    and (dst_type := line.split(" - ")[1].split()[0])
+                    not in FS_TYPES_TO_SKIP
                 ):
-                    binds[dst] = posixpath.join(
-                        _get_longest_prefix_path(dst, fs_mounts), line.split()[3][1:]
-                    )
+                    host_mount = _get_longest_prefix_path(dst, fs_mounts.keys())
+                    # Singularity can create binds on tmpfs
+                    if fs_mounts[host_mount] == dst_type:
+                        binds[dst] = posixpath.join(host_mount, line.split()[3][1:])
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Container binds: {binds}")
         else:
