@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump certifi from 2025.11.12 to 2026.10.19 ([#1171](https://github.com/alpha-unito/streamflow/pull/1171))
 - Bump cwl-utils from 0.42 to 0.47 ([#1188](https://github.com/alpha-unito/streamflow/pull/1188)), [#1202](https://github.com/alpha-unito/streamflow/pull/1202))
 - Bump importlib-metadata from 9.0.1 to 10.1.0 ([#1172](https://github.com/alpha-unito/streamflow/pull/1172))
-- Bump kaleido from 1.4.0 to 1.5.1 ([#1164](https://github.com/alpha-unito/streamflow/pull/1164), [#1204](https://github.com/alpha-unito/streamflow/pull/1204))
+- Bump kaleido from 1.4.0 to 1.5.2 ([#1164](https://github.com/alpha-unito/streamflow/pull/1164), [#1204](https://github.com/alpha-unito/streamflow/pull/1204), [#1213](https://github.com/alpha-unito/streamflow/pull/1213))
 - Bump multidict from 6.7.0 to 6.9.1 ([#1161](https://github.com/alpha-unito/streamflow/pull/1161))
 - Bump pandas from 2.3.3 to 3.1.1 ([#1174](https://github.com/alpha-unito/streamflow/pull/1174), [#1192](https://github.com/alpha-unito/streamflow/pull/1192)))
 - Bump plotly from 7.0.0 to 7.1.0 ([#1150](https://github.com/alpha-unito/streamflow/pull/1150))

@@ -53,7 +53,7 @@ version = "0.2.0rc3"
 report = [
     "pandas==3.1.1",
     "plotly==7.1.0",
-    "kaleido==1.5.1"
+    "kaleido==1.5.2"
 ]
 
 [project.scripts]
