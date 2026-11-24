@@ -35,6 +35,7 @@ from tests.utils.connector import (
     AioTarConnector,
     FailureConnector,
     ParameterizableHardwareConnector,
+    StackedTestConnector,
 )
 from tests.utils.data import CustomDataManager
 from tests.utils.deployment import CustomDeploymentManager, ReverseTargetsBindingFilter
@@ -349,6 +350,10 @@ class InjectPlugin(AbstractContextManager):
                 streamflow.deployment.connector.connector_classes.update(
                     {"parameterizable-hardware": ParameterizableHardwareConnector}
                 )
+            case "stacked-test":
+                streamflow.deployment.connector.connector_classes.update(
+                    {"stacked-test": StackedTestConnector}
+                )
             case "reverse":
                 streamflow.deployment.filter.binding_filter_classes.update(
                     {"reverse": ReverseTargetsBindingFilter}
@@ -379,6 +384,8 @@ class InjectPlugin(AbstractContextManager):
                 streamflow.deployment.connector.connector_classes.pop(
                     "parameterizable-hardware",
                 )
+            case "stacked-test":
+                streamflow.deployment.connector.connector_classes.pop("stacked-test")
             case "reverse":
                 streamflow.deployment.filter.binding_filter_classes.pop("reverse")
             case _:

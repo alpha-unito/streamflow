@@ -1947,8 +1947,6 @@ class SingularityConnector(ContainerConnector):
                 ):
                     host_mount = _get_longest_prefix_path(dst, fs_mounts.keys())
                     # Singularity can create binds on tmpfs
-                    # TODO: alternative to this mess. retrieve the ${HOME}, if it is not present in the explict bind,
-                    #  means that it is the singularity automatic bind (creating a tmpfs home)
                     if fs_mounts[host_mount] == dst_type:
                         binds[dst] = posixpath.join(host_mount, line.split()[3][1:])
             if logger.isEnabledFor(logging.DEBUG):
@@ -2023,7 +2021,7 @@ class SingularityConnector(ContainerConnector):
                 get_option("network", self.network),
                 get_option("network-args", self.networkArgs),
                 get_option("no-eval", self.noEval),
-                get_option("no-home", self.noHome),  # or self.home is None,
+                get_option("no-home", self.noHome),
                 get_option("no-https", self.noHttps),
                 get_option("no-init", self.noInit),
                 get_option("no-mount", self.noMount),
