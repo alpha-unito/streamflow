@@ -3577,7 +3577,7 @@ wheels = [
 
 [[package]]
 name = "streamflow"
-version = "0.2.0rc3"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

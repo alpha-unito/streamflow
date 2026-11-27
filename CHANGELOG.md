@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-11-27
 
 ### Breaking Changes
 
@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump importlib-metadata from 9.0.1 to 10.1.0 ([#1172](https://github.com/alpha-unito/streamflow/pull/1172))
 - Bump kaleido from 1.4.0 to 1.5.2 ([#1164](https://github.com/alpha-unito/streamflow/pull/1164), [#1204](https://github.com/alpha-unito/streamflow/pull/1204), [#1213](https://github.com/alpha-unito/streamflow/pull/1213))
 - Bump multidict from 6.7.0 to 6.9.1 ([#1161](https://github.com/alpha-unito/streamflow/pull/1161))
-- Bump pandas from 2.3.3 to 3.1.1 ([#1174](https://github.com/alpha-unito/streamflow/pull/1174), [#1192](https://github.com/alpha-unito/streamflow/pull/1192)))
+- Bump pandas from 2.3.3 to 3.1.1 ([#1174](https://github.com/alpha-unito/streamflow/pull/1174), [#1192](https://github.com/alpha-unito/streamflow/pull/1192))
 - Bump plotly from 7.0.0 to 7.1.0 ([#1150](https://github.com/alpha-unito/streamflow/pull/1150))
 - Bump urllib3 from 2.7.0 to 2.8.0 ([#1155](https://github.com/alpha-unito/streamflow/pull/1155))
 
@@ -1336,7 +1336,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed remote-to-remote data movement on Helm connector ([0967668](https://github.com/alpha-unito/streamflow/commit/0967668))
 - Patched WebSocket client `update()` function to handle binary format ([ba48f19](https://github.com/alpha-unito/streamflow/commit/ba48f19))
 
-[Unreleased]: https://github.com/alpha-unito/streamflow/compare/0.2.0rc3...HEAD
+[0.2.0]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0
 [0.2.0rc3]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc3
 [0.2.0rc2]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc2
 [0.2.0rc1]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc1
