@@ -535,7 +535,7 @@ class Token(PersistableEntity):
     ) -> Self:
         return cls(tag=row["tag"], value=row["value"], recoverable=row["recoverable"])
 
-    async def _save_value(self, context: StreamFlowContext):
+    async def _save_value(self, database: Database):
         return self.value
 
     def get_data(self) -> Any:
