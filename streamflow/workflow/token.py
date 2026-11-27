@@ -288,7 +288,7 @@ class TerminationToken(Token):
     def retag(self, tag: str) -> Token:
         raise NotImplementedError
 
-    async def _save_value(self, context: StreamFlowContext):
+    async def _save_value(self, database: Database):
         return {"status": self.value.value}
 
     @classmethod

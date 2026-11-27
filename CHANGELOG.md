@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Confine the `uvloop` async engine to macOS ([#1205](https://github.com/alpha-unito/streamflow/pull/1205))
 - Refactor token value extraction into `get_data()` ([#1207](https://github.com/alpha-unito/streamflow/pull/1207))
 - Update CI and Docker image for multi-arch builds ([#1208](https://github.com/alpha-unito/streamflow/pull/1208))
+- Refactor `_save_value` type hint to `Database` ([#1214](https://github.com/alpha-unito/streamflow/pull/1214)))
 
 ### Fixed
 
