@@ -67,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump mypy from 2.3.1 to 2.4.1 ([#1157](https://github.com/alpha-unito/streamflow/pull/1157), [#1194](https://github.com/alpha-unito/streamflow/pull/1194))
 - Bump pandas-stubs from 2.3.3.260113 to 3.1.0.261029 ([#1185](https://github.com/alpha-unito/streamflow/pull/1185))
 - Bump pytest from 9.1.1 to 9.2.0 ([#1186](https://github.com/alpha-unito/streamflow/pull/1186))
+- Bump pytest-asyncio from 1.4.0 to 1.5.0 ([#1212](https://github.com/alpha-unito/streamflow/pull/1212))
 - Bump ruff from 0.16.7 to 0.17.6 ([#1193](https://github.com/alpha-unito/streamflow/pull/1193), [#1211](https://github.com/alpha-unito/streamflow/pull/1211))
 - Bump sphinx from 8.1.3 to 9.0.4 ([#1180](https://github.com/alpha-unito/streamflow/pull/1180))
 - Bump types-jsonschema from 4.26.0.20260518 to 4.26.0.20261006 ([#1167](https://github.com/alpha-unito/streamflow/pull/1167))
