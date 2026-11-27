@@ -70,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bump ruff from 0.16.7 to 0.17.6 ([#1193](https://github.com/alpha-unito/streamflow/pull/1193), [#1211](https://github.com/alpha-unito/streamflow/pull/1211))
 - Bump sphinx from 8.1.3 to 9.0.4 ([#1180](https://github.com/alpha-unito/streamflow/pull/1180))
 - Bump types-jsonschema from 4.26.0.20260518 to 4.26.0.20261006 ([#1167](https://github.com/alpha-unito/streamflow/pull/1167))
-- Bump types-psutil from 7.2.2.20260906 to 7.2.2.20261111 ([#1201](https://github.com/alpha-unito/streamflow/pull/1201))
+- Bump types-psutil from 7.2.2.20260906 to 7.2.2.20261122 ([#1201](https://github.com/alpha-unito/streamflow/pull/1201), [#1216](https://github.com/alpha-unito/streamflow/pull/1216))
 
 ## [0.2.0rc3] - 2026-09-19
 
