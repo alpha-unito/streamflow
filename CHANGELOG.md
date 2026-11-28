@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+
+
 ## [0.2.0] - 2026-11-27
 
 ### Breaking Changes
@@ -1336,6 +1342,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed remote-to-remote data movement on Helm connector ([0967668](https://github.com/alpha-unito/streamflow/commit/0967668))
 - Patched WebSocket client `update()` function to handle binary format ([ba48f19](https://github.com/alpha-unito/streamflow/commit/ba48f19))
 
+[Unreleased]: https://github.com/alpha-unito/streamflow/compare/0.2.0...HEAD
 [0.2.0]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0
 [0.2.0rc3]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc3
 [0.2.0rc2]: https://github.com/alpha-unito/streamflow/releases/tag/0.2.0rc2

@@ -54,6 +54,9 @@ DOCKER=${DOCKER:-"docker"}
 # The directory where this script resides
 SCRIPT_DIRECTORY="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+# The root directory of the repository
+PROJECT_DIRECTORY="$( cd "$( dirname "${SCRIPT_DIRECTORY}" )" >/dev/null 2>&1 && pwd )"
+
 # Download archive from GitHub
 if [[ "${VERSION}" = "v1.0" ]] ; then
   REPO="common-workflow-language"
@@ -71,8 +74,8 @@ fi
 # Setup environment
 venv cwl-conformance-venv
 pip install -U setuptools wheel "pip>=25.1"
-pip install "${SCRIPT_DIRECTORY}"
-pip install --group test "${SCRIPT_DIRECTORY}"
+pip install "${PROJECT_DIRECTORY}"
+pip install --group test "${PROJECT_DIRECTORY}"
 if [[ "${VERSION}" = "v1.3" ]] ; then
   pip_uninstall cwl-utils
   pip install git+https://github.com/common-workflow-language/cwl-utils.git@refs/pull/370/head
@@ -80,9 +83,9 @@ fi
 
 # Set conformance test filename
 if [[ "${VERSION}" = "v1.0" ]] ; then
-  CONFORMANCE_TEST="${SCRIPT_DIRECTORY}/${REPO}-${COMMIT}/${VERSION}/conformance_test_v1.0.yaml"
+  CONFORMANCE_TEST="${PROJECT_DIRECTORY}/${REPO}-${COMMIT}/${VERSION}/conformance_test_v1.0.yaml"
 else
-  CONFORMANCE_TEST="${SCRIPT_DIRECTORY}/${REPO}-${COMMIT}/conformance_tests.yaml"
+  CONFORMANCE_TEST="${PROJECT_DIRECTORY}/${REPO}-${COMMIT}/conformance_tests.yaml"
 fi
 mv "${CONFORMANCE_TEST}" "${CONFORMANCE_TEST%".yaml"}.cwltest.yaml"
 CONFORMANCE_TEST="${CONFORMANCE_TEST%".yaml"}.cwltest.yaml"
@@ -95,11 +98,11 @@ fi
 TEST_COMMAND="${TEST_COMMAND} --cov --junitxml=junit.xml -o junit_family=legacy --cov-report= ${PYTEST_EXTRA}"
 
 # Cleanup coverage
-rm -rf "${SCRIPT_DIRECTORY}/.coverage" "${SCRIPT_DIRECTORY}/coverage.xml ${SCRIPT_DIRECTORY}/junit.xml"
+rm -rf "${PROJECT_DIRECTORY}/.coverage" "${PROJECT_DIRECTORY}/coverage.xml" "${PROJECT_DIRECTORY}/junit.xml"
 
 # Run test
-cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/conftest.py" "$(dirname "${CONFORMANCE_TEST}")/"
-cp "${SCRIPT_DIRECTORY}/tests/cwl-conformance/streamflow-${DOCKER}.yml" "$(dirname "${CONFORMANCE_TEST}")/streamflow.yml"
+cp "${PROJECT_DIRECTORY}/tests/cwl-conformance/conftest.py" "$(dirname "${CONFORMANCE_TEST}")/"
+cp "${PROJECT_DIRECTORY}/tests/cwl-conformance/streamflow-${DOCKER}.yml" "$(dirname "${CONFORMANCE_TEST}")/streamflow.yml"
 bash -c "${TEST_COMMAND}"
 RETURN_CODE=$?
 
@@ -110,7 +113,7 @@ if [ "${RETURN_CODE}" -eq "0" ] ; then
 fi
 
 # Cleanup
-rm -rf "${COMMIT}.tar.gz" "${SCRIPT_DIRECTORY}/${REPO}-${COMMIT}" "${SCRIPT_DIRECTORY}/cwl-conformance-venv"
+rm -rf "${COMMIT}.tar.gz" "${PROJECT_DIRECTORY}/${REPO}-${COMMIT}" "${PROJECT_DIRECTORY}/cwl-conformance-venv"
 
 # Exit
 exit ${RETURN_CODE}
