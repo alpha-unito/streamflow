@@ -27,7 +27,7 @@ However, it is also possible (and advisable) to run tests locally before opening
 StreamFlow complies with all stable versions of the [Common Workflow Language](https://www.commonwl.org/) (CWL) open standard (v1.0, v1.1, and v1.2). Plus, it implements the `cwltool:Loop` extension (see [here](https://cwltool.readthedocs.io/en/latest/loop.html)).
 You can check if your PR does not compromise CWL compliance by running the CWL conformance tests suite, using the following command
 ```bash
-./cwl-conformance-test.sh
+./scripts/cwl-conformance-test.sh
 ```
 
 ### StreamFlow tests

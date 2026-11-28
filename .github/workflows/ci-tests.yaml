@@ -58,29 +58,29 @@ jobs:
           - commit: "76bdf9b55e2378432e0e6380ccedebb4a94ce483"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.2"
-          - commit: "d2501954c0f832c13a7d6883289f242446aa962d"
+          - commit: "06bf4052470e56c5689079d1d28bdc95b70a75a3"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
           - docker: "singularity"
-            commit: "d2501954c0f832c13a7d6883289f242446aa962d"
+            commit: "06bf4052470e56c5689079d1d28bdc95b70a75a3"
             exclude: "docker_entrypoint,modify_file_content,iwd-container-entryname1"
             on: "ubuntu-26.04"
             python: "3.15"
             version: "v1.3"
           - docker: "kubernetes"
-            commit: "d2501954c0f832c13a7d6883289f242446aa962d"
+            commit: "06bf4052470e56c5689079d1d28bdc95b70a75a3"
             exclude: "docker_entrypoint,modify_file_content"
             on: "ubuntu-26.04"
             python: "3.15"
             version: "v1.3"
           - on: "macos-26-intel"
             python: "3.15"
-            commit: "d2501954c0f832c13a7d6883289f242446aa962d"
+            commit: "06bf4052470e56c5689079d1d28bdc95b70a75a3"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
           - on: "ubuntu-24.04-riscv"
             python: "3.15"
-            commit: "6eddbfb03b8861885832b26e322fbd0fcb9a884d"
+            commit: "06bf4052470e56c5689079d1d28bdc95b70a75a3"
             exclude: "docker_entrypoint,modify_file_content"
             version: "v1.3"
     runs-on: ${{ matrix.on }}
@@ -128,7 +128,7 @@ jobs:
           COMMIT: ${{ matrix.commit }}
           EXCLUDE: ${{ matrix.exclude }}
           DOCKER: ${{ matrix.docker }}
-        run: ./cwl-conformance-test.sh
+        run: ./scripts/cwl-conformance-test.sh
       - name: "Upload test results"
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v7
@@ -176,6 +176,74 @@ jobs:
             --mount type=bind,source="${TMPDIR:-/tmp}"/streamflow,target="/tmp/streamflow" \
             alphaunito/streamflow:latest \
             streamflow run /streamflow/project/streamflow.yml
+  easybuild-recipe:
+    name: "Test StreamFlow EasyBuild recipe"
+    runs-on: ubuntu-26.04
+    env:
+      EESSI_STACK_VERSION: "2026.06"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: "3.15"
+          version: "0.13.9"
+      - name: "Set up EESSI ${{ env.EESSI_STACK_VERSION }}"
+        uses: eessi/github-action-eessi@v3
+        with:
+          eessi_stack_version: ${{ env.EESSI_STACK_VERSION }}
+      - name: "Diagnose easyconfigs tree"
+        shell: bash
+        run: |
+          export EESSI_USER_INSTALL="$HOME/EESSI-${EESSI_STACK_VERSION}"
+          mkdir -p "$EESSI_USER_INSTALL"
+          module load EESSI-extend
+          echo "=== EBROOTEASYBUILD ==="
+          echo "${EBROOTEASYBUILD:-<unset>}"
+          EC="${EBROOTEASYBUILD:+$EBROOTEASYBUILD/easybuild/easyconfigs}"
+          echo "=== easyconfigs root present? ==="
+          [[ -d "$EC" ]] && echo "yes: $EC" || echo "NO: $EC"
+          echo "=== resolved Python (highest) ==="
+          ls "$EC"/[Pp]/Python/Python-*-GCCcore-*.eb 2>/dev/null | sed -E 's#.*/([^/]+\.eb)$#\1#' | sort -V | tail -n1
+          echo "=== Python-bundle-PyPI ==="
+          ls "$EC"/[Pp]/Python-bundle-PyPI/*.eb 2>/dev/null | sed -E 's#.*/([^/]+\.eb)$#\1#'
+          echo "=== SciPy-bundle ==="
+          ls "$EC"/[Ss]/SciPy-bundle/*.eb 2>/dev/null | sed -E 's#.*/([^/]+\.eb)$#\1#'
+      - name: "Generate EasyBuild recipe"
+        shell: bash
+        run: |
+          export EESSI_USER_INSTALL="$HOME/EESSI-${EESSI_STACK_VERSION}"
+          mkdir -p "$EESSI_USER_INSTALL"
+          module load EESSI-extend
+          ./scripts/gen-easybuild.sh $EESSI_STACK_VERSION > Streamflow.eb
+          cat Streamflow.eb
+      - name: "Check EasyBuild recipe against EESSI ${{ env.EESSI_STACK_VERSION }}"
+        shell: bash
+        run: |
+          export EESSI_USER_INSTALL="$HOME/EESSI-${EESSI_STACK_VERSION}"
+          module load EESSI-extend
+          eb --dry-run Streamflow.eb
+      - name: "Build StreamFlow with EasyBuild"
+        shell: bash
+        run: |
+          export EESSI_USER_INSTALL="$HOME/EESSI-${EESSI_STACK_VERSION}"
+          module load EESSI-extend
+          eb --robot Streamflow.eb
+      - name: "Run unit tests against EasyBuild-built StreamFlow"
+        shell: bash
+        run: |
+          export EESSI_USER_INSTALL="$HOME/EESSI-${EESSI_STACK_VERSION}"
+          module load EESSI-extend
+          module load Streamflow
+          python -m pytest -rs --junitxml=junit.xml -o junit_family=legacy tests
+      - name: "Upload unit test results"
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: easybuild-unit-tests
+          path: ./junit.xml
+          retention-days: 1
+          if-no-files-found: warn
   documentation:
     name: "Build and Test Sphinx documentation"
     strategy:

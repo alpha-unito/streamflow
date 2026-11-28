@@ -27,7 +27,7 @@ uv run make testcov
 uv run pytest --deploys local,docker tests/test_remotepath.py
 
 # CWL conformance tests
-./cwl-conformance-test.sh
+./scripts/cwl-conformance-test.sh
 # Supports env vars: VERSION, DOCKER, EXCLUDE
 ```
 
